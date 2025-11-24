@@ -1,13 +1,13 @@
 package ui
 
 import (
+	"dback/backend/db"
+	"dback/backend/ssh"
+	"dback/models"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"dback/backend/db"
-	"dback/backend/ssh"
-	"dback/models"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -28,7 +28,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}, w)
 		fd.Show()
 	})
-	
+
 	sourceGroup := widget.NewCard("Source File", "", container.NewVBox(
 		sourceFileLabel,
 		selectFileBtn,
@@ -36,7 +36,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 	// --- Destination Server ---
 	restoreLocalCheck := widget.NewCheck("Restore to Localhost?", nil)
-	
+
 	// SSH Fields (Hidden if Restore Local is checked)
 	hostEntry := widget.NewEntry()
 	hostEntry.SetPlaceHolder("192.168.1.100")
@@ -44,13 +44,13 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	portEntry.SetText("22")
 	sshUserEntry := widget.NewEntry()
 	sshUserEntry.SetPlaceHolder("root")
-	
+
 	authTypeSelect := widget.NewSelect([]string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}, nil)
 	authTypeSelect.SetSelected(string(models.AuthTypePassword))
-	
+
 	sshPasswordEntry := widget.NewPasswordEntry()
 	sshPasswordEntry.SetPlaceHolder("SSH Password")
-	
+
 	keyPathEntry := widget.NewEntry()
 	keyPathEntry.SetPlaceHolder("/path/to/private/key")
 	keyPathBtn := widget.NewButton("Select Key", func() {
@@ -100,7 +100,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	containerIDEntry := widget.NewEntry()
 	containerIDEntry.SetPlaceHolder("mysql_container_name")
 	containerIDEntry.Disable()
-	
+
 	isDockerCheck.OnChanged = func(b bool) {
 		if b {
 			containerIDEntry.Enable()
@@ -156,39 +156,39 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			ContainerID:  containerIDEntry.Text,
 			TargetDBName: targetDBEntry.Text,
 		}
-		
+
 		isLocal := restoreLocalCheck.Checked
 
 		go func() {
-			u.log("Import", fmt.Sprintf("Starting import for DB: %s", p.TargetDBName), "In Progress", "")
+			u.log("Import", fmt.Sprintf("Starting import for DB: %s", p.TargetDBName), "", "In Progress", "")
 			statusLabel.SetText("Preparing...")
 			progressBar.SetValue(0)
 
 			// Build the import command (mysql < file)
-			// The command generator assumes gzipped input. 
+			// The command generator assumes gzipped input.
 			// If source file is .sql, we should gzip it or change command?
-			// Requirements say: "Note: All exports should be piped through gzip... 
+			// Requirements say: "Note: All exports should be piped through gzip...
 			// Docker Import Example: gunzip -c dump.sql.gz | docker exec ..."
 			// So we expect .sql.gz input. If user selects .sql, we might need to handle that.
-			// For now, let's assume the logic in `commands.go` which uses `gunzip -c`. 
-			// `gunzip -c` can also handle uncompressed text sometimes or we can just cat it? 
+			// For now, let's assume the logic in `commands.go` which uses `gunzip -c`.
+			// `gunzip -c` can also handle uncompressed text sometimes or we can just cat it?
 			// Actually `gunzip` will fail on uncompressed data usually.
-			// Let's assume we are strictly dealing with .sql.gz for now as per typical workflow, 
+			// Let's assume we are strictly dealing with .sql.gz for now as per typical workflow,
 			// or we can detect file extension.
 			// If extension is .sql, we should probably just cat it to mysql without gunzip.
 			// But `commands.go` `BuildImportCommand` hardcodes `gunzip -c`.
 			// I will stick to the provided architecture for now, maybe add a check later.
-			
+
 			cmdStr := db.BuildImportCommand(p)
 
 			inFile, err := os.Open(sourcePath)
 			if err != nil {
 				statusLabel.SetText("Open File Failed")
-				u.log("Import", "Failed to open source file", "Failed", err.Error())
+				u.log("Import", "Failed to open source file", "", "Failed", err.Error())
 				return
 			}
 			defer inFile.Close()
-			
+
 			fileInfo, _ := inFile.Stat()
 			totalSize := fileInfo.Size()
 
@@ -197,36 +197,36 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				statusLabel.SetText("Executing Local Restore...")
 				// We need to use exec.Command("bash", "-c", cmdStr) to handle pipes
 				cmd := exec.Command("bash", "-c", cmdStr)
-				
+
 				stdin, err := cmd.StdinPipe()
 				if err != nil {
 					statusLabel.SetText("Local Pipe Failed")
 					return
 				}
-				
+
 				// Start command
 				if err := cmd.Start(); err != nil {
 					statusLabel.SetText("Local Command Start Failed")
 					return
 				}
-				
+
 				// Copy with progress
 				progressR := &ssh.ProgressReader{
 					Reader: inFile,
-					Total: totalSize,
+					Total:  totalSize,
 					Callback: func(current int64, total int64) {
 						pct := float64(current) / float64(total)
 						progressBar.SetValue(pct)
 						statusLabel.SetText(fmt.Sprintf("Uploading/Restoring: %.1f%%", pct*100))
 					},
 				}
-				
+
 				io.Copy(stdin, progressR)
 				stdin.Close()
-				
+
 				if err := cmd.Wait(); err != nil {
 					statusLabel.SetText("Restore Failed")
-					u.log("Import", "Local restore failed", "Failed", err.Error())
+					u.log("Import", "Local restore failed", "", "Failed", err.Error())
 					return
 				}
 
@@ -236,7 +236,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				client, err := ssh.NewClient(p)
 				if err != nil {
 					statusLabel.SetText("SSH Connection Failed")
-					u.log("Import", "SSH Connection failed", "Failed", err.Error())
+					u.log("Import", "SSH Connection failed", "", "Failed", err.Error())
 					return
 				}
 				defer client.Close()
@@ -245,14 +245,14 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				stdin, session, err := client.RunCommandPipeInput(cmdStr)
 				if err != nil {
 					statusLabel.SetText("Remote Command Failed")
-					u.log("Import", "Remote command failed", "Failed", err.Error())
+					u.log("Import", "Remote command failed", "", "Failed", err.Error())
 					return
 				}
 				defer session.Close()
 
 				progressR := &ssh.ProgressReader{
 					Reader: inFile,
-					Total: totalSize,
+					Total:  totalSize,
 					Callback: func(current int64, total int64) {
 						pct := float64(current) / float64(total)
 						progressBar.SetValue(pct)
@@ -263,24 +263,25 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				_, err = io.Copy(stdin, progressR)
 				if err != nil {
 					statusLabel.SetText("Upload Stream Failed")
-					u.log("Import", "Upload stream failed", "Failed", err.Error())
+					u.log("Import", "Upload stream failed", "", "Failed", err.Error())
 					return
 				}
-				
+
 				// Close stdin to signal EOF to remote process
 				stdin.Close()
-				
+
 				// Wait for remote command to finish
 				if err := session.Wait(); err != nil {
 					statusLabel.SetText("Restore Process Failed")
-					u.log("Import", "Remote restore process failed", "Failed", err.Error())
+					u.log("Import", "Remote restore process failed", "", "Failed", err.Error())
 					return
 				}
 			}
 
 			statusLabel.SetText("Restore Completed Successfully!")
 			progressBar.SetValue(1.0)
-			u.log("Import", "Import completed successfully", "Success", "")
+			sizeStr := fmt.Sprintf("%.2f MB", float64(totalSize)/1024/1024)
+			u.log("Import", "Import completed successfully", sizeStr, "Success", "")
 		}()
 	})
 	startBtn.Importance = widget.HighImportance

@@ -39,6 +39,9 @@ type UI struct {
 	expIsDockerCheck    *widget.Check
 	expContainerIDEntry *widget.Entry
 	expTargetDBEntry    *widget.Entry
+	expDestPathLabel    *widget.Label // To bind destination
+
+	historyTable *widget.Table
 }
 
 // NewUI creates a new UI instance
@@ -52,54 +55,145 @@ func NewUI(app fyne.App) *UI {
 // Run initializes and starts the UI
 func (u *UI) Run() {
 	u.window = u.app.NewWindow("DB Sync Manager")
-	u.window.Resize(fyne.NewSize(1000, 700))
+	u.window.Resize(fyne.NewSize(1200, 800))
+	// u.window.SetFullScreen(true) // Removed per user request (hides controls)
 
-	// Load profiles (mock implementation or simple file read)
+	// Load data
 	u.loadProfiles()
+	u.loadLogs()
 
 	// Create Tabs
 	exportTab := container.NewTabItem("Export (Backup)", u.createExportTab(u.window))
 	importTab := container.NewTabItem("Import (Restore)", u.createImportTab(u.window))
+	historyTab := container.NewTabItem("History", u.createHistoryTab())
 	logsTab := container.NewTabItem("Activity Logs", u.createLogsTab())
 
-	tabs := container.NewAppTabs(exportTab, importTab, logsTab)
+	tabs := container.NewAppTabs(exportTab, importTab, historyTab, logsTab)
 
 	// Sidebar (Saved Profiles)
-	// For now, a simple list. Clicking a profile should populate fields in active tab?
-	// Or we need a way to select "Active Profile".
-	// The prompt says: "The application main window should have a sidebar on the left for 'Saved Profiles'".
-	// Implementing full profile selection/population logic might be complex cross-tab.
-	// I'll implement a simple list. To make it functional, I'd need to update the form fields.
-	// Since form fields are local to create*Tab functions, I might need to refactor or expose them.
-	// For this MVP, I will just display the sidebar.
-
-	sidebar := widget.NewList(
+	var sidebar *widget.List
+	sidebar = widget.NewList(
 		func() int {
 			return len(u.profiles)
 		},
 		func() fyne.CanvasObject {
-			return widget.NewLabel("Profile Name")
+			label := widget.NewLabel("Profile Name")
+			saveBtn := widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), nil)
+			deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
+			buttons := container.NewHBox(saveBtn, deleteBtn)
+			return container.NewBorder(nil, nil, nil, buttons, label)
 		},
 		func(i int, o fyne.CanvasObject) {
-			o.(*widget.Label).SetText(u.profiles[i].Name)
+			// The object is the container created above
+			// Border container objects are usually: [center, top, bottom, left, right] order in Objects slice?
+			// Actually, it's better not to rely on index if possible, but Fyne implementation details vary.
+			// Let's look at NewBorder implementation or behavior.
+			// Usually Objects[0] is the main content (label) if it's Center.
+			// Wait, container.NewBorder returns a container with objects.
+			c := o.(*fyne.Container)
+
+			// We know the structure: Border(nil, nil, nil, HBox(Save, Delete), Label)
+			// Label is likely Center. HBox is Right.
+			// Accessing objects by type/position is risky if we don't know internal order.
+			// However, we constructed it.
+			// Let's iterate to find them or assume order.
+			// Typically Center is first or last.
+			// Safe way:
+			var label *widget.Label
+			var btnContainer *fyne.Container
+
+			for _, obj := range c.Objects {
+				if l, ok := obj.(*widget.Label); ok {
+					label = l
+				} else if cont, ok := obj.(*fyne.Container); ok {
+					btnContainer = cont
+				}
+			}
+
+			saveBtn := btnContainer.Objects[0].(*widget.Button)
+			deleteBtn := btnContainer.Objects[1].(*widget.Button)
+
+			p := u.profiles[i]
+			label.SetText(p.Name)
+
+			saveBtn.OnTapped = func() {
+				// Update this profile with current form data
+				// Need to ensure 'i' is still valid index if list changed?
+				// widget.List refreshes, so 'i' corresponds to data index.
+				if i >= len(u.profiles) {
+					return
+				}
+
+				u.profiles[i].Host = u.expHostEntry.Text
+				u.profiles[i].Port = u.expPortEntry.Text
+				u.profiles[i].SSHUser = u.expSSHUserEntry.Text
+				u.profiles[i].SSHPassword = u.expSSHPassEntry.Text
+				u.profiles[i].AuthType = models.AuthType(u.expAuthTypeSelect.Selected)
+				u.profiles[i].AuthKeyPath = u.expKeyPathEntry.Text
+				u.profiles[i].DBHost = u.expDBHostEntry.Text
+				u.profiles[i].DBPort = u.expDBPortEntry.Text
+				u.profiles[i].DBUser = u.expDBUserEntry.Text
+				u.profiles[i].DBPassword = u.expDBPassEntry.Text
+				u.profiles[i].DBType = models.DBType(u.expDBTypeSelect.Selected)
+				u.profiles[i].IsDocker = u.expIsDockerCheck.Checked
+				u.profiles[i].ContainerID = u.expContainerIDEntry.Text
+				u.profiles[i].TargetDBName = u.expTargetDBEntry.Text
+				u.profiles[i].Destination = u.expDestPathLabel.Text
+
+				u.saveProfiles()
+				dialog.ShowInformation("Saved", fmt.Sprintf("Profile '%s' updated", p.Name), u.window)
+			}
+
+			deleteBtn.OnTapped = func() {
+				dialog.ShowConfirm("Delete Profile", fmt.Sprintf("Are you sure you want to delete '%s'?", p.Name), func(b bool) {
+					if b {
+						// Remove profile
+						u.profiles = append(u.profiles[:i], u.profiles[i+1:]...)
+						u.saveProfiles()
+						sidebar.Refresh()
+					}
+				}, u.window)
+			}
 		},
 	)
 
-	// Add Profile Button
-	addProfileBtn := widget.NewButtonWithIcon("Save Profile", theme.DocumentSaveIcon(), func() {
-		// Capture current Export Tab fields as a profile
-		if u.expHostEntry == nil {
-			return
+	sidebar.OnSelected = func(id int) {
+		p := u.profiles[id]
+		// Populate fields
+		u.expHostEntry.SetText(p.Host)
+		u.expPortEntry.SetText(p.Port)
+		u.expSSHUserEntry.SetText(p.SSHUser)
+		u.expSSHPassEntry.SetText(p.SSHPassword)
+		u.expAuthTypeSelect.SetSelected(string(p.AuthType))
+		u.expKeyPathEntry.SetText(p.AuthKeyPath)
+		u.expDBHostEntry.SetText(p.DBHost)
+		u.expDBPortEntry.SetText(p.DBPort)
+		u.expDBUserEntry.SetText(p.DBUser)
+		u.expDBPassEntry.SetText(p.DBPassword)
+		u.expDBTypeSelect.SetSelected(string(p.DBType))
+		u.expIsDockerCheck.SetChecked(p.IsDocker)
+		u.expContainerIDEntry.SetText(p.ContainerID)
+		u.expTargetDBEntry.SetText(p.TargetDBName)
+		if u.expDestPathLabel != nil {
+			u.expDestPathLabel.SetText(p.Destination)
 		}
+	}
 
+	// New Profile Button
+	addProfileBtn := widget.NewButtonWithIcon("New Profile", theme.ContentAddIcon(), func() {
+		// Create new empty profile
 		nameEntry := widget.NewEntry()
 		nameEntry.SetPlaceHolder("Profile Name")
 
-		dialog.ShowCustomConfirm("Save Profile", "Save", "Cancel", nameEntry, func(b bool) {
+		dialog.ShowCustomConfirm("New Profile", "Create", "Cancel", nameEntry, func(b bool) {
 			if b && nameEntry.Text != "" {
 				newProfile := models.Profile{
-					ID:           fmt.Sprintf("%d", time.Now().Unix()), // Simple ID
-					Name:         nameEntry.Text,
+					ID:   fmt.Sprintf("%d", time.Now().Unix()),
+					Name: nameEntry.Text,
+					// Initialize with current fields or empty? Usually empty or defaults.
+					// For convenience, let's use current fields as 'clone' or defaults?
+					// User asked for "create new", usually implies blank or current state as template.
+					// I'll use current state as template to populate it, but user can clear if they want.
 					Host:         u.expHostEntry.Text,
 					Port:         u.expPortEntry.Text,
 					SSHUser:      u.expSSHUserEntry.Text,
@@ -114,11 +208,14 @@ func (u *UI) Run() {
 					IsDocker:     u.expIsDockerCheck.Checked,
 					ContainerID:  u.expContainerIDEntry.Text,
 					TargetDBName: u.expTargetDBEntry.Text,
+					Destination:  u.expDestPathLabel.Text,
 				}
 
 				u.profiles = append(u.profiles, newProfile)
 				u.saveProfiles()
 				sidebar.Refresh()
+				// Select the new profile
+				sidebar.Select(len(u.profiles) - 1)
 			}
 		}, u.window)
 	})
@@ -155,4 +252,14 @@ func (u *UI) saveProfiles() {
 	}
 	bytes, _ := json.MarshalIndent(config, "", "  ")
 	ioutil.WriteFile("profiles.json", bytes, 0644)
+}
+
+func (u *UI) showLoading(title, message string) *dialog.CustomDialog {
+	content := container.NewVBox(
+		widget.NewLabel(message),
+		widget.NewProgressBarInfinite(),
+	)
+	d := dialog.NewCustom(title, "Cancel", content, u.window)
+	d.Show()
+	return d
 }

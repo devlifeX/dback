@@ -57,22 +57,28 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 
 	// Test Server Connectivity
 	testServerBtn := widget.NewButton("Test Server Connectivity", func() {
-		p := models.Profile{
-			Host:        u.expHostEntry.Text,
-			Port:        u.expPortEntry.Text,
-			SSHUser:     u.expSSHUserEntry.Text,
-			SSHPassword: u.expSSHPassEntry.Text,
-			AuthType:    models.AuthType(u.expAuthTypeSelect.Selected),
-			AuthKeyPath: u.expKeyPathEntry.Text,
-		}
+		loading := u.showLoading("Testing Connection", "Connecting to server...")
 
-		client, err := ssh.NewClient(p)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("Connection Failed: %v", err), w)
-			return
-		}
-		client.Close()
-		dialog.ShowInformation("Success", "SSH Connection Established Successfully!", w)
+		go func() {
+			p := models.Profile{
+				Host:        u.expHostEntry.Text,
+				Port:        u.expPortEntry.Text,
+				SSHUser:     u.expSSHUserEntry.Text,
+				SSHPassword: u.expSSHPassEntry.Text,
+				AuthType:    models.AuthType(u.expAuthTypeSelect.Selected),
+				AuthKeyPath: u.expKeyPathEntry.Text,
+			}
+
+			client, err := ssh.NewClient(p)
+			if err != nil {
+				loading.Hide()
+				dialog.ShowError(fmt.Errorf("Connection Failed: %v", err), w)
+				return
+			}
+			client.Close()
+			loading.Hide()
+			dialog.ShowInformation("Success", "SSH Connection Established Successfully!", w)
+		}()
 	})
 
 	serverGroup := widget.NewCard("Server Connection", "", container.NewVBox(
@@ -117,53 +123,60 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 
 	// Test DB Connectivity
 	testDBBtn := widget.NewButton("Test DB Connectivity", func() {
-		p := models.Profile{
-			Host:        u.expHostEntry.Text,
-			Port:        u.expPortEntry.Text,
-			SSHUser:     u.expSSHUserEntry.Text,
-			SSHPassword: u.expSSHPassEntry.Text,
-			AuthType:    models.AuthType(u.expAuthTypeSelect.Selected),
-			AuthKeyPath: u.expKeyPathEntry.Text,
-			DBHost:      u.expDBHostEntry.Text,
-			DBPort:      u.expDBPortEntry.Text,
-			DBUser:      u.expDBUserEntry.Text,
-			DBPassword:  u.expDBPassEntry.Text,
-			IsDocker:    u.expIsDockerCheck.Checked,
-			ContainerID: u.expContainerIDEntry.Text,
-		}
+		loading := u.showLoading("Testing DB", "Connecting to Database...")
 
-		client, err := ssh.NewClient(p)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("SSH Connection Failed: %v", err), w)
-			return
-		}
-		defer client.Close()
+		go func() {
+			p := models.Profile{
+				Host:        u.expHostEntry.Text,
+				Port:        u.expPortEntry.Text,
+				SSHUser:     u.expSSHUserEntry.Text,
+				SSHPassword: u.expSSHPassEntry.Text,
+				AuthType:    models.AuthType(u.expAuthTypeSelect.Selected),
+				AuthKeyPath: u.expKeyPathEntry.Text,
+				DBHost:      u.expDBHostEntry.Text,
+				DBPort:      u.expDBPortEntry.Text,
+				DBUser:      u.expDBUserEntry.Text,
+				DBPassword:  u.expDBPassEntry.Text,
+				IsDocker:    u.expIsDockerCheck.Checked,
+				ContainerID: u.expContainerIDEntry.Text,
+			}
 
-		// Construct a ping command
-		// mysqladmin -h ... -u ... -p... ping
-		authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
-		var cmd string
-		if p.IsDocker {
-			cmd = fmt.Sprintf("docker exec -i %s mysqladmin %s ping", p.ContainerID, authArgs)
-		} else {
-			hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
-			cmd = fmt.Sprintf("mysqladmin %s %s ping", hostArgs, authArgs)
-		}
+			client, err := ssh.NewClient(p)
+			if err != nil {
+				loading.Hide()
+				dialog.ShowError(fmt.Errorf("SSH Connection Failed: %v", err), w)
+				return
+			}
+			defer client.Close()
 
-		_, session, err := client.RunCommandStream(cmd)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("DB Connection Failed (Cmd Error): %v", err), w)
-			return
-		}
-		defer session.Close()
+			// Construct a ping command
+			authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
+			var cmd string
+			if p.IsDocker {
+				cmd = fmt.Sprintf("docker exec -i %s mysqladmin %s ping", p.ContainerID, authArgs)
+			} else {
+				hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+				cmd = fmt.Sprintf("mysqladmin %s %s ping", hostArgs, authArgs)
+			}
 
-		// Wait for command to finish and check exit code
-		if err := session.Wait(); err != nil {
-			dialog.ShowError(fmt.Errorf("DB Connection Failed (Ping Failed): %v", err), w)
-			return
-		}
+			_, session, err := client.RunCommandStream(cmd)
+			if err != nil {
+				loading.Hide()
+				dialog.ShowError(fmt.Errorf("DB Connection Failed (Cmd Error): %v", err), w)
+				return
+			}
+			defer session.Close()
 
-		dialog.ShowInformation("Success", "Database Connection Successful!", w)
+			// Wait for command to finish
+			if err := session.Wait(); err != nil {
+				loading.Hide()
+				dialog.ShowError(fmt.Errorf("DB Connection Failed (Ping Failed): %v", err), w)
+				return
+			}
+
+			loading.Hide()
+			dialog.ShowInformation("Success", "Database Connection Successful!", w)
+		}()
 	})
 
 	dbGroup := widget.NewCard("Source Database", "", container.NewVBox(
@@ -182,13 +195,12 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	))
 
 	// --- Action ---
-	destPathLabel := widget.NewLabel("No folder selected")
-	var destPath string
+	u.expDestPathLabel = widget.NewLabel("No folder selected")
+
 	selectFolderBtn := widget.NewButton("Select Destination Folder", func() {
 		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err == nil && uri != nil {
-				destPath = uri.Path()
-				destPathLabel.SetText(destPath)
+				u.expDestPathLabel.SetText(uri.Path())
 			}
 		}, w)
 		fd.Show()
@@ -198,10 +210,11 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	statusLabel := widget.NewLabel("Ready")
 
 	startBtn := widget.NewButton("Start Backup & Download", func() {
-		if destPath == "" {
+		if u.expDestPathLabel.Text == "No folder selected" || u.expDestPathLabel.Text == "" {
 			dialog.ShowError(fmt.Errorf("please select a destination folder"), w)
 			return
 		}
+		destPath := u.expDestPathLabel.Text
 
 		p := models.Profile{
 			Host:         u.expHostEntry.Text,
@@ -220,14 +233,14 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}
 
 		go func() {
-			u.log("Export", fmt.Sprintf("Starting export for DB: %s on %s", p.TargetDBName, p.Host), "In Progress", "")
+			u.log("Export", fmt.Sprintf("Starting export for DB: %s on %s", p.TargetDBName, p.Host), "", "In Progress", "")
 			statusLabel.SetText("Connecting...")
 			progressBar.SetValue(0)
 
 			client, err := ssh.NewClient(p)
 			if err != nil {
 				statusLabel.SetText("Connection Failed")
-				u.log("Export", "Connection failed", "Failed", err.Error())
+				u.log("Export", "Connection failed", "", "Failed", err.Error())
 				return
 			}
 			defer client.Close()
@@ -239,7 +252,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			stdout, session, err := client.RunCommandStream(cmd)
 			if err != nil {
 				statusLabel.SetText("Command Failed")
-				u.log("Export", "Command failed", "Failed", err.Error())
+				u.log("Export", "Command failed", "", "Failed", err.Error())
 				return
 			}
 			defer session.Close()
@@ -250,7 +263,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			outFile, err := os.Create(fullPath)
 			if err != nil {
 				statusLabel.SetText("File Creation Failed")
-				u.log("Export", "Local file creation failed", "Failed", err.Error())
+				u.log("Export", "Local file creation failed", "", "Failed", err.Error())
 				return
 			}
 			defer outFile.Close()
@@ -267,22 +280,23 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 				},
 			}
 
-			_, err = io.Copy(outFile, progressR)
+			written, err := io.Copy(outFile, progressR)
 			if err != nil {
 				statusLabel.SetText("Download Failed")
-				u.log("Export", "Stream download failed", "Failed", err.Error())
+				u.log("Export", "Stream download failed", "", "Failed", err.Error())
 				return
 			}
 
 			statusLabel.SetText("Success! Saved to " + fileName)
 			progressBar.SetValue(1.0)
-			u.log("Export", "Export completed successfully", "Success", "")
+			sizeStr := fmt.Sprintf("%.2f MB", float64(written)/1024/1024)
+			u.log("Export", "Export completed successfully", sizeStr, "Success", "")
 		}()
 	})
 	startBtn.Importance = widget.HighImportance
 
 	actionGroup := widget.NewCard("Action", "", container.NewVBox(
-		destPathLabel,
+		u.expDestPathLabel,
 		selectFolderBtn,
 		widget.NewSeparator(),
 		startBtn,

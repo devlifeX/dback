@@ -38,6 +38,7 @@ type Profile struct {
 	IsDocker     bool     `json:"is_docker"`
 	ContainerID  string   `json:"container_id"`
 	TargetDBName string   `json:"target_db_name"`
+	Destination  string   `json:"destination"` // Local folder path
 }
 
 // LogEntry represents a single activity log
@@ -45,7 +46,8 @@ type LogEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 	Action    string    `json:"action"` // e.g., "Export", "Import"
 	Details   string    `json:"details"`
-	Status    string    `json:"status"` // "Success", "Failed", "In Progress"
+	FileSize  string    `json:"file_size"` // E.g., "500 MB"
+	Status    string    `json:"status"`    // "Success", "Failed", "In Progress"
 	Error     string    `json:"error,omitempty"`
 }
 
