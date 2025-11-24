@@ -12,6 +12,14 @@ const (
 	AuthTypeKeyFile  AuthType = "Key File"
 )
 
+// ConnectionType defines how we access the server
+type ConnectionType string
+
+const (
+	ConnectionTypeSSH       ConnectionType = "SSH"
+	ConnectionTypeWordPress ConnectionType = "WordPress"
+)
+
 // DBType defines the database type (MySQL/MariaDB)
 type DBType string
 
@@ -22,23 +30,31 @@ const (
 
 // Profile represents a saved connection profile
 type Profile struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Host         string   `json:"host"`
-	Port         string   `json:"port"`
-	SSHUser      string   `json:"ssh_user"`
-	SSHPassword  string   `json:"ssh_password"` // For password auth
-	AuthType     AuthType `json:"auth_type"`
-	AuthKeyPath  string   `json:"auth_key_path"` // Path to private key
-	DBHost       string   `json:"db_host"`
-	DBPort       string   `json:"db_port"`
-	DBUser       string   `json:"db_user"`
-	DBPassword   string   `json:"db_password"` // In a real app, should be encrypted
-	DBType       DBType   `json:"db_type"`
-	IsDocker     bool     `json:"is_docker"`
-	ContainerID  string   `json:"container_id"`
-	TargetDBName string   `json:"target_db_name"`
-	Destination  string   `json:"destination"` // Local folder path
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Host           string         `json:"host"`
+	Port           string         `json:"port"`
+	ConnectionType ConnectionType `json:"connection_type"` // SSH or WordPress
+
+	// SSH Fields
+	SSHUser     string   `json:"ssh_user"`
+	SSHPassword string   `json:"ssh_password"`
+	AuthType    AuthType `json:"auth_type"`
+	AuthKeyPath string   `json:"auth_key_path"`
+
+	// WordPress Fields
+	WPUrl string `json:"wp_url"` // e.g. https://example.com
+	WPKey string `json:"wp_key"` // The API key shared with plugin
+
+	DBHost       string `json:"db_host"`
+	DBPort       string `json:"db_port"`
+	DBUser       string `json:"db_user"`
+	DBPassword   string `json:"db_password"` // In a real app, should be encrypted
+	DBType       DBType `json:"db_type"`
+	IsDocker     bool   `json:"is_docker"`
+	ContainerID  string `json:"container_id"`
+	TargetDBName string `json:"target_db_name"`
+	Destination  string `json:"destination"` // Local folder path
 }
 
 // LogEntry represents a single activity log

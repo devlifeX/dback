@@ -25,6 +25,10 @@ type UI struct {
 	profiles []models.Profile
 
 	// Export Tab Widgets (exposed for Profile saving)
+	expConnectionTypeSelect *widget.Select
+	expWPUrlEntry           *widget.Entry
+	expWPKeyEntry           *widget.Entry
+
 	expHostEntry        *widget.Entry
 	expPortEntry        *widget.Entry
 	expSSHUserEntry     *widget.Entry
@@ -124,6 +128,10 @@ func (u *UI) Run() {
 					return
 				}
 
+				u.profiles[i].ConnectionType = models.ConnectionType(u.expConnectionTypeSelect.Selected)
+				u.profiles[i].WPUrl = u.expWPUrlEntry.Text
+				u.profiles[i].WPKey = u.expWPKeyEntry.Text
+
 				u.profiles[i].Host = u.expHostEntry.Text
 				u.profiles[i].Port = u.expPortEntry.Text
 				u.profiles[i].SSHUser = u.expSSHUserEntry.Text
@@ -160,6 +168,10 @@ func (u *UI) Run() {
 	sidebar.OnSelected = func(id int) {
 		p := u.profiles[id]
 		// Populate fields
+		u.expConnectionTypeSelect.SetSelected(string(p.ConnectionType))
+		u.expWPUrlEntry.SetText(p.WPUrl)
+		u.expWPKeyEntry.SetText(p.WPKey)
+
 		u.expHostEntry.SetText(p.Host)
 		u.expPortEntry.SetText(p.Port)
 		u.expSSHUserEntry.SetText(p.SSHUser)
@@ -194,6 +206,10 @@ func (u *UI) Run() {
 					// For convenience, let's use current fields as 'clone' or defaults?
 					// User asked for "create new", usually implies blank or current state as template.
 					// I'll use current state as template to populate it, but user can clear if they want.
+					ConnectionType: models.ConnectionType(u.expConnectionTypeSelect.Selected),
+					WPUrl:          u.expWPUrlEntry.Text,
+					WPKey:          u.expWPKeyEntry.Text,
+
 					Host:         u.expHostEntry.Text,
 					Port:         u.expPortEntry.Text,
 					SSHUser:      u.expSSHUserEntry.Text,

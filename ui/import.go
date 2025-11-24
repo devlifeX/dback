@@ -3,6 +3,7 @@ package ui
 import (
 	"dback/backend/db"
 	"dback/backend/ssh"
+	"dback/backend/wordpress"
 	"dback/models"
 	"fmt"
 	"io"
@@ -37,7 +38,10 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	// --- Destination Server ---
 	restoreLocalCheck := widget.NewCheck("Restore to Localhost?", nil)
 
-	// SSH Fields (Hidden if Restore Local is checked)
+	connTypeSelect := widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeWordPress)}, nil)
+	connTypeSelect.SetSelected(string(models.ConnectionTypeSSH))
+
+	// SSH Fields
 	hostEntry := widget.NewEntry()
 	hostEntry.SetPlaceHolder("192.168.1.100")
 	portEntry := widget.NewEntry()
@@ -82,17 +86,52 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	)
 	sshContainer := container.NewVBox(sshForm, sshPasswordEntry, keyAuthContainer)
 
+	// WP Fields
+	wpUrlEntry := widget.NewEntry()
+	wpUrlEntry.SetPlaceHolder("https://example.com")
+	wpKeyEntry := widget.NewEntry()
+	wpKeyEntry.SetPlaceHolder("API Key")
+
+	wpContainer := container.NewVBox(
+		widget.NewForm(
+			widget.NewFormItem("WordPress URL", wpUrlEntry),
+			widget.NewFormItem("API Key", wpKeyEntry),
+		),
+	)
+	wpContainer.Hide()
+
+	// Toggle Logic
 	restoreLocalCheck.OnChanged = func(b bool) {
 		if b {
+			connTypeSelect.Hide()
 			sshContainer.Hide()
+			wpContainer.Hide()
+		} else {
+			connTypeSelect.Show()
+			// Trigger conn type change
+			connTypeSelect.OnChanged(connTypeSelect.Selected)
+		}
+	}
+
+	connTypeSelect.OnChanged = func(s string) {
+		if restoreLocalCheck.Checked {
+			return
+		}
+
+		if s == string(models.ConnectionTypeWordPress) {
+			sshContainer.Hide()
+			wpContainer.Show()
 		} else {
 			sshContainer.Show()
+			wpContainer.Hide()
 		}
 	}
 
 	serverGroup := widget.NewCard("Destination Server", "", container.NewVBox(
 		restoreLocalCheck,
+		widget.NewForm(widget.NewFormItem("Type", connTypeSelect)),
 		sshContainer,
+		wpContainer,
 	))
 
 	// --- Destination Database ---
@@ -141,6 +180,49 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			return
 		}
 
+		connType := models.ConnectionType(connTypeSelect.Selected)
+		isLocal := restoreLocalCheck.Checked
+
+		if !isLocal && connType == models.ConnectionTypeWordPress {
+			// WP Import
+			wpUrl := wpUrlEntry.Text
+			wpKey := wpKeyEntry.Text
+
+			go func() {
+				u.log("Import (WP)", "Starting import to WordPress", "", "In Progress", "")
+				statusLabel.SetText("Uploading & Restoring...")
+				progressBar.SetValue(0)
+
+				wpClient := wordpress.NewClient(wpUrl, wpKey)
+
+				err := wpClient.Import(sourcePath, func(curr int64) {
+					// Upload progress
+					// We can get file size from sourcePath
+					// But NewClient.Import does it internally?
+					// I need to pass total size to callback if I want pct?
+					// client.Import reads file size.
+					// The callback receives 'curr'.
+					// I can read file size here too.
+					f, _ := os.Stat(sourcePath)
+					if f != nil {
+						pct := float64(curr) / float64(f.Size())
+						progressBar.SetValue(pct)
+						statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100))
+					}
+				})
+
+				if err != nil {
+					statusLabel.SetText("Import Failed")
+					u.log("Import (WP)", "WP Import Failed", "", "Failed", err.Error())
+					return
+				}
+
+				statusLabel.SetText("Success! Restore Completed.")
+				u.log("Import (WP)", "Import completed", "", "Success", "")
+			}()
+			return
+		}
+
 		p := models.Profile{
 			Host:         hostEntry.Text,
 			Port:         portEntry.Text,
@@ -156,8 +238,6 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			ContainerID:  containerIDEntry.Text,
 			TargetDBName: targetDBEntry.Text,
 		}
-
-		isLocal := restoreLocalCheck.Checked
 
 		go func() {
 			u.log("Import", fmt.Sprintf("Starting import for DB: %s", p.TargetDBName), "", "In Progress", "")

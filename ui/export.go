@@ -9,6 +9,7 @@ import (
 
 	"dback/backend/db"
 	"dback/backend/ssh"
+	"dback/backend/wordpress"
 	"dback/models"
 
 	"fyne.io/fyne/v2"
@@ -18,7 +19,11 @@ import (
 )
 
 func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
-	// --- Server Connection ---
+	// --- Connection Type ---
+	u.expConnectionTypeSelect = widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeWordPress)}, nil)
+	u.expConnectionTypeSelect.SetSelected(string(models.ConnectionTypeSSH))
+
+	// --- SSH Widgets ---
 	u.expHostEntry = widget.NewEntry()
 	u.expHostEntry.SetPlaceHolder("192.168.1.100")
 	u.expPortEntry = widget.NewEntry()
@@ -55,10 +60,79 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
-	// Test Server Connectivity
-	testServerBtn := widget.NewButton("Test Server Connectivity", func() {
-		loading := u.showLoading("Testing Connection", "Connecting to server...")
+	// --- WordPress Widgets ---
+	u.expWPUrlEntry = widget.NewEntry()
+	u.expWPUrlEntry.SetPlaceHolder("https://example.com")
+	u.expWPKeyEntry = widget.NewEntry()
+	u.expWPKeyEntry.SetPlaceHolder("API Key")
 
+	generatePluginBtn := widget.NewButton("Generate Plugin", func() {
+		// Ask for save location
+		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
+			if err != nil || uri == nil {
+				return
+			}
+
+			key, path, err := wordpress.GeneratePlugin("plugin_template/dback-sync.php", uri.Path())
+			if err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			u.expWPKeyEntry.SetText(key)
+			dialog.ShowInformation("Plugin Generated", fmt.Sprintf("Plugin saved to %s\nAPI Key has been set.", path), w)
+		}, w)
+	})
+
+	// Containers
+	sshContainer := container.NewVBox(
+		widget.NewForm(
+			widget.NewFormItem("Host", u.expHostEntry),
+			widget.NewFormItem("Port", u.expPortEntry),
+			widget.NewFormItem("SSH User", u.expSSHUserEntry),
+			widget.NewFormItem("Auth Type", u.expAuthTypeSelect),
+		),
+		u.expSSHPassEntry,
+		keyAuthContainer,
+	)
+
+	wpContainer := container.NewVBox(
+		widget.NewForm(
+			widget.NewFormItem("WordPress URL", u.expWPUrlEntry),
+			widget.NewFormItem("API Key", u.expWPKeyEntry),
+		),
+		generatePluginBtn,
+	)
+	wpContainer.Hide() // Default hidden
+
+	// Toggle Logic
+	u.expConnectionTypeSelect.OnChanged = func(s string) {
+		if s == string(models.ConnectionTypeWordPress) {
+			sshContainer.Hide()
+			wpContainer.Show()
+		} else {
+			sshContainer.Show()
+			wpContainer.Hide()
+		}
+	}
+
+	// Test Server Connectivity
+	testServerBtn := widget.NewButton("Test Connectivity", func() {
+		connType := models.ConnectionType(u.expConnectionTypeSelect.Selected)
+
+		if connType == models.ConnectionTypeWordPress {
+			// Test WP
+			// Use a simple check (e.g. try export but cancel? or create a ping endpoint?)
+			// Since we don't have a ping endpoint in template, we can't easily check without triggering dump.
+			// But user can check if URL is reachable.
+			// Ideally we add a ping route. I'll skip for now and rely on user trying export.
+			// Or I can update template to add ping.
+			// Let's just assume success if URL is valid for MVP or try a GET.
+			dialog.ShowInformation("Info", "To test, try starting backup. Errors will be reported.", w)
+			return
+		}
+
+		// SSH Test
+		loading := u.showLoading("Testing Connection", "Connecting to server...")
 		go func() {
 			p := models.Profile{
 				Host:        u.expHostEntry.Text,
@@ -81,15 +155,10 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}()
 	})
 
-	serverGroup := widget.NewCard("Server Connection", "", container.NewVBox(
-		widget.NewForm(
-			widget.NewFormItem("Host", u.expHostEntry),
-			widget.NewFormItem("Port", u.expPortEntry),
-			widget.NewFormItem("SSH User", u.expSSHUserEntry),
-			widget.NewFormItem("Auth Type", u.expAuthTypeSelect),
-		),
-		u.expSSHPassEntry,
-		keyAuthContainer,
+	serverGroup := widget.NewCard("Connection", "", container.NewVBox(
+		widget.NewForm(widget.NewFormItem("Type", u.expConnectionTypeSelect)),
+		sshContainer,
+		wpContainer,
 		widget.NewSeparator(),
 		testServerBtn,
 	))
@@ -98,7 +167,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	u.expIsDockerCheck = widget.NewCheck("Is Docker Container?", nil)
 	u.expContainerIDEntry = widget.NewEntry()
 	u.expContainerIDEntry.SetPlaceHolder("mysql_container_name")
-	u.expContainerIDEntry.Disable() // Disabled by default
+	u.expContainerIDEntry.Disable()
 
 	u.expIsDockerCheck.OnChanged = func(b bool) {
 		if b {
@@ -167,7 +236,6 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			}
 			defer session.Close()
 
-			// Wait for command to finish
 			if err := session.Wait(); err != nil {
 				loading.Hide()
 				dialog.ShowError(fmt.Errorf("DB Connection Failed (Ping Failed): %v", err), w)
@@ -179,20 +247,38 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}()
 	})
 
-	dbGroup := widget.NewCard("Source Database", "", container.NewVBox(
+	dbForm := widget.NewForm(
+		widget.NewFormItem("DB Type", u.expDBTypeSelect),
+		widget.NewFormItem("Container Name/ID", u.expContainerIDEntry),
+		widget.NewFormItem("DB Host", u.expDBHostEntry),
+		widget.NewFormItem("DB Port", u.expDBPortEntry),
+		widget.NewFormItem("DB User", u.expDBUserEntry),
+		widget.NewFormItem("DB Password", u.expDBPassEntry),
+		widget.NewFormItem("Target DB Name", u.expTargetDBEntry),
+	)
+
+	// Hide DB Form if WP is selected
+	dbContainer := container.NewVBox(
 		u.expIsDockerCheck,
-		widget.NewForm(
-			widget.NewFormItem("DB Type", u.expDBTypeSelect),
-			widget.NewFormItem("Container Name/ID", u.expContainerIDEntry),
-			widget.NewFormItem("DB Host", u.expDBHostEntry),
-			widget.NewFormItem("DB Port", u.expDBPortEntry),
-			widget.NewFormItem("DB User", u.expDBUserEntry),
-			widget.NewFormItem("DB Password", u.expDBPassEntry),
-			widget.NewFormItem("Target DB Name", u.expTargetDBEntry),
-		),
+		dbForm,
 		widget.NewSeparator(),
 		testDBBtn,
-	))
+	)
+
+	// Hook into connection type change to hide DB fields
+	u.expConnectionTypeSelect.OnChanged = func(s string) {
+		if s == string(models.ConnectionTypeWordPress) {
+			sshContainer.Hide()
+			wpContainer.Show()
+			dbContainer.Hide() // WP plugin handles DB connection internally
+		} else {
+			sshContainer.Show()
+			wpContainer.Hide()
+			dbContainer.Show()
+		}
+	}
+
+	dbGroup := widget.NewCard("Source Database", "", dbContainer)
 
 	// --- Action ---
 	u.expDestPathLabel = widget.NewLabel("No folder selected")
@@ -215,7 +301,44 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			return
 		}
 		destPath := u.expDestPathLabel.Text
+		connType := models.ConnectionType(u.expConnectionTypeSelect.Selected)
 
+		if connType == models.ConnectionTypeWordPress {
+			// WP Flow
+			wpUrl := u.expWPUrlEntry.Text
+			wpKey := u.expWPKeyEntry.Text
+
+			go func() {
+				u.log("Export (WP)", "Starting export from WordPress", "", "In Progress", "")
+				statusLabel.SetText("Requesting Export...")
+				progressBar.SetValue(0) // Indeterminate?
+
+				wpClient := wordpress.NewClient(wpUrl, wpKey)
+
+				fileName := fmt.Sprintf("wp_dump_%s.sql.gz", time.Now().Format("20060102_150405"))
+				fullPath := filepath.Join(destPath, fileName)
+
+				err := wpClient.Export(fullPath, func(curr int64) {
+					// We don't know total usually unless header provided.
+					// Client handles progress callback.
+					// Update UI
+					mb := float64(curr) / 1024 / 1024
+					statusLabel.SetText(fmt.Sprintf("Downloading: %.2f MB", mb))
+				})
+
+				if err != nil {
+					statusLabel.SetText("Export Failed")
+					u.log("Export (WP)", "WP Export Failed", "", "Failed", err.Error())
+					return
+				}
+
+				statusLabel.SetText("Success! Saved to " + fileName)
+				u.log("Export (WP)", "Export completed", "", "Success", "")
+			}()
+			return
+		}
+
+		// SSH Flow
 		p := models.Profile{
 			Host:         u.expHostEntry.Text,
 			Port:         u.expPortEntry.Text,
