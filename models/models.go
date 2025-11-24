@@ -22,21 +22,22 @@ const (
 
 // Profile represents a saved connection profile
 type Profile struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Host           string   `json:"host"`
-	Port           string   `json:"port"`
-	SSHUser        string   `json:"ssh_user"`
-	SSHPassword    string   `json:"ssh_password"` // For password auth
-	AuthType       AuthType `json:"auth_type"`
-	AuthKeyPath    string   `json:"auth_key_path"` // Path to private key
-	DBHost         string   `json:"db_host"`
-	DBPort         string   `json:"db_port"`
-	DBUser         string   `json:"db_user"`
-	DBPassword     string   `json:"db_password"` // In a real app, should be encrypted
-	IsDocker       bool     `json:"is_docker"`
-	ContainerID    string   `json:"container_id"`
-	TargetDBName   string   `json:"target_db_name"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Host         string   `json:"host"`
+	Port         string   `json:"port"`
+	SSHUser      string   `json:"ssh_user"`
+	SSHPassword  string   `json:"ssh_password"` // For password auth
+	AuthType     AuthType `json:"auth_type"`
+	AuthKeyPath  string   `json:"auth_key_path"` // Path to private key
+	DBHost       string   `json:"db_host"`
+	DBPort       string   `json:"db_port"`
+	DBUser       string   `json:"db_user"`
+	DBPassword   string   `json:"db_password"` // In a real app, should be encrypted
+	DBType       DBType   `json:"db_type"`
+	IsDocker     bool     `json:"is_docker"`
+	ContainerID  string   `json:"container_id"`
+	TargetDBName string   `json:"target_db_name"`
 }
 
 // LogEntry represents a single activity log

@@ -5,7 +5,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
-	"os"
 	"time"
 
 	"dback/models"
@@ -21,20 +20,20 @@ type Client struct {
 // NewClient creates a new SSH client based on the profile
 func NewClient(p models.Profile) (*Client, error) {
 	config := &ssh.ClientConfig{
-		User: p.SSHUser,
+		User:            p.SSHUser,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For simplicity; in prod, verify host keys
 		Timeout:         10 * time.Second,
 	}
 
 	if p.AuthType == models.AuthTypePassword {
-		// Need to prompt or have password in profile? 
+		// Need to prompt or have password in profile?
 		// The requirements imply saving credentials, so we assume it's in the profile or user prompts?
 		// The Profile struct in models.go has DBPassword but not SSHPassword.
-		// Wait, requirement says: "Auth method path, DB creds". 
+		// Wait, requirement says: "Auth method path, DB creds".
 		// Usually SSH password isn't saved for security or is keyed in.
 		// For this MVP, let's assume we might need to add SSHPassword to Profile or prompt.
 		// Revisiting requirements: "Auth Type selector (Password vs. Key File entry)."
-		// If "Password" is selected, there should be a password field. 
+		// If "Password" is selected, there should be a password field.
 		// I'll assume for now we might have an SSHPassword field or similar.
 		// Let's check models.go... It's missing SSHPassword. I should probably add it or assume KeyFile is preferred.
 		// But "Password authentication" is a requirement.
@@ -94,7 +93,7 @@ func (c *Client) RunCommandStream(cmd string) (io.Reader, *ssh.Session, error) {
 
 	// We also need to capture stderr to report errors
 	// For simplicity, we might log it or pipe it elsewhere
-	// stderr, _ := session.StderrPipe() 
+	// stderr, _ := session.StderrPipe()
 
 	if err := session.Start(cmd); err != nil {
 		session.Close()

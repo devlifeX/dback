@@ -25,13 +25,13 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	u.expPortEntry.SetText("22")
 	u.expSSHUserEntry = widget.NewEntry()
 	u.expSSHUserEntry.SetPlaceHolder("root")
-	
+
 	u.expAuthTypeSelect = widget.NewSelect([]string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}, nil)
 	u.expAuthTypeSelect.SetSelected(string(models.AuthTypePassword))
-	
+
 	u.expSSHPassEntry = widget.NewPasswordEntry()
 	u.expSSHPassEntry.SetPlaceHolder("SSH Password")
-	
+
 	u.expKeyPathEntry = widget.NewEntry()
 	u.expKeyPathEntry.SetPlaceHolder("/path/to/private/key")
 	keyPathBtn := widget.NewButton("Select Key", func() {
@@ -43,7 +43,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		fd.Show()
 	})
 	keyAuthContainer := container.NewBorder(nil, nil, nil, keyPathBtn, u.expKeyPathEntry)
-	keyAuthContainer.Hide() 
+	keyAuthContainer.Hide()
 
 	u.expAuthTypeSelect.OnChanged = func(s string) {
 		if s == string(models.AuthTypePassword) {
@@ -55,6 +55,26 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
+	// Test Server Connectivity
+	testServerBtn := widget.NewButton("Test Server Connectivity", func() {
+		p := models.Profile{
+			Host:        u.expHostEntry.Text,
+			Port:        u.expPortEntry.Text,
+			SSHUser:     u.expSSHUserEntry.Text,
+			SSHPassword: u.expSSHPassEntry.Text,
+			AuthType:    models.AuthType(u.expAuthTypeSelect.Selected),
+			AuthKeyPath: u.expKeyPathEntry.Text,
+		}
+
+		client, err := ssh.NewClient(p)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Connection Failed: %v", err), w)
+			return
+		}
+		client.Close()
+		dialog.ShowInformation("Success", "SSH Connection Established Successfully!", w)
+	})
+
 	serverGroup := widget.NewCard("Server Connection", "", container.NewVBox(
 		widget.NewForm(
 			widget.NewFormItem("Host", u.expHostEntry),
@@ -64,6 +84,8 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		),
 		u.expSSHPassEntry,
 		keyAuthContainer,
+		widget.NewSeparator(),
+		testServerBtn,
 	))
 
 	// --- Source Database ---
@@ -71,7 +93,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	u.expContainerIDEntry = widget.NewEntry()
 	u.expContainerIDEntry.SetPlaceHolder("mysql_container_name")
 	u.expContainerIDEntry.Disable() // Disabled by default
-	
+
 	u.expIsDockerCheck.OnChanged = func(b bool) {
 		if b {
 			u.expContainerIDEntry.Enable()
@@ -79,6 +101,9 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			u.expContainerIDEntry.Disable()
 		}
 	}
+
+	u.expDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB)}, nil)
+	u.expDBTypeSelect.SetSelected(string(models.DBTypeMySQL))
 
 	u.expDBHostEntry = widget.NewEntry()
 	u.expDBHostEntry.SetText("127.0.0.1")
@@ -90,9 +115,61 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	u.expTargetDBEntry = widget.NewEntry()
 	u.expTargetDBEntry.SetPlaceHolder("my_database")
 
+	// Test DB Connectivity
+	testDBBtn := widget.NewButton("Test DB Connectivity", func() {
+		p := models.Profile{
+			Host:        u.expHostEntry.Text,
+			Port:        u.expPortEntry.Text,
+			SSHUser:     u.expSSHUserEntry.Text,
+			SSHPassword: u.expSSHPassEntry.Text,
+			AuthType:    models.AuthType(u.expAuthTypeSelect.Selected),
+			AuthKeyPath: u.expKeyPathEntry.Text,
+			DBHost:      u.expDBHostEntry.Text,
+			DBPort:      u.expDBPortEntry.Text,
+			DBUser:      u.expDBUserEntry.Text,
+			DBPassword:  u.expDBPassEntry.Text,
+			IsDocker:    u.expIsDockerCheck.Checked,
+			ContainerID: u.expContainerIDEntry.Text,
+		}
+
+		client, err := ssh.NewClient(p)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("SSH Connection Failed: %v", err), w)
+			return
+		}
+		defer client.Close()
+
+		// Construct a ping command
+		// mysqladmin -h ... -u ... -p... ping
+		authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
+		var cmd string
+		if p.IsDocker {
+			cmd = fmt.Sprintf("docker exec -i %s mysqladmin %s ping", p.ContainerID, authArgs)
+		} else {
+			hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+			cmd = fmt.Sprintf("mysqladmin %s %s ping", hostArgs, authArgs)
+		}
+
+		_, session, err := client.RunCommandStream(cmd)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("DB Connection Failed (Cmd Error): %v", err), w)
+			return
+		}
+		defer session.Close()
+
+		// Wait for command to finish and check exit code
+		if err := session.Wait(); err != nil {
+			dialog.ShowError(fmt.Errorf("DB Connection Failed (Ping Failed): %v", err), w)
+			return
+		}
+
+		dialog.ShowInformation("Success", "Database Connection Successful!", w)
+	})
+
 	dbGroup := widget.NewCard("Source Database", "", container.NewVBox(
 		u.expIsDockerCheck,
 		widget.NewForm(
+			widget.NewFormItem("DB Type", u.expDBTypeSelect),
 			widget.NewFormItem("Container Name/ID", u.expContainerIDEntry),
 			widget.NewFormItem("DB Host", u.expDBHostEntry),
 			widget.NewFormItem("DB Port", u.expDBPortEntry),
@@ -100,6 +177,8 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			widget.NewFormItem("DB Password", u.expDBPassEntry),
 			widget.NewFormItem("Target DB Name", u.expTargetDBEntry),
 		),
+		widget.NewSeparator(),
+		testDBBtn,
 	))
 
 	// --- Action ---
@@ -181,7 +260,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 				Callback: func(current int64, total int64) {
 					mb := float64(current) / 1024 / 1024
 					statusLabel.SetText(fmt.Sprintf("Downloading: %.2f MB", mb))
-					progressBar.SetValue(progressBar.Value + 0.01) 
+					progressBar.SetValue(progressBar.Value + 0.01)
 					if progressBar.Value >= 1.0 {
 						progressBar.SetValue(0)
 					}

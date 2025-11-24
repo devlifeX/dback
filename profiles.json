@@ -1,0 +1,40 @@
+{
+  "profiles": [
+    {
+      "id": "1763987012",
+      "name": "parned",
+      "host": "",
+      "port": "22",
+      "ssh_user": "",
+      "ssh_password": "",
+      "auth_type": "Password",
+      "auth_key_path": "",
+      "db_host": "127.0.0.1",
+      "db_port": "3306",
+      "db_user": "",
+      "db_password": "",
+      "db_type": "",
+      "is_docker": false,
+      "container_id": "",
+      "target_db_name": ""
+    },
+    {
+      "id": "1763987565",
+      "name": "parned",
+      "host": "91.107.143.32",
+      "port": "22",
+      "ssh_user": "root",
+      "ssh_password": "",
+      "auth_type": "Key File",
+      "auth_key_path": "/home/devlife/.ssh/id_rsa",
+      "db_host": "127.0.0.1",
+      "db_port": "3306",
+      "db_user": "root",
+      "db_password": "rootA8kfx\u0026*733Yos#7nTd79c",
+      "db_type": "MySQL",
+      "is_docker": true,
+      "container_id": "db",
+      "target_db_name": "wordpress"
+    }
+  ]
+}

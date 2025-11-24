@@ -47,3 +47,10 @@ A cross-platform desktop GUI application built with Go and Fyne v2 for managing 
 
 ### Activity Logs
 View a history of all operations.
+
+## FAQ
+
+### Why does this app require X11/GL libraries?
+This application is built using **Fyne**, a high-performance GUI toolkit for Go. Fyne uses **OpenGL** to render its graphics (GPU acceleration).
+On Linux, interfacing with OpenGL and creating windows requires the **X11** and **OpenGL** development headers (C libraries).
+These are standard requirements for building almost any native GUI application on Linux from source.

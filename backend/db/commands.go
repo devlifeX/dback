@@ -43,8 +43,6 @@ func BuildExportCommand(p models.Profile) string {
 // If we standardize on sending a compressed stream to the server to save bandwidth,
 // then the server command should always expect gzip input.
 func BuildImportCommand(p models.Profile) string {
-	var cmd string
-
 	// Basic mysql arguments
 	authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
 	hostArgs := ""

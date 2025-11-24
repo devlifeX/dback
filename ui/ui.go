@@ -11,6 +11,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -24,19 +25,20 @@ type UI struct {
 	profiles []models.Profile
 
 	// Export Tab Widgets (exposed for Profile saving)
-	expHostEntry       *widget.Entry
-	expPortEntry       *widget.Entry
-	expSSHUserEntry    *widget.Entry
-	expSSHPassEntry    *widget.Entry
-	expAuthTypeSelect  *widget.Select
-	expKeyPathEntry    *widget.Entry
-	expDBHostEntry     *widget.Entry
-	expDBPortEntry     *widget.Entry
-	expDBUserEntry     *widget.Entry
-	expDBPassEntry     *widget.Entry
-	expIsDockerCheck   *widget.Check
+	expHostEntry        *widget.Entry
+	expPortEntry        *widget.Entry
+	expSSHUserEntry     *widget.Entry
+	expSSHPassEntry     *widget.Entry
+	expAuthTypeSelect   *widget.Select
+	expKeyPathEntry     *widget.Entry
+	expDBHostEntry      *widget.Entry
+	expDBPortEntry      *widget.Entry
+	expDBUserEntry      *widget.Entry
+	expDBPassEntry      *widget.Entry
+	expDBTypeSelect     *widget.Select
+	expIsDockerCheck    *widget.Check
 	expContainerIDEntry *widget.Entry
-	expTargetDBEntry   *widget.Entry
+	expTargetDBEntry    *widget.Entry
 }
 
 // NewUI creates a new UI instance
@@ -63,14 +65,14 @@ func (u *UI) Run() {
 	tabs := container.NewAppTabs(exportTab, importTab, logsTab)
 
 	// Sidebar (Saved Profiles)
-	// For now, a simple list. Clicking a profile should populate fields in active tab? 
-	// Or we need a way to select "Active Profile". 
+	// For now, a simple list. Clicking a profile should populate fields in active tab?
+	// Or we need a way to select "Active Profile".
 	// The prompt says: "The application main window should have a sidebar on the left for 'Saved Profiles'".
 	// Implementing full profile selection/population logic might be complex cross-tab.
 	// I'll implement a simple list. To make it functional, I'd need to update the form fields.
 	// Since form fields are local to create*Tab functions, I might need to refactor or expose them.
 	// For this MVP, I will just display the sidebar.
-	
+
 	sidebar := widget.NewList(
 		func() int {
 			return len(u.profiles)
@@ -82,17 +84,17 @@ func (u *UI) Run() {
 			o.(*widget.Label).SetText(u.profiles[i].Name)
 		},
 	)
-	
+
 	// Add Profile Button
 	addProfileBtn := widget.NewButtonWithIcon("Save Profile", theme.DocumentSaveIcon(), func() {
 		// Capture current Export Tab fields as a profile
 		if u.expHostEntry == nil {
 			return
 		}
-		
+
 		nameEntry := widget.NewEntry()
 		nameEntry.SetPlaceHolder("Profile Name")
-		
+
 		dialog.ShowCustomConfirm("Save Profile", "Save", "Cancel", nameEntry, func(b bool) {
 			if b && nameEntry.Text != "" {
 				newProfile := models.Profile{
@@ -108,11 +110,12 @@ func (u *UI) Run() {
 					DBPort:       u.expDBPortEntry.Text,
 					DBUser:       u.expDBUserEntry.Text,
 					DBPassword:   u.expDBPassEntry.Text,
+					DBType:       models.DBType(u.expDBTypeSelect.Selected),
 					IsDocker:     u.expIsDockerCheck.Checked,
 					ContainerID:  u.expContainerIDEntry.Text,
 					TargetDBName: u.expTargetDBEntry.Text,
 				}
-				
+
 				u.profiles = append(u.profiles, newProfile)
 				u.saveProfiles()
 				sidebar.Refresh()
@@ -121,7 +124,7 @@ func (u *UI) Run() {
 	})
 
 	sidebarContainer := container.NewBorder(nil, addProfileBtn, nil, nil, sidebar)
-	
+
 	split := container.NewHSplit(
 		container.NewBorder(widget.NewLabel("Saved Profiles"), nil, nil, nil, sidebarContainer),
 		tabs,
