@@ -1,56 +1,67 @@
 # DB Sync Manager
 
-A cross-platform desktop GUI application built with Go and Fyne v2 for managing database synchronizations. It allows you to export large databases from remote Linux servers via SSH and restore them to local or remote servers, supporting both native MySQL/MariaDB and Dockerized instances.
+A cross-platform desktop GUI application built with Go and Fyne v2 for managing database synchronizations. It allows you to export large databases from remote Linux servers via SSH, WordPress sites, or Docker containers, and restore them efficiently.
 
 ## Features
 
-- **Export (Backup):** Connect to remote servers via SSH, dump large databases (5GB+ supported via streaming), compress (gzip), and download locally.
-- **Import (Restore):** Upload local SQL dumps (gzip supported) to remote servers or restore locally, handling large files efficiently.
-- **Docker Support:** Seamlessly handles databases running inside Docker containers vs native OS processes.
-- **Profile Management:** Save and load connection profiles for quick access.
-- **Activity Logs:** Track all operations with timestamps and status.
-- **Cross-Platform:** Runs on Windows, macOS, and Linux.
+### 🔌 Connectivity
+*   **SSH:** Connect to any remote Linux server using Password or Private Key authentication.
+*   **WordPress:** Direct integration with WordPress sites via a secure, auto-generated plugin (no SSH required).
+*   **Docker:** Seamless support for databases running inside Docker containers.
+*   **Databases:** Support for **MySQL** and **MariaDB**.
 
-## Requirements
+### 🚀 Core Functions
+*   **Export (Backup):** Stream large database dumps (5GB+) with on-the-fly GZIP compression.
+*   **Import (Restore):** Stream uploads and restores to remote servers or local instances.
+*   **Profile Management:**
+    *   Save connection details for quick access.
+    *   **Smart History:** Remembers your last destination folder per profile.
+    *   Create, Update, and **Delete** profiles easily.
 
-- Go 1.21 or later
-- C compiler (gcc) for Fyne (requires CGO)
-- On Linux: `libgl1-mesa-dev` and `xorg-dev` packages (for Fyne)
+### 📊 Activity & History
+*   **History Tab:** A data grid view of all past operations with timestamps, status, and file sizes.
+*   **Persistence:** All logs are saved locally to `logs.json`.
 
-## Installation
+### 🛠️ Diagnostics
+*   **Test Connectivity:** Built-in tools to verify Server (SSH/HTTP) and Database connections before running heavy operations.
 
-1. Clone the repository.
-2. Install dependencies:
-   ```bash
-   go mod tidy
-   ```
-3. Run the application:
-   ```bash
-   go run main.go
-   ```
+## Installation & Running
 
-## Usage
+### Option 1: Run via Docker (Recommended)
+Avoid system dependency issues (missing X11/GL headers) by running the app in a container.
 
-### Export Tab
-1. Enter SSH Connection details (Host, Port, User, Password/Key).
-2. Configure Source Database details.
-   - Check "Is Docker Container?" if applicable and provide Container Name/ID.
-3. Select a Destination Folder.
-4. Click "Start Backup & Download".
+```bash
+./docker-run.sh
+```
+*The app will appear on your desktop via X11 forwarding.*
 
-### Import Tab
-1. Select a local `.sql.gz` (or `.sql`) file.
-2. Configure Destination Server.
-   - Uncheck "Restore to Localhost?" to stream to a remote server.
-3. Configure Destination Database details.
-4. Click "Start Upload & Restore".
+### Option 2: Run Locally (Linux)
+Requires `gcc`, `libgl1-mesa-dev`, and `xorg-dev`.
 
-### Activity Logs
-View a history of all operations.
+```bash
+sudo apt-get install libgl1-mesa-dev xorg-dev
+./run.sh
+```
+
+### Option 3: Build Binaries
+To generate standalone executables for Linux and Windows:
+
+```bash
+./build.sh
+```
+*Artifacts will be created as `dback-linux` and `dback-windows.exe`.*
+
+## WordPress Integration Guide
+
+1.  Open the **Export** tab.
+2.  Select **Type: WordPress**.
+3.  Click **Generate Plugin** and save the `dback-sync-plugin.zip`.
+4.  **Install** this plugin on your WordPress site (Plugins > Add New > Upload).
+5.  Copy your WordPress **URL** into the app.
+6.  The **API Key** is automatically filled (it matches the key embedded in the plugin).
+7.  Click **Test Connectivity** or **Start Backup**.
 
 ## FAQ
 
 ### Why does this app require X11/GL libraries?
-This application is built using **Fyne**, a high-performance GUI toolkit for Go. Fyne uses **OpenGL** to render its graphics (GPU acceleration).
-On Linux, interfacing with OpenGL and creating windows requires the **X11** and **OpenGL** development headers (C libraries).
-These are standard requirements for building almost any native GUI application on Linux from source.
+This application is built using **Fyne**, a high-performance GUI toolkit for Go. Fyne uses **OpenGL** to render its graphics (GPU acceleration). On Linux, interfacing with OpenGL and creating windows requires the **X11** and **OpenGL** development headers. Using the Docker method (`./docker-run.sh`) bypasses this requirement on your host machine.
