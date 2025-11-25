@@ -39,12 +39,24 @@ This script handles dependency checks and runs the application.
 *Note: You may need to install `gcc`, `libgl1-mesa-dev`, and `xorg-dev` if prompted.*
 
 ### Build Binaries
-To generate standalone executables for Linux and Windows:
+To generate standalone executables for Linux, Windows, and macOS:
 
 ```bash
 ./build.sh
 ```
-*Artifacts will be created as `dback-linux` and `dback-windows.exe`.*
+*Artifacts will be created as `dback-linux`, `dback-windows.exe`, and `dback-macos`.*
+
+## Build Requirements
+
+To build the application from source, you need **Go 1.21+** and the following platform-specific dependencies:
+
+| Platform | Requirements |
+| :--- | :--- |
+| **Linux** | `gcc`, `libgl1-mesa-dev`, `xorg-dev` |
+| **Windows** | `gcc` (MinGW-w64 or TDM-GCC) |
+| **macOS** | Xcode Command Line Tools (`xcode-select --install`) |
+| **Cross-Compile (Linux -> Windows)** | `mingw-w64` (`gcc-mingw-w64`) |
+| **Cross-Compile (Linux -> macOS)** | `zig` or `osxcross` |
 
 ### Docker Alternative
 If you have issues with system dependencies, you can run the app in a container:

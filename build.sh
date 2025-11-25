@@ -24,3 +24,20 @@ else
     echo "To build for Windows on Linux, install 'mingw-w64':"
     echo "  sudo apt-get install mingw-w64"
 fi
+
+echo ""
+echo "Building for macOS..."
+# Check for cross-compiler (Zig is best for macOS CGO cross-compilation)
+if command -v zig &> /dev/null; then
+    echo "Using Zig for macOS cross-compilation..."
+    CC="zig cc -target x86_64-macos" CXX="zig c++ -target x86_64-macos" CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o dback-macos main.go
+    if [ $? -eq 0 ]; then
+        echo "macOS build successful: ./dback-macos"
+    else
+        echo "macOS build failed."
+    fi
+else
+    echo "Cross-compiler for macOS not found (Zig recommended)."
+    echo "To build for macOS on Linux, install 'zig' or 'osxcross'."
+    echo "Example with Zig: snap install zig --classic"
+fi
