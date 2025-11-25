@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"dback/backend/db"
@@ -177,7 +178,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
-	u.expDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB)}, nil)
+	u.expDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL)}, nil)
 	u.expDBTypeSelect.SetSelected(string(models.DBTypeMySQL))
 
 	u.expDBHostEntry = widget.NewEntry()
@@ -206,6 +207,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 				DBPort:      u.expDBPortEntry.Text,
 				DBUser:      u.expDBUserEntry.Text,
 				DBPassword:  u.expDBPassEntry.Text,
+				DBType:      models.DBType(u.expDBTypeSelect.Selected),
 				IsDocker:    u.expIsDockerCheck.Checked,
 				ContainerID: u.expContainerIDEntry.Text,
 			}
@@ -218,14 +220,29 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			}
 			defer client.Close()
 
-			// Construct a ping command
-			authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
+			// Construct a check command
 			var cmd string
-			if p.IsDocker {
-				cmd = fmt.Sprintf("docker exec -i %s mysqladmin %s ping", p.ContainerID, authArgs)
+			if p.DBType == models.DBTypePostgreSQL {
+				// Postgres Check
+				// Use pg_isready
+				// PGPASSWORD='pass' pg_isready -h host -p port -U user
+				authEnv := fmt.Sprintf("PGPASSWORD='%s'", p.DBPassword)
+				if p.IsDocker {
+					// docker exec -e PGPASSWORD=... container pg_isready -U user
+					cmd = fmt.Sprintf("docker exec -e %s %s pg_isready -U %s", authEnv, p.ContainerID, p.DBUser)
+				} else {
+					hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
+					cmd = fmt.Sprintf("%s pg_isready %s -U %s", authEnv, hostArgs, p.DBUser)
+				}
 			} else {
-				hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
-				cmd = fmt.Sprintf("mysqladmin %s %s ping", hostArgs, authArgs)
+				// MySQL/MariaDB Check
+				authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
+				if p.IsDocker {
+					cmd = fmt.Sprintf("docker exec -i %s mysqladmin %s ping", p.ContainerID, authArgs)
+				} else {
+					hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+					cmd = fmt.Sprintf("mysqladmin %s %s ping", hostArgs, authArgs)
+				}
 			}
 
 			_, session, err := client.RunCommandStream(cmd)
@@ -340,19 +357,20 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 
 		// SSH Flow
 		p := models.Profile{
-			Host:         u.expHostEntry.Text,
-			Port:         u.expPortEntry.Text,
-			SSHUser:      u.expSSHUserEntry.Text,
-			SSHPassword:  u.expSSHPassEntry.Text,
+			Host:         strings.TrimSpace(u.expHostEntry.Text),
+			Port:         strings.TrimSpace(u.expPortEntry.Text),
+			SSHUser:      strings.TrimSpace(u.expSSHUserEntry.Text),
+			SSHPassword:  strings.TrimSpace(u.expSSHPassEntry.Text),
 			AuthType:     models.AuthType(u.expAuthTypeSelect.Selected),
-			AuthKeyPath:  u.expKeyPathEntry.Text,
-			DBHost:       u.expDBHostEntry.Text,
-			DBPort:       u.expDBPortEntry.Text,
-			DBUser:       u.expDBUserEntry.Text,
-			DBPassword:   u.expDBPassEntry.Text,
+			AuthKeyPath:  strings.TrimSpace(u.expKeyPathEntry.Text),
+			DBHost:       strings.TrimSpace(u.expDBHostEntry.Text),
+			DBPort:       strings.TrimSpace(u.expDBPortEntry.Text),
+			DBUser:       strings.TrimSpace(u.expDBUserEntry.Text),
+			DBPassword:   strings.TrimSpace(u.expDBPassEntry.Text),
+			DBType:       models.DBType(u.expDBTypeSelect.Selected),
 			IsDocker:     u.expIsDockerCheck.Checked,
-			ContainerID:  u.expContainerIDEntry.Text,
-			TargetDBName: u.expTargetDBEntry.Text,
+			ContainerID:  strings.TrimSpace(u.expContainerIDEntry.Text),
+			TargetDBName: strings.TrimSpace(u.expTargetDBEntry.Text),
 		}
 
 		go func() {

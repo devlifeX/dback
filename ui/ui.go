@@ -83,26 +83,14 @@ func (u *UI) Run() {
 		func() fyne.CanvasObject {
 			label := widget.NewLabel("Profile Name")
 			saveBtn := widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), nil)
+			duplicateBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), nil)
+			renameBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), nil) // Pencil/Edit icon
 			deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
-			buttons := container.NewHBox(saveBtn, deleteBtn)
+			buttons := container.NewHBox(saveBtn, duplicateBtn, renameBtn, deleteBtn)
 			return container.NewBorder(nil, nil, nil, buttons, label)
 		},
 		func(i int, o fyne.CanvasObject) {
-			// The object is the container created above
-			// Border container objects are usually: [center, top, bottom, left, right] order in Objects slice?
-			// Actually, it's better not to rely on index if possible, but Fyne implementation details vary.
-			// Let's look at NewBorder implementation or behavior.
-			// Usually Objects[0] is the main content (label) if it's Center.
-			// Wait, container.NewBorder returns a container with objects.
 			c := o.(*fyne.Container)
-
-			// We know the structure: Border(nil, nil, nil, HBox(Save, Delete), Label)
-			// Label is likely Center. HBox is Right.
-			// Accessing objects by type/position is risky if we don't know internal order.
-			// However, we constructed it.
-			// Let's iterate to find them or assume order.
-			// Typically Center is first or last.
-			// Safe way:
 			var label *widget.Label
 			var btnContainer *fyne.Container
 
@@ -115,7 +103,9 @@ func (u *UI) Run() {
 			}
 
 			saveBtn := btnContainer.Objects[0].(*widget.Button)
-			deleteBtn := btnContainer.Objects[1].(*widget.Button)
+			duplicateBtn := btnContainer.Objects[1].(*widget.Button)
+			renameBtn := btnContainer.Objects[2].(*widget.Button)
+			deleteBtn := btnContainer.Objects[3].(*widget.Button)
 
 			p := u.profiles[i]
 			label.SetText(p.Name)
@@ -150,6 +140,30 @@ func (u *UI) Run() {
 
 				u.saveProfiles()
 				dialog.ShowInformation("Saved", fmt.Sprintf("Profile '%s' updated", p.Name), u.window)
+			}
+
+			duplicateBtn.OnTapped = func() {
+				// Clone profile
+				newProfile := p
+				newProfile.ID = fmt.Sprintf("%d", time.Now().Unix())
+				newProfile.Name = p.Name + " (Copy)"
+
+				u.profiles = append(u.profiles, newProfile)
+				u.saveProfiles()
+				sidebar.Refresh()
+				sidebar.Select(len(u.profiles) - 1)
+			}
+
+			renameBtn.OnTapped = func() {
+				entry := widget.NewEntry()
+				entry.SetText(p.Name)
+				dialog.ShowCustomConfirm("Rename Profile", "Rename", "Cancel", entry, func(b bool) {
+					if b && entry.Text != "" {
+						u.profiles[i].Name = entry.Text
+						u.saveProfiles()
+						sidebar.Refresh()
+					}
+				}, u.window)
 			}
 
 			deleteBtn.OnTapped = func() {

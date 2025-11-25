@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -148,6 +149,9 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
+	dbTypeSelect := widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL)}, nil)
+	dbTypeSelect.SetSelected(string(models.DBTypeMySQL))
+
 	dbHostEntry := widget.NewEntry()
 	dbHostEntry.SetText("127.0.0.1")
 	dbPortEntry := widget.NewEntry()
@@ -161,6 +165,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	dbGroup := widget.NewCard("Destination Database", "", container.NewVBox(
 		isDockerCheck,
 		widget.NewForm(
+			widget.NewFormItem("DB Type", dbTypeSelect),
 			widget.NewFormItem("Container Name/ID", containerIDEntry),
 			widget.NewFormItem("DB Host", dbHostEntry),
 			widget.NewFormItem("DB Port", dbPortEntry),
@@ -224,19 +229,20 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}
 
 		p := models.Profile{
-			Host:         hostEntry.Text,
-			Port:         portEntry.Text,
-			SSHUser:      sshUserEntry.Text,
-			SSHPassword:  sshPasswordEntry.Text,
+			Host:         strings.TrimSpace(hostEntry.Text),
+			Port:         strings.TrimSpace(portEntry.Text),
+			SSHUser:      strings.TrimSpace(sshUserEntry.Text),
+			SSHPassword:  strings.TrimSpace(sshPasswordEntry.Text),
 			AuthType:     models.AuthType(authTypeSelect.Selected),
-			AuthKeyPath:  keyPathEntry.Text,
-			DBHost:       dbHostEntry.Text,
-			DBPort:       dbPortEntry.Text,
-			DBUser:       dbUserEntry.Text,
-			DBPassword:   dbPasswordEntry.Text,
+			AuthKeyPath:  strings.TrimSpace(keyPathEntry.Text),
+			DBHost:       strings.TrimSpace(dbHostEntry.Text),
+			DBPort:       strings.TrimSpace(dbPortEntry.Text),
+			DBUser:       strings.TrimSpace(dbUserEntry.Text),
+			DBPassword:   strings.TrimSpace(dbPasswordEntry.Text),
+			DBType:       models.DBType(dbTypeSelect.Selected),
 			IsDocker:     isDockerCheck.Checked,
-			ContainerID:  containerIDEntry.Text,
-			TargetDBName: targetDBEntry.Text,
+			ContainerID:  strings.TrimSpace(containerIDEntry.Text),
+			TargetDBName: strings.TrimSpace(targetDBEntry.Text),
 		}
 
 		go func() {

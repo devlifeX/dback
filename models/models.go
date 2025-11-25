@@ -24,8 +24,9 @@ const (
 type DBType string
 
 const (
-	DBTypeMySQL   DBType = "MySQL"
-	DBTypeMariaDB DBType = "MariaDB"
+	DBTypeMySQL      DBType = "MySQL"
+	DBTypeMariaDB    DBType = "MariaDB"
+	DBTypePostgreSQL DBType = "PostgreSQL"
 )
 
 // Profile represents a saved connection profile
