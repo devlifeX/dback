@@ -128,11 +128,50 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
+	// Test Server Connectivity (Import)
+	testServerBtn := widget.NewButton("Test Connectivity", func() {
+		connType := models.ConnectionType(connTypeSelect.Selected)
+		if restoreLocalCheck.Checked {
+			dialog.ShowInformation("Info", "Localhost selected. No connection test needed.", w)
+			return
+		}
+
+		if connType == models.ConnectionTypeWordPress {
+			dialog.ShowInformation("Info", "To test WP, try starting upload.", w)
+			return
+		}
+
+		// SSH Test
+		loading := u.showLoading("Testing Connection", "Connecting to server...")
+		go func() {
+			p := models.Profile{
+				Host:        strings.TrimSpace(hostEntry.Text),
+				Port:        strings.TrimSpace(portEntry.Text),
+				SSHUser:     strings.TrimSpace(sshUserEntry.Text),
+				SSHPassword: strings.TrimSpace(sshPasswordEntry.Text),
+				AuthType:    models.AuthType(authTypeSelect.Selected),
+				AuthKeyPath: strings.TrimSpace(keyPathEntry.Text),
+			}
+
+			client, err := ssh.NewClient(p)
+			if err != nil {
+				loading.Hide()
+				u.showErrorAndLog("SSH Connection Failed", err, "Test SSH (Import)")
+				return
+			}
+			client.Close()
+			loading.Hide()
+			dialog.ShowInformation("Success", "SSH Connection Established Successfully!", w)
+		}()
+	})
+
 	serverGroup := widget.NewCard("Destination Server", "", container.NewVBox(
 		restoreLocalCheck,
 		widget.NewForm(widget.NewFormItem("Type", connTypeSelect)),
 		sshContainer,
 		wpContainer,
+		widget.NewSeparator(),
+		testServerBtn,
 	))
 
 	// --- Destination Database ---
@@ -162,6 +201,81 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	targetDBEntry := widget.NewEntry()
 	targetDBEntry.SetPlaceHolder("target_database")
 
+	// Test DB Connectivity (Import)
+	testDBBtn := widget.NewButton("Test DB Connectivity", func() {
+		if restoreLocalCheck.Checked {
+			// Local DB Test?
+			// We can try to run mysqladmin locally?
+			// For now, support remote testing via SSH as that's the complex part.
+			// If local, we could run exec.Command.
+			dialog.ShowInformation("Info", "Local DB test not implemented yet.", w)
+			return
+		}
+
+		loading := u.showLoading("Testing DB", "Connecting to Database...")
+		go func() {
+			p := models.Profile{
+				Host:        strings.TrimSpace(hostEntry.Text),
+				Port:        strings.TrimSpace(portEntry.Text),
+				SSHUser:     strings.TrimSpace(sshUserEntry.Text),
+				SSHPassword: strings.TrimSpace(sshPasswordEntry.Text),
+				AuthType:    models.AuthType(authTypeSelect.Selected),
+				AuthKeyPath: strings.TrimSpace(keyPathEntry.Text),
+				DBHost:      strings.TrimSpace(dbHostEntry.Text),
+				DBPort:      strings.TrimSpace(dbPortEntry.Text),
+				DBUser:      strings.TrimSpace(dbUserEntry.Text),
+				DBPassword:  strings.TrimSpace(dbPasswordEntry.Text),
+				DBType:      models.DBType(dbTypeSelect.Selected),
+				IsDocker:    isDockerCheck.Checked,
+				ContainerID: strings.TrimSpace(containerIDEntry.Text),
+			}
+
+			client, err := ssh.NewClient(p)
+			if err != nil {
+				loading.Hide()
+				u.showErrorAndLog("SSH Connection Failed", err, "Test DB (Import)")
+				return
+			}
+			defer client.Close()
+
+			var cmd string
+			if p.DBType == models.DBTypePostgreSQL {
+				authEnv := fmt.Sprintf("PGPASSWORD='%s'", p.DBPassword)
+				if p.IsDocker {
+					cmd = fmt.Sprintf("docker exec -e %s %s pg_isready -U %s", authEnv, p.ContainerID, p.DBUser)
+				} else {
+					hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
+					cmd = fmt.Sprintf("%s pg_isready %s -U %s", authEnv, hostArgs, p.DBUser)
+				}
+			} else {
+				authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
+				if p.IsDocker {
+					cmd = fmt.Sprintf("docker exec -i %s mysqladmin %s ping", p.ContainerID, authArgs)
+				} else {
+					hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+					cmd = fmt.Sprintf("mysqladmin %s %s ping", hostArgs, authArgs)
+				}
+			}
+
+			_, session, err := client.RunCommandStream(cmd)
+			if err != nil {
+				loading.Hide()
+				u.showErrorAndLog("DB Check Cmd Failed", err, "Test DB (Import)")
+				return
+			}
+			defer session.Close()
+
+			if err := session.Wait(); err != nil {
+				loading.Hide()
+				u.showErrorAndLog("DB Check Failed (Ping)", err, "Test DB (Import)")
+				return
+			}
+
+			loading.Hide()
+			dialog.ShowInformation("Success", "Database Connection Successful!", w)
+		}()
+	})
+
 	dbGroup := widget.NewCard("Destination Database", "", container.NewVBox(
 		isDockerCheck,
 		widget.NewForm(
@@ -173,6 +287,8 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			widget.NewFormItem("DB Password", dbPasswordEntry),
 			widget.NewFormItem("Target DB Name", targetDBEntry),
 		),
+		widget.NewSeparator(),
+		testDBBtn,
 	))
 
 	// --- Action ---
