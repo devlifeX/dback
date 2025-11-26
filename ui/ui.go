@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"time"
 
 	"dback/models"
@@ -28,6 +29,7 @@ type UI struct {
 	expConnectionTypeSelect *widget.Select
 	expWPUrlEntry           *widget.Entry
 	expWPKeyEntry           *widget.Entry
+	expWPPluginPathEntry    *widget.Entry
 
 	expHostEntry        *widget.Entry
 	expPortEntry        *widget.Entry
@@ -121,6 +123,7 @@ func (u *UI) Run() {
 				u.profiles[i].ConnectionType = models.ConnectionType(u.expConnectionTypeSelect.Selected)
 				u.profiles[i].WPUrl = u.expWPUrlEntry.Text
 				u.profiles[i].WPKey = u.expWPKeyEntry.Text
+				u.profiles[i].PluginPath = u.expWPPluginPathEntry.Text
 
 				u.profiles[i].Host = u.expHostEntry.Text
 				u.profiles[i].Port = u.expPortEntry.Text
@@ -185,6 +188,7 @@ func (u *UI) Run() {
 		u.expConnectionTypeSelect.SetSelected(string(p.ConnectionType))
 		u.expWPUrlEntry.SetText(p.WPUrl)
 		u.expWPKeyEntry.SetText(p.WPKey)
+		u.expWPPluginPathEntry.SetText(p.PluginPath)
 
 		u.expHostEntry.SetText(p.Host)
 		u.expPortEntry.SetText(p.Port)
@@ -223,6 +227,7 @@ func (u *UI) Run() {
 					ConnectionType: models.ConnectionType(u.expConnectionTypeSelect.Selected),
 					WPUrl:          u.expWPUrlEntry.Text,
 					WPKey:          u.expWPKeyEntry.Text,
+					PluginPath:     u.expWPPluginPathEntry.Text,
 
 					Host:         u.expHostEntry.Text,
 					Port:         u.expPortEntry.Text,
@@ -300,4 +305,12 @@ func (u *UI) showErrorAndLog(title string, err error, action string) {
 	}
 	u.log(action, fmt.Sprintf("%s: %v", title, err), "", "Failed", err.Error())
 	dialog.ShowError(err, u.window)
+}
+
+func (u *UI) getExecutableDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "."
+	}
+	return filepath.Dir(exe)
 }

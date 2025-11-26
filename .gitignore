@@ -2,3 +2,7 @@ logs.json
 profiles.json
 dback-linux
 dback-windows.exe
+*.zip
+*.tar.gz
+*.sql
+*.sql.gz

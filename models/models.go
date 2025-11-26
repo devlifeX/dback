@@ -44,8 +44,9 @@ type Profile struct {
 	AuthKeyPath string   `json:"auth_key_path"`
 
 	// WordPress Fields
-	WPUrl string `json:"wp_url"` // e.g. https://example.com
-	WPKey string `json:"wp_key"` // The API key shared with plugin
+	WPUrl      string `json:"wp_url"`      // e.g. https://example.com
+	WPKey      string `json:"wp_key"`      // The API key shared with plugin
+	PluginPath string `json:"plugin_path"` // Path to save generated plugin
 
 	DBHost       string `json:"db_host"`
 	DBPort       string `json:"db_port"`

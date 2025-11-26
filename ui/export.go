@@ -67,21 +67,26 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	u.expWPKeyEntry = widget.NewEntry()
 	u.expWPKeyEntry.SetPlaceHolder("API Key")
 
-	generatePluginBtn := widget.NewButton("Generate Plugin", func() {
-		// Ask for save location
+	u.expWPPluginPathEntry = widget.NewEntry()
+	u.expWPPluginPathEntry.SetText(u.getExecutableDir())
+	pluginPathBtn := widget.NewButton("Browse", func() {
 		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-			if err != nil || uri == nil {
-				return
+			if err == nil && uri != nil {
+				u.expWPPluginPathEntry.SetText(uri.Path())
 			}
-
-			key, path, err := wordpress.GeneratePlugin("plugin_template/dback-sync.php", uri.Path())
-			if err != nil {
-				dialog.ShowError(err, w)
-				return
-			}
-			u.expWPKeyEntry.SetText(key)
-			dialog.ShowInformation("Plugin Generated", fmt.Sprintf("Plugin saved to %s\nAPI Key has been set.", path), w)
 		}, w)
+	})
+	pluginPathContainer := container.NewBorder(nil, nil, nil, pluginPathBtn, u.expWPPluginPathEntry)
+
+	generatePluginBtn := widget.NewButton("Generate Plugin", func() {
+		destDir := u.expWPPluginPathEntry.Text
+		key, path, err := wordpress.GeneratePlugin("plugin_template/dback-sync.php", destDir)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		u.expWPKeyEntry.SetText(key)
+		dialog.ShowInformation("Plugin Generated", fmt.Sprintf("Plugin saved to %s\nAPI Key has been set.", path), w)
 	})
 
 	// Containers
@@ -100,6 +105,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		widget.NewForm(
 			widget.NewFormItem("WordPress URL", u.expWPUrlEntry),
 			widget.NewFormItem("API Key", u.expWPKeyEntry),
+			widget.NewFormItem("Plugin Save Path", pluginPathContainer),
 		),
 		generatePluginBtn,
 	)
@@ -298,7 +304,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 	dbGroup := widget.NewCard("Source Database", "", dbContainer)
 
 	// --- Action ---
-	u.expDestPathLabel = widget.NewLabel("No folder selected")
+	u.expDestPathLabel = widget.NewLabel(u.getExecutableDir())
 
 	selectFolderBtn := widget.NewButton("Select Destination Folder", func() {
 		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
