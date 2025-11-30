@@ -66,8 +66,10 @@ type UI struct {
 	impContainerIDEntry     *widget.Entry
 	impTargetDBEntry        *widget.Entry
 
-	currentTab   string
-	historyTable *widget.Table
+	currentTab       string
+	historyTable     *widget.Table
+	filteredLogs     []models.LogEntry
+	currentProfileID string
 }
 
 // NewUI creates a new UI instance
@@ -229,7 +231,9 @@ func (u *UI) Run() {
 
 	sidebar.OnSelected = func(id int) {
 		p := u.profiles[id]
+		u.currentProfileID = p.ID
 		u.populateForms(p)
+		u.refreshHistory()
 	}
 
 	// New Profile Button

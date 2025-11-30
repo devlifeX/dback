@@ -77,52 +77,72 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// RunCommandStream executes a command and returns its stdout pipe.
+// RunCommandStream executes a command and returns its stdout pipe and stderr pipe.
 // This is crucial for streaming large dumps.
-func (c *Client) RunCommandStream(cmd string) (io.Reader, *ssh.Session, error) {
+func (c *Client) RunCommandStream(cmd string) (io.Reader, io.Reader, *ssh.Session, error) {
 	session, err := c.conn.NewSession()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
 		session.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	// We also need to capture stderr to report errors
-	// For simplicity, we might log it or pipe it elsewhere
-	// stderr, _ := session.StderrPipe()
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, err
+	}
 
 	if err := session.Start(cmd); err != nil {
 		session.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return stdout, session, nil
+	return stdout, stderr, session, nil
 }
 
-// RunCommandPipeInput executes a command and returns its stdin pipe.
+// RunCommandPipeInput executes a command and returns its stdin pipe and stderr pipe.
 // This is used for uploading/restoring dumps.
-func (c *Client) RunCommandPipeInput(cmd string) (io.WriteCloser, *ssh.Session, error) {
+func (c *Client) RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader, *ssh.Session, error) {
 	session, err := c.conn.NewSession()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	stdin, err := session.StdinPipe()
 	if err != nil {
 		session.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, err
 	}
 
 	if err := session.Start(cmd); err != nil {
 		session.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return stdin, session, nil
+	return stdin, stderr, session, nil
+}
+
+// RunCommand executes a command and returns combined stdout/stderr
+func (c *Client) RunCommand(cmd string) (string, error) {
+	session, err := c.conn.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+
+	output, err := session.CombinedOutput(cmd)
+	return string(output), err
 }
 
 // ProgressReader wraps an io.Reader to report progress

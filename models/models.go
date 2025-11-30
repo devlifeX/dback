@@ -27,6 +27,7 @@ const (
 	DBTypeMySQL      DBType = "MySQL"
 	DBTypeMariaDB    DBType = "MariaDB"
 	DBTypePostgreSQL DBType = "PostgreSQL"
+	DBTypeCouchDB    DBType = "CouchDB"
 )
 
 // Profile represents a saved connection profile

@@ -1,34 +1,36 @@
 package ui
 
 import (
+	"dback/models"
+	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 func (u *UI) createHistoryTab() fyne.CanvasObject {
-	// Table columns
+	// Table columns: Time, Action, Status, Size, Details, Actions
 	headers := []string{"Time", "Action", "Status", "Size", "Details"}
-
-	// We need a way to refresh the table when logs change.
-	// widget.Table doesn't have a simple binding like List yet in standard use without data binding package.
-	// We'll use the standard callback approach.
 
 	table := widget.NewTable(
 		func() (int, int) {
-			return len(u.logs), len(headers)
+			return len(u.filteredLogs), len(headers)
 		},
 		func() fyne.CanvasObject {
 			return widget.NewLabel("Cell Content")
 		},
 		func(i widget.TableCellID, o fyne.CanvasObject) {
-			// i.Row is index in logs. i.Col is column index.
-			// Show newest first?
-			idx := len(u.logs) - 1 - i.Row
-			if idx < 0 {
+			// i.Row is index in filteredLogs.
+			// Show newest first logic handled in refreshHistory?
+			// Or just reverse index here?
+			// filteredLogs will be sorted or we just index it.
+			if i.Row >= len(u.filteredLogs) {
 				return
 			}
-			entry := u.logs[idx]
+			entry := u.filteredLogs[len(u.filteredLogs)-1-i.Row]
 
 			label := o.(*widget.Label)
 
@@ -60,12 +62,92 @@ func (u *UI) createHistoryTab() fyne.CanvasObject {
 		headerContainer.Add(widget.NewLabelWithStyle(h, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	}
 
-	// Refresh logic hooks
-	// We can't easily hook into u.logs append from here without observer.
-	// But u.log() calls u.logList.Refresh(). We should also refresh table.
-	// I'll add a reference to table in UI struct or just refresh it on tab selection?
-	// Better: Add table to UI struct.
 	u.historyTable = table
 
-	return container.NewBorder(headerContainer, nil, nil, nil, table)
+	var selectedRow int = -1
+	table.OnSelected = func(id widget.TableCellID) {
+		selectedRow = id.Row
+	}
+
+	// Toolbar for Actions
+	importBtn := widget.NewButtonWithIcon("Import", theme.DownloadIcon(), func() {
+		if selectedRow < 0 || selectedRow >= len(u.filteredLogs) {
+			return
+		}
+		// Get entry
+		// Reverse index match?
+		// My table logic: entry := u.filteredLogs[len(u.filteredLogs)-1-i.Row]
+		// So selectedRow maps to that.
+		realIdx := len(u.filteredLogs) - 1 - selectedRow
+		if realIdx < 0 || realIdx >= len(u.filteredLogs) {
+			return
+		}
+		entry := u.filteredLogs[realIdx]
+
+		// Import logic
+		// Use Import Tab logic? Or call helper?
+		// I need to switch to Import tab and populate?
+		// Or just run import?
+		// The user said "Import in selected profile".
+		// So we use u.currentProfileID (selected in sidebar).
+		// And entry.FilePath.
+		// Assuming u.profiles has the profile.
+		var p models.Profile
+		found := false
+		for _, prof := range u.profiles {
+			if prof.ID == u.currentProfileID {
+				p = prof
+				found = true
+				break
+			}
+		}
+		if !found {
+			return
+		}
+
+		// Trigger import placeholder
+		msg := fmt.Sprintf("Request to import file:\n%s\n\nInto Profile:\n%s", entry.FilePath, p.Name)
+		dialog.ShowInformation("Import from History", msg, u.window)
+		u.log(&p, "History Import", "Import requested from history", entry.FilePath, entry.FileSize, "Pending", "")
+	})
+
+	deleteBtn := widget.NewButtonWithIcon("Remove", theme.DeleteIcon(), func() {
+		if selectedRow < 0 {
+			return
+		}
+		realIdx := len(u.filteredLogs) - 1 - selectedRow
+		if realIdx < 0 || realIdx >= len(u.filteredLogs) {
+			return
+		}
+		entry := u.filteredLogs[realIdx]
+
+		// Remove from u.logs
+		// Find index in u.logs
+		for i, log := range u.logs {
+			if log.Timestamp == entry.Timestamp && log.Details == entry.Details { // Match unique?
+				// Remove
+				u.logs = append(u.logs[:i], u.logs[i+1:]...)
+				break
+			}
+		}
+		u.saveLogs()
+		u.refreshHistory()
+	})
+
+	toolbar := container.NewHBox(importBtn, deleteBtn)
+
+	return container.NewBorder(container.NewVBox(headerContainer, toolbar), nil, nil, nil, table)
+}
+
+func (u *UI) refreshHistory() {
+	// Filter u.logs by u.currentProfileID
+	u.filteredLogs = []models.LogEntry{}
+	for _, entry := range u.logs {
+		if entry.ProfileID == u.currentProfileID {
+			u.filteredLogs = append(u.filteredLogs, entry)
+		}
+	}
+	if u.historyTable != nil {
+		u.historyTable.Refresh()
+	}
 }

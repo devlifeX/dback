@@ -188,7 +188,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
-	u.impDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL)}, nil)
+	u.impDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL), string(models.DBTypeCouchDB)}, nil)
 	u.impDBTypeSelect.SetSelected(string(models.DBTypeMySQL))
 
 	u.impDBHostEntry = widget.NewEntry()
@@ -204,10 +204,6 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	// Test DB Connectivity (Import)
 	testDBBtn := widget.NewButton("Test DB Connectivity", func() {
 		if restoreLocalCheck.Checked {
-			// Local DB Test?
-			// We can try to run mysqladmin locally?
-			// For now, support remote testing via SSH as that's the complex part.
-			// If local, we could run exec.Command.
 			dialog.ShowInformation("Info", "Local DB test not implemented yet.", w)
 			return
 		}
@@ -247,6 +243,18 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 					hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
 					cmd = fmt.Sprintf("%s pg_isready %s -U %s", authEnv, hostArgs, p.DBUser)
 				}
+			} else if p.DBType == models.DBTypeCouchDB {
+				targetHost := p.DBHost
+				if p.IsDocker {
+					targetHost = "127.0.0.1"
+				}
+				url := fmt.Sprintf("http://%s:%s/", targetHost, p.DBPort)
+				auth := fmt.Sprintf("-u %s:%s", p.DBUser, p.DBPassword)
+				if p.IsDocker {
+					cmd = fmt.Sprintf("docker exec %s curl -s -f %s %s", p.ContainerID, auth, url)
+				} else {
+					cmd = fmt.Sprintf("curl -s -f %s %s", auth, url)
+				}
 			} else {
 				authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
 				if p.IsDocker {
@@ -257,22 +265,15 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				}
 			}
 
-			_, session, err := client.RunCommandStream(cmd)
+			output, err := client.RunCommand(cmd)
 			if err != nil {
 				loading.Hide()
 				u.showErrorAndLog("DB Check Cmd Failed", err, "Test DB (Import)")
 				return
 			}
-			defer session.Close()
-
-			if err := session.Wait(); err != nil {
-				loading.Hide()
-				u.showErrorAndLog("DB Check Failed (Ping)", err, "Test DB (Import)")
-				return
-			}
 
 			loading.Hide()
-			dialog.ShowInformation("Success", "Database Connection Successful!", w)
+			dialog.ShowInformation("Success", "Database Connection Successful!\n"+output, w)
 		}()
 	})
 
@@ -317,13 +318,6 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				wpClient := wordpress.NewClient(wpUrl, wpKey)
 
 				err := wpClient.Import(sourcePath, func(curr int64) {
-					// Upload progress
-					// We can get file size from sourcePath
-					// But NewClient.Import does it internally?
-					// I need to pass total size to callback if I want pct?
-					// client.Import reads file size.
-					// The callback receives 'curr'.
-					// I can read file size here too.
 					f, _ := os.Stat(sourcePath)
 					if f != nil {
 						pct := float64(curr) / float64(f.Size())
@@ -366,21 +360,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			statusLabel.SetText("Preparing...")
 			progressBar.SetValue(0)
 
-			// Build the import command (mysql < file)
-			// The command generator assumes gzipped input.
-			// If source file is .sql, we should gzip it or change command?
-			// Requirements say: "Note: All exports should be piped through gzip...
-			// Docker Import Example: gunzip -c dump.sql.gz | docker exec ..."
-			// So we expect .sql.gz input. If user selects .sql, we might need to handle that.
-			// For now, let's assume the logic in `commands.go` which uses `gunzip -c`.
-			// `gunzip -c` can also handle uncompressed text sometimes or we can just cat it?
-			// Actually `gunzip` will fail on uncompressed data usually.
-			// Let's assume we are strictly dealing with .sql.gz for now as per typical workflow,
-			// or we can detect file extension.
-			// If extension is .sql, we should probably just cat it to mysql without gunzip.
-			// But `commands.go` `BuildImportCommand` hardcodes `gunzip -c`.
-			// I will stick to the provided architecture for now, maybe add a check later.
-
+			// Build the import command
 			cmdStr := db.BuildImportCommand(p)
 
 			inFile, err := os.Open(sourcePath)
@@ -397,7 +377,6 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			if isLocal {
 				// Execute Locally
 				statusLabel.SetText("Executing Local Restore...")
-				// We need to use exec.Command("bash", "-c", cmdStr) to handle pipes
 				cmd := exec.Command("bash", "-c", cmdStr)
 
 				stdin, err := cmd.StdinPipe()
@@ -444,13 +423,19 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				defer client.Close()
 
 				statusLabel.SetText("Connected. Starting Stream...")
-				stdin, session, err := client.RunCommandPipeInput(cmdStr)
+				stdin, stderr, session, err := client.RunCommandPipeInput(cmdStr)
 				if err != nil {
 					statusLabel.SetText("Remote Command Failed")
 					u.log(&p, "Import", "Remote command failed", "", "", "Failed", err.Error())
 					return
 				}
 				defer session.Close()
+
+				// Capture stderr
+				var stderrBuf strings.Builder
+				go func() {
+					io.Copy(&stderrBuf, stderr)
+				}()
 
 				progressR := &ssh.ProgressReader{
 					Reader: inFile,
@@ -474,8 +459,10 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 				// Wait for remote command to finish
 				if err := session.Wait(); err != nil {
+					errMsg := fmt.Sprintf("Process exited with error: %v. Stderr: %s", err, stderrBuf.String())
 					statusLabel.SetText("Restore Process Failed")
-					u.log(&p, "Import", "Remote restore process failed", "", "", "Failed", err.Error())
+					u.log(&p, "Import", "Remote restore process failed", "", "", "Failed", errMsg)
+					dialog.ShowError(fmt.Errorf("Restore Failed:\n%s", errMsg), w)
 					return
 				}
 			}

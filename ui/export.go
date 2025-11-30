@@ -178,7 +178,7 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
-	u.expDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL)}, nil)
+	u.expDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL), string(models.DBTypeCouchDB)}, nil)
 	u.expDBTypeSelect.SetSelected(string(models.DBTypeMySQL))
 
 	u.expDBHostEntry = widget.NewEntry()
@@ -224,15 +224,27 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			var cmd string
 			if p.DBType == models.DBTypePostgreSQL {
 				// Postgres Check
-				// Use pg_isready
-				// PGPASSWORD='pass' pg_isready -h host -p port -U user
 				authEnv := fmt.Sprintf("PGPASSWORD='%s'", p.DBPassword)
 				if p.IsDocker {
-					// docker exec -e PGPASSWORD=... container pg_isready -U user
 					cmd = fmt.Sprintf("docker exec -e %s %s pg_isready -U %s", authEnv, p.ContainerID, p.DBUser)
 				} else {
 					hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
 					cmd = fmt.Sprintf("%s pg_isready %s -U %s", authEnv, hostArgs, p.DBUser)
+				}
+			} else if p.DBType == models.DBTypeCouchDB {
+				// CouchDB Check
+				targetHost := p.DBHost
+				if p.IsDocker {
+					targetHost = "127.0.0.1"
+				} // Default internal
+
+				url := fmt.Sprintf("http://%s:%s/", targetHost, p.DBPort)
+				auth := fmt.Sprintf("-u %s:%s", p.DBUser, p.DBPassword)
+
+				if p.IsDocker {
+					cmd = fmt.Sprintf("docker exec %s curl -s -f %s %s", p.ContainerID, auth, url)
+				} else {
+					cmd = fmt.Sprintf("curl -s -f %s %s", auth, url)
 				}
 			} else {
 				// MySQL/MariaDB Check
@@ -245,22 +257,18 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 				}
 			}
 
-			_, session, err := client.RunCommandStream(cmd)
+			output, err := client.RunCommand(cmd)
 			if err != nil {
 				loading.Hide()
-				dialog.ShowError(fmt.Errorf("DB Connection Failed (Cmd Error): %v", err), w)
-				return
-			}
-			defer session.Close()
-
-			if err := session.Wait(); err != nil {
-				loading.Hide()
-				dialog.ShowError(fmt.Errorf("DB Connection Failed (Ping Failed): %v", err), w)
+				errMsg := fmt.Sprintf("DB Connection Failed.\nError: %v\nOutput: %s", err, output)
+				// Log comprehensive error
+				u.log(&p, "Test DB", fmt.Sprintf("Failed to connect to DB. Cmd: %s. Output: %s", cmd, output), "", "", "Failed", err.Error())
+				dialog.ShowError(fmt.Errorf(errMsg), w)
 				return
 			}
 
 			loading.Hide()
-			dialog.ShowInformation("Success", "Database Connection Successful!", w)
+			dialog.ShowInformation("Success", "Database Connection Successful!\n"+output, w)
 		}()
 	})
 
@@ -387,13 +395,19 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			cmd := db.BuildExportCommand(p)
 
 			statusLabel.SetText("Executing Dump & Streaming...")
-			stdout, session, err := client.RunCommandStream(cmd)
+			stdout, stderr, session, err := client.RunCommandStream(cmd)
 			if err != nil {
 				statusLabel.SetText("Command Failed")
 				u.log(&p, "Export", "Command failed", "", "", "Failed", err.Error())
 				return
 			}
 			defer session.Close()
+
+			// Capture stderr in background
+			var stderrBuf strings.Builder
+			go func() {
+				io.Copy(&stderrBuf, stderr)
+			}()
 
 			// Create local file
 			// Format: profile_name_database_name_day_month_year_hour_min_sec
@@ -425,6 +439,18 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			if err != nil {
 				statusLabel.SetText("Download Failed")
 				u.log(&p, "Export", "Stream download failed", "", "", "Failed", err.Error())
+				return
+			}
+
+			// Check command exit code
+			if err := session.Wait(); err != nil {
+				// Check for specific error messages in stderrBuf if needed
+				errMsg := fmt.Sprintf("Process exited with error: %v. Stderr: %s", err, stderrBuf.String())
+				statusLabel.SetText("Export Failed (Remote Error)")
+				u.log(&p, "Export", "Remote command failed", "", "", "Failed", errMsg)
+				// Delete partial file
+				os.Remove(fullPath)
+				dialog.ShowError(fmt.Errorf("Export Failed:\n%s", errMsg), w)
 				return
 			}
 
