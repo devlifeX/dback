@@ -1,9 +1,10 @@
 # DB Sync Manager
 
+![DB Sync Manager Screenshot](desgin/app.png)
+
 A cross-platform desktop GUI application built with Go and Fyne v2 for managing database synchronizations. It allows you to export large databases from remote Linux servers via SSH, WordPress sites, or Docker containers, and restore them efficiently.
 
- 
-![DB Sync Manager Screenshot](desgin/app.png)
+**Repository:** [https://github.com/devlifeX/dback/](https://github.com/devlifeX/dback/)
 
 ## Features
 
@@ -11,22 +12,28 @@ A cross-platform desktop GUI application built with Go and Fyne v2 for managing 
 *   **SSH:** Connect to any remote Linux server using Password or Private Key authentication.
 *   **WordPress:** Direct integration with WordPress sites via a secure, auto-generated plugin (no SSH required).
 *   **Docker:** Seamless support for databases running inside Docker containers.
-*   **Databases:** Support for **MySQL** and **MariaDB**.
+*   **Databases:** Support for **MySQL**, **MariaDB**, **PostgreSQL**, and **CouchDB**.
 
 ### 🚀 Core Functions
-*   **Export (Backup):** Stream large database dumps (5GB+) with on-the-fly GZIP compression.
+*   **Export (Backup):** Stream large database dumps (5GB+) with on-the-fly compression.
+    *   **Smart Compression:** Automatically detects and uses `zstd` if available for faster compression, falling back to `gzip`.
 *   **Import (Restore):** Stream uploads and restores to remote servers or local instances.
-*   **Profile Management:**
-    *   Save connection details for quick access.
-    *   **Smart History:** Remembers your last destination folder per profile.
-    *   Create, Update, and **Delete** profiles easily.
+*   **Secure:** All database credentials are shell-escaped to prevent command injection.
+*   **Reliable:** Uses `pipefail` to ensure backup failures are caught even if compression succeeds.
+
+### 👤 Profile Management
+*   **Profiles:** Create, Save, Clone (Duplicate), and Delete connection profiles.
+*   **Smart History:** Remembers your last destination folder per profile.
+*   **Filename Formatting:** Exports are named with the profile, database name, and timestamp for easy organization.
 
 ### 📊 Activity & History
-*   **History Tab:** A data grid view of all past operations with timestamps, status, and file sizes.
+*   **History Tab:** A persistent data grid view of all past operations including file sizes, status, and paths.
+*   **Context Actions:** Import or delete files directly from the History list.
 *   **Persistence:** All logs are saved locally to `logs.json`.
 
 ### 🛠️ Diagnostics
 *   **Test Connectivity:** Built-in tools to verify Server (SSH/HTTP) and Database connections before running heavy operations.
+*   **Comprehensive Logs:** detailed error logs capture remote command output for debugging.
 
 ## Installation & Running
 
