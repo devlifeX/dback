@@ -39,64 +39,64 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	// --- Destination Server ---
 	restoreLocalCheck := widget.NewCheck("Restore to Localhost?", nil)
 
-	connTypeSelect := widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeWordPress)}, nil)
-	connTypeSelect.SetSelected(string(models.ConnectionTypeSSH))
+	u.impConnectionTypeSelect = widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeWordPress)}, nil)
+	u.impConnectionTypeSelect.SetSelected(string(models.ConnectionTypeSSH))
 
 	// SSH Fields
-	hostEntry := widget.NewEntry()
-	hostEntry.SetPlaceHolder("192.168.1.100")
-	portEntry := widget.NewEntry()
-	portEntry.SetText("22")
-	sshUserEntry := widget.NewEntry()
-	sshUserEntry.SetPlaceHolder("root")
+	u.impHostEntry = widget.NewEntry()
+	u.impHostEntry.SetPlaceHolder("192.168.1.100")
+	u.impPortEntry = widget.NewEntry()
+	u.impPortEntry.SetText("22")
+	u.impSSHUserEntry = widget.NewEntry()
+	u.impSSHUserEntry.SetPlaceHolder("root")
 
-	authTypeSelect := widget.NewSelect([]string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}, nil)
-	authTypeSelect.SetSelected(string(models.AuthTypePassword))
+	u.impAuthTypeSelect = widget.NewSelect([]string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}, nil)
+	u.impAuthTypeSelect.SetSelected(string(models.AuthTypePassword))
 
-	sshPasswordEntry := widget.NewPasswordEntry()
-	sshPasswordEntry.SetPlaceHolder("SSH Password")
+	u.impSSHPassEntry = widget.NewPasswordEntry()
+	u.impSSHPassEntry.SetPlaceHolder("SSH Password")
 
-	keyPathEntry := widget.NewEntry()
-	keyPathEntry.SetPlaceHolder("/path/to/private/key")
+	u.impKeyPathEntry = widget.NewEntry()
+	u.impKeyPathEntry.SetPlaceHolder("/path/to/private/key")
 	keyPathBtn := widget.NewButton("Select Key", func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err == nil && reader != nil {
-				keyPathEntry.SetText(reader.URI().Path())
+				u.impKeyPathEntry.SetText(reader.URI().Path())
 			}
 		}, w)
 		fd.Show()
 	})
-	keyAuthContainer := container.NewBorder(nil, nil, nil, keyPathBtn, keyPathEntry)
+	keyAuthContainer := container.NewBorder(nil, nil, nil, keyPathBtn, u.impKeyPathEntry)
 	keyAuthContainer.Hide()
 
-	authTypeSelect.OnChanged = func(s string) {
+	u.impAuthTypeSelect.OnChanged = func(s string) {
 		if s == string(models.AuthTypePassword) {
-			sshPasswordEntry.Show()
+			u.impSSHPassEntry.Show()
 			keyAuthContainer.Hide()
 		} else {
-			sshPasswordEntry.Hide()
+			u.impSSHPassEntry.Hide()
 			keyAuthContainer.Show()
 		}
 	}
 
 	sshForm := widget.NewForm(
-		widget.NewFormItem("Host", hostEntry),
-		widget.NewFormItem("Port", portEntry),
-		widget.NewFormItem("SSH User", sshUserEntry),
-		widget.NewFormItem("Auth Type", authTypeSelect),
+		widget.NewFormItem("Host", u.impHostEntry),
+		widget.NewFormItem("Port", u.impPortEntry),
+		widget.NewFormItem("SSH User", u.impSSHUserEntry),
+		widget.NewFormItem("Auth Type", u.impAuthTypeSelect),
 	)
-	sshContainer := container.NewVBox(sshForm, sshPasswordEntry, keyAuthContainer)
+	sshContainer := container.NewVBox(sshForm, u.impSSHPassEntry, keyAuthContainer)
 
 	// WP Fields
-	wpUrlEntry := widget.NewEntry()
-	wpUrlEntry.SetPlaceHolder("https://example.com")
-	wpKeyEntry := widget.NewEntry()
-	wpKeyEntry.SetPlaceHolder("API Key")
+	u.impWPUrlEntry = widget.NewEntry()
+	u.impWPUrlEntry.SetPlaceHolder("https://example.com")
+	u.impWPKeyEntry = widget.NewEntry()
+	u.impWPKeyEntry.SetPlaceHolder("API Key")
 
 	wpContainer := container.NewVBox(
 		widget.NewForm(
-			widget.NewFormItem("WordPress URL", wpUrlEntry),
-			widget.NewFormItem("API Key", wpKeyEntry),
+			widget.NewFormItem("WordPress URL", u.impWPUrlEntry),
+			widget.NewFormItem("API Key", u.impWPKeyEntry),
 		),
 	)
 	wpContainer.Hide()
@@ -104,17 +104,17 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	// Toggle Logic
 	restoreLocalCheck.OnChanged = func(b bool) {
 		if b {
-			connTypeSelect.Hide()
+			u.impConnectionTypeSelect.Hide()
 			sshContainer.Hide()
 			wpContainer.Hide()
 		} else {
-			connTypeSelect.Show()
+			u.impConnectionTypeSelect.Show()
 			// Trigger conn type change
-			connTypeSelect.OnChanged(connTypeSelect.Selected)
+			u.impConnectionTypeSelect.OnChanged(u.impConnectionTypeSelect.Selected)
 		}
 	}
 
-	connTypeSelect.OnChanged = func(s string) {
+	u.impConnectionTypeSelect.OnChanged = func(s string) {
 		if restoreLocalCheck.Checked {
 			return
 		}
@@ -130,7 +130,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 	// Test Server Connectivity (Import)
 	testServerBtn := widget.NewButton("Test Connectivity", func() {
-		connType := models.ConnectionType(connTypeSelect.Selected)
+		connType := models.ConnectionType(u.impConnectionTypeSelect.Selected)
 		if restoreLocalCheck.Checked {
 			dialog.ShowInformation("Info", "Localhost selected. No connection test needed.", w)
 			return
@@ -145,12 +145,12 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		loading := u.showLoading("Testing Connection", "Connecting to server...")
 		go func() {
 			p := models.Profile{
-				Host:        strings.TrimSpace(hostEntry.Text),
-				Port:        strings.TrimSpace(portEntry.Text),
-				SSHUser:     strings.TrimSpace(sshUserEntry.Text),
-				SSHPassword: strings.TrimSpace(sshPasswordEntry.Text),
-				AuthType:    models.AuthType(authTypeSelect.Selected),
-				AuthKeyPath: strings.TrimSpace(keyPathEntry.Text),
+				Host:        strings.TrimSpace(u.impHostEntry.Text),
+				Port:        strings.TrimSpace(u.impPortEntry.Text),
+				SSHUser:     strings.TrimSpace(u.impSSHUserEntry.Text),
+				SSHPassword: strings.TrimSpace(u.impSSHPassEntry.Text),
+				AuthType:    models.AuthType(u.impAuthTypeSelect.Selected),
+				AuthKeyPath: strings.TrimSpace(u.impKeyPathEntry.Text),
 			}
 
 			client, err := ssh.NewClient(p)
@@ -167,7 +167,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 	serverGroup := widget.NewCard("Destination Server", "", container.NewVBox(
 		restoreLocalCheck,
-		widget.NewForm(widget.NewFormItem("Type", connTypeSelect)),
+		widget.NewForm(widget.NewFormItem("Type", u.impConnectionTypeSelect)),
 		sshContainer,
 		wpContainer,
 		widget.NewSeparator(),
@@ -175,31 +175,31 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	))
 
 	// --- Destination Database ---
-	isDockerCheck := widget.NewCheck("Is Docker Container?", nil)
-	containerIDEntry := widget.NewEntry()
-	containerIDEntry.SetPlaceHolder("mysql_container_name")
-	containerIDEntry.Disable()
+	u.impIsDockerCheck = widget.NewCheck("Is Docker Container?", nil)
+	u.impContainerIDEntry = widget.NewEntry()
+	u.impContainerIDEntry.SetPlaceHolder("mysql_container_name")
+	u.impContainerIDEntry.Disable()
 
-	isDockerCheck.OnChanged = func(b bool) {
+	u.impIsDockerCheck.OnChanged = func(b bool) {
 		if b {
-			containerIDEntry.Enable()
+			u.impContainerIDEntry.Enable()
 		} else {
-			containerIDEntry.Disable()
+			u.impContainerIDEntry.Disable()
 		}
 	}
 
-	dbTypeSelect := widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL)}, nil)
-	dbTypeSelect.SetSelected(string(models.DBTypeMySQL))
+	u.impDBTypeSelect = widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL)}, nil)
+	u.impDBTypeSelect.SetSelected(string(models.DBTypeMySQL))
 
-	dbHostEntry := widget.NewEntry()
-	dbHostEntry.SetText("127.0.0.1")
-	dbPortEntry := widget.NewEntry()
-	dbPortEntry.SetText("3306")
-	dbUserEntry := widget.NewEntry()
-	dbUserEntry.SetPlaceHolder("root")
-	dbPasswordEntry := widget.NewPasswordEntry()
-	targetDBEntry := widget.NewEntry()
-	targetDBEntry.SetPlaceHolder("target_database")
+	u.impDBHostEntry = widget.NewEntry()
+	u.impDBHostEntry.SetText("127.0.0.1")
+	u.impDBPortEntry = widget.NewEntry()
+	u.impDBPortEntry.SetText("3306")
+	u.impDBUserEntry = widget.NewEntry()
+	u.impDBUserEntry.SetPlaceHolder("root")
+	u.impDBPassEntry = widget.NewPasswordEntry()
+	u.impTargetDBEntry = widget.NewEntry()
+	u.impTargetDBEntry.SetPlaceHolder("target_database")
 
 	// Test DB Connectivity (Import)
 	testDBBtn := widget.NewButton("Test DB Connectivity", func() {
@@ -215,19 +215,19 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		loading := u.showLoading("Testing DB", "Connecting to Database...")
 		go func() {
 			p := models.Profile{
-				Host:        strings.TrimSpace(hostEntry.Text),
-				Port:        strings.TrimSpace(portEntry.Text),
-				SSHUser:     strings.TrimSpace(sshUserEntry.Text),
-				SSHPassword: strings.TrimSpace(sshPasswordEntry.Text),
-				AuthType:    models.AuthType(authTypeSelect.Selected),
-				AuthKeyPath: strings.TrimSpace(keyPathEntry.Text),
-				DBHost:      strings.TrimSpace(dbHostEntry.Text),
-				DBPort:      strings.TrimSpace(dbPortEntry.Text),
-				DBUser:      strings.TrimSpace(dbUserEntry.Text),
-				DBPassword:  strings.TrimSpace(dbPasswordEntry.Text),
-				DBType:      models.DBType(dbTypeSelect.Selected),
-				IsDocker:    isDockerCheck.Checked,
-				ContainerID: strings.TrimSpace(containerIDEntry.Text),
+				Host:        strings.TrimSpace(u.impHostEntry.Text),
+				Port:        strings.TrimSpace(u.impPortEntry.Text),
+				SSHUser:     strings.TrimSpace(u.impSSHUserEntry.Text),
+				SSHPassword: strings.TrimSpace(u.impSSHPassEntry.Text),
+				AuthType:    models.AuthType(u.impAuthTypeSelect.Selected),
+				AuthKeyPath: strings.TrimSpace(u.impKeyPathEntry.Text),
+				DBHost:      strings.TrimSpace(u.impDBHostEntry.Text),
+				DBPort:      strings.TrimSpace(u.impDBPortEntry.Text),
+				DBUser:      strings.TrimSpace(u.impDBUserEntry.Text),
+				DBPassword:  strings.TrimSpace(u.impDBPassEntry.Text),
+				DBType:      models.DBType(u.impDBTypeSelect.Selected),
+				IsDocker:    u.impIsDockerCheck.Checked,
+				ContainerID: strings.TrimSpace(u.impContainerIDEntry.Text),
 			}
 
 			client, err := ssh.NewClient(p)
@@ -277,15 +277,15 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 	})
 
 	dbGroup := widget.NewCard("Destination Database", "", container.NewVBox(
-		isDockerCheck,
+		u.impIsDockerCheck,
 		widget.NewForm(
-			widget.NewFormItem("DB Type", dbTypeSelect),
-			widget.NewFormItem("Container Name/ID", containerIDEntry),
-			widget.NewFormItem("DB Host", dbHostEntry),
-			widget.NewFormItem("DB Port", dbPortEntry),
-			widget.NewFormItem("DB User", dbUserEntry),
-			widget.NewFormItem("DB Password", dbPasswordEntry),
-			widget.NewFormItem("Target DB Name", targetDBEntry),
+			widget.NewFormItem("DB Type", u.impDBTypeSelect),
+			widget.NewFormItem("Container Name/ID", u.impContainerIDEntry),
+			widget.NewFormItem("DB Host", u.impDBHostEntry),
+			widget.NewFormItem("DB Port", u.impDBPortEntry),
+			widget.NewFormItem("DB User", u.impDBUserEntry),
+			widget.NewFormItem("DB Password", u.impDBPassEntry),
+			widget.NewFormItem("Target DB Name", u.impTargetDBEntry),
 		),
 		widget.NewSeparator(),
 		testDBBtn,
@@ -301,13 +301,13 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			return
 		}
 
-		connType := models.ConnectionType(connTypeSelect.Selected)
+		connType := models.ConnectionType(u.impConnectionTypeSelect.Selected)
 		isLocal := restoreLocalCheck.Checked
 
 		if !isLocal && connType == models.ConnectionTypeWordPress {
 			// WP Import
-			wpUrl := wpUrlEntry.Text
-			wpKey := wpKeyEntry.Text
+			wpUrl := u.impWPUrlEntry.Text
+			wpKey := u.impWPKeyEntry.Text
 
 			go func() {
 				u.log("Import (WP)", "Starting import to WordPress", "", "In Progress", "")
@@ -345,20 +345,20 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}
 
 		p := models.Profile{
-			Host:         strings.TrimSpace(hostEntry.Text),
-			Port:         strings.TrimSpace(portEntry.Text),
-			SSHUser:      strings.TrimSpace(sshUserEntry.Text),
-			SSHPassword:  strings.TrimSpace(sshPasswordEntry.Text),
-			AuthType:     models.AuthType(authTypeSelect.Selected),
-			AuthKeyPath:  strings.TrimSpace(keyPathEntry.Text),
-			DBHost:       strings.TrimSpace(dbHostEntry.Text),
-			DBPort:       strings.TrimSpace(dbPortEntry.Text),
-			DBUser:       strings.TrimSpace(dbUserEntry.Text),
-			DBPassword:   strings.TrimSpace(dbPasswordEntry.Text),
-			DBType:       models.DBType(dbTypeSelect.Selected),
-			IsDocker:     isDockerCheck.Checked,
-			ContainerID:  strings.TrimSpace(containerIDEntry.Text),
-			TargetDBName: strings.TrimSpace(targetDBEntry.Text),
+			Host:         strings.TrimSpace(u.impHostEntry.Text),
+			Port:         strings.TrimSpace(u.impPortEntry.Text),
+			SSHUser:      strings.TrimSpace(u.impSSHUserEntry.Text),
+			SSHPassword:  strings.TrimSpace(u.impSSHPassEntry.Text),
+			AuthType:     models.AuthType(u.impAuthTypeSelect.Selected),
+			AuthKeyPath:  strings.TrimSpace(u.impKeyPathEntry.Text),
+			DBHost:       strings.TrimSpace(u.impDBHostEntry.Text),
+			DBPort:       strings.TrimSpace(u.impDBPortEntry.Text),
+			DBUser:       strings.TrimSpace(u.impDBUserEntry.Text),
+			DBPassword:   strings.TrimSpace(u.impDBPassEntry.Text),
+			DBType:       models.DBType(u.impDBTypeSelect.Selected),
+			IsDocker:     u.impIsDockerCheck.Checked,
+			ContainerID:  strings.TrimSpace(u.impContainerIDEntry.Text),
+			TargetDBName: strings.TrimSpace(u.impTargetDBEntry.Text),
 		}
 
 		go func() {

@@ -29,7 +29,7 @@ type UI struct {
 	expConnectionTypeSelect *widget.Select
 	expWPUrlEntry           *widget.Entry
 	expWPKeyEntry           *widget.Entry
-	expWPPluginPathEntry    *widget.Entry
+	// expWPPluginPathEntry    *widget.Entry // Removed as not in model
 
 	expHostEntry        *widget.Entry
 	expPortEntry        *widget.Entry
@@ -47,6 +47,26 @@ type UI struct {
 	expTargetDBEntry    *widget.Entry
 	expDestPathLabel    *widget.Label // To bind destination
 
+	// Import Tab Widgets
+	impConnectionTypeSelect *widget.Select
+	impWPUrlEntry           *widget.Entry
+	impWPKeyEntry           *widget.Entry
+	impHostEntry            *widget.Entry
+	impPortEntry            *widget.Entry
+	impSSHUserEntry         *widget.Entry
+	impSSHPassEntry         *widget.Entry
+	impAuthTypeSelect       *widget.Select
+	impKeyPathEntry         *widget.Entry
+	impDBHostEntry          *widget.Entry
+	impDBPortEntry          *widget.Entry
+	impDBUserEntry          *widget.Entry
+	impDBPassEntry          *widget.Entry
+	impDBTypeSelect         *widget.Select
+	impIsDockerCheck        *widget.Check
+	impContainerIDEntry     *widget.Entry
+	impTargetDBEntry        *widget.Entry
+
+	currentTab   string
 	historyTable *widget.Table
 }
 
@@ -75,6 +95,11 @@ func (u *UI) Run() {
 	logsTab := container.NewTabItem("Activity Logs", u.createLogsTab())
 
 	tabs := container.NewAppTabs(exportTab, importTab, historyTab, logsTab)
+	tabs.OnSelected = func(t *container.TabItem) {
+		u.currentTab = t.Text
+	}
+	// Default
+	u.currentTab = "Export (Backup)"
 
 	// Sidebar (Saved Profiles)
 	var sidebar *widget.List
@@ -113,36 +138,56 @@ func (u *UI) Run() {
 			label.SetText(p.Name)
 
 			saveBtn.OnTapped = func() {
-				// Update this profile with current form data
-				// Need to ensure 'i' is still valid index if list changed?
-				// widget.List refreshes, so 'i' corresponds to data index.
 				if i >= len(u.profiles) {
 					return
 				}
 
-				u.profiles[i].ConnectionType = models.ConnectionType(u.expConnectionTypeSelect.Selected)
-				u.profiles[i].WPUrl = u.expWPUrlEntry.Text
-				u.profiles[i].WPKey = u.expWPKeyEntry.Text
-				u.profiles[i].PluginPath = u.expWPPluginPathEntry.Text
-
-				u.profiles[i].Host = u.expHostEntry.Text
-				u.profiles[i].Port = u.expPortEntry.Text
-				u.profiles[i].SSHUser = u.expSSHUserEntry.Text
-				u.profiles[i].SSHPassword = u.expSSHPassEntry.Text
-				u.profiles[i].AuthType = models.AuthType(u.expAuthTypeSelect.Selected)
-				u.profiles[i].AuthKeyPath = u.expKeyPathEntry.Text
-				u.profiles[i].DBHost = u.expDBHostEntry.Text
-				u.profiles[i].DBPort = u.expDBPortEntry.Text
-				u.profiles[i].DBUser = u.expDBUserEntry.Text
-				u.profiles[i].DBPassword = u.expDBPassEntry.Text
-				u.profiles[i].DBType = models.DBType(u.expDBTypeSelect.Selected)
-				u.profiles[i].IsDocker = u.expIsDockerCheck.Checked
-				u.profiles[i].ContainerID = u.expContainerIDEntry.Text
-				u.profiles[i].TargetDBName = u.expTargetDBEntry.Text
-				u.profiles[i].Destination = u.expDestPathLabel.Text
+				// Save based on current tab
+				if u.currentTab == "Import (Restore)" {
+					u.profiles[i].ConnectionType = models.ConnectionType(u.impConnectionTypeSelect.Selected)
+					u.profiles[i].WPUrl = u.impWPUrlEntry.Text
+					u.profiles[i].WPKey = u.impWPKeyEntry.Text
+					u.profiles[i].Host = u.impHostEntry.Text
+					u.profiles[i].Port = u.impPortEntry.Text
+					u.profiles[i].SSHUser = u.impSSHUserEntry.Text
+					u.profiles[i].SSHPassword = u.impSSHPassEntry.Text
+					u.profiles[i].AuthType = models.AuthType(u.impAuthTypeSelect.Selected)
+					u.profiles[i].AuthKeyPath = u.impKeyPathEntry.Text
+					u.profiles[i].DBHost = u.impDBHostEntry.Text
+					u.profiles[i].DBPort = u.impDBPortEntry.Text
+					u.profiles[i].DBUser = u.impDBUserEntry.Text
+					u.profiles[i].DBPassword = u.impDBPassEntry.Text
+					u.profiles[i].DBType = models.DBType(u.impDBTypeSelect.Selected)
+					u.profiles[i].IsDocker = u.impIsDockerCheck.Checked
+					u.profiles[i].ContainerID = u.impContainerIDEntry.Text
+					u.profiles[i].TargetDBName = u.impTargetDBEntry.Text
+					// Import tab doesn't have Destination Path binding yet
+				} else {
+					// Default to Export fields
+					u.profiles[i].ConnectionType = models.ConnectionType(u.expConnectionTypeSelect.Selected)
+					u.profiles[i].WPUrl = u.expWPUrlEntry.Text
+					u.profiles[i].WPKey = u.expWPKeyEntry.Text
+					u.profiles[i].Host = u.expHostEntry.Text
+					u.profiles[i].Port = u.expPortEntry.Text
+					u.profiles[i].SSHUser = u.expSSHUserEntry.Text
+					u.profiles[i].SSHPassword = u.expSSHPassEntry.Text
+					u.profiles[i].AuthType = models.AuthType(u.expAuthTypeSelect.Selected)
+					u.profiles[i].AuthKeyPath = u.expKeyPathEntry.Text
+					u.profiles[i].DBHost = u.expDBHostEntry.Text
+					u.profiles[i].DBPort = u.expDBPortEntry.Text
+					u.profiles[i].DBUser = u.expDBUserEntry.Text
+					u.profiles[i].DBPassword = u.expDBPassEntry.Text
+					u.profiles[i].DBType = models.DBType(u.expDBTypeSelect.Selected)
+					u.profiles[i].IsDocker = u.expIsDockerCheck.Checked
+					u.profiles[i].ContainerID = u.expContainerIDEntry.Text
+					u.profiles[i].TargetDBName = u.expTargetDBEntry.Text
+					u.profiles[i].Destination = u.expDestPathLabel.Text
+				}
 
 				u.saveProfiles()
-				dialog.ShowInformation("Saved", fmt.Sprintf("Profile '%s' updated", p.Name), u.window)
+				// Refresh forms to sync both tabs
+				u.populateForms(u.profiles[i])
+				dialog.ShowInformation("Saved", fmt.Sprintf("Profile '%s' updated from %s tab", p.Name, u.currentTab), u.window)
 			}
 
 			duplicateBtn.OnTapped = func() {
@@ -184,29 +229,7 @@ func (u *UI) Run() {
 
 	sidebar.OnSelected = func(id int) {
 		p := u.profiles[id]
-		// Populate fields
-		u.expConnectionTypeSelect.SetSelected(string(p.ConnectionType))
-		u.expWPUrlEntry.SetText(p.WPUrl)
-		u.expWPKeyEntry.SetText(p.WPKey)
-		u.expWPPluginPathEntry.SetText(p.PluginPath)
-
-		u.expHostEntry.SetText(p.Host)
-		u.expPortEntry.SetText(p.Port)
-		u.expSSHUserEntry.SetText(p.SSHUser)
-		u.expSSHPassEntry.SetText(p.SSHPassword)
-		u.expAuthTypeSelect.SetSelected(string(p.AuthType))
-		u.expKeyPathEntry.SetText(p.AuthKeyPath)
-		u.expDBHostEntry.SetText(p.DBHost)
-		u.expDBPortEntry.SetText(p.DBPort)
-		u.expDBUserEntry.SetText(p.DBUser)
-		u.expDBPassEntry.SetText(p.DBPassword)
-		u.expDBTypeSelect.SetSelected(string(p.DBType))
-		u.expIsDockerCheck.SetChecked(p.IsDocker)
-		u.expContainerIDEntry.SetText(p.ContainerID)
-		u.expTargetDBEntry.SetText(p.TargetDBName)
-		if u.expDestPathLabel != nil {
-			u.expDestPathLabel.SetText(p.Destination)
-		}
+		u.populateForms(p)
 	}
 
 	// New Profile Button
@@ -227,7 +250,7 @@ func (u *UI) Run() {
 					ConnectionType: models.ConnectionType(u.expConnectionTypeSelect.Selected),
 					WPUrl:          u.expWPUrlEntry.Text,
 					WPKey:          u.expWPKeyEntry.Text,
-					PluginPath:     u.expWPPluginPathEntry.Text,
+					// PluginPath removed
 
 					Host:         u.expHostEntry.Text,
 					Port:         u.expPortEntry.Text,
@@ -305,6 +328,51 @@ func (u *UI) showErrorAndLog(title string, err error, action string) {
 	}
 	u.log(action, fmt.Sprintf("%s: %v", title, err), "", "Failed", err.Error())
 	dialog.ShowError(err, u.window)
+}
+
+func (u *UI) populateForms(p models.Profile) {
+	// Export Tab
+	u.expConnectionTypeSelect.SetSelected(string(p.ConnectionType))
+	u.expWPUrlEntry.SetText(p.WPUrl)
+	u.expWPKeyEntry.SetText(p.WPKey)
+	u.expHostEntry.SetText(p.Host)
+	u.expPortEntry.SetText(p.Port)
+	u.expSSHUserEntry.SetText(p.SSHUser)
+	u.expSSHPassEntry.SetText(p.SSHPassword)
+	u.expAuthTypeSelect.SetSelected(string(p.AuthType))
+	u.expKeyPathEntry.SetText(p.AuthKeyPath)
+	u.expDBHostEntry.SetText(p.DBHost)
+	u.expDBPortEntry.SetText(p.DBPort)
+	u.expDBUserEntry.SetText(p.DBUser)
+	u.expDBPassEntry.SetText(p.DBPassword)
+	u.expDBTypeSelect.SetSelected(string(p.DBType))
+	u.expIsDockerCheck.SetChecked(p.IsDocker)
+	u.expContainerIDEntry.SetText(p.ContainerID)
+	u.expTargetDBEntry.SetText(p.TargetDBName)
+	if u.expDestPathLabel != nil {
+		u.expDestPathLabel.SetText(p.Destination)
+	}
+
+	// Import Tab (if initialized)
+	if u.impHostEntry != nil {
+		u.impConnectionTypeSelect.SetSelected(string(p.ConnectionType))
+		u.impWPUrlEntry.SetText(p.WPUrl)
+		u.impWPKeyEntry.SetText(p.WPKey)
+		u.impHostEntry.SetText(p.Host)
+		u.impPortEntry.SetText(p.Port)
+		u.impSSHUserEntry.SetText(p.SSHUser)
+		u.impSSHPassEntry.SetText(p.SSHPassword)
+		u.impAuthTypeSelect.SetSelected(string(p.AuthType))
+		u.impKeyPathEntry.SetText(p.AuthKeyPath)
+		u.impDBHostEntry.SetText(p.DBHost)
+		u.impDBPortEntry.SetText(p.DBPort)
+		u.impDBUserEntry.SetText(p.DBUser)
+		u.impDBPassEntry.SetText(p.DBPassword)
+		u.impDBTypeSelect.SetSelected(string(p.DBType))
+		u.impIsDockerCheck.SetChecked(p.IsDocker)
+		u.impContainerIDEntry.SetText(p.ContainerID)
+		u.impTargetDBEntry.SetText(p.TargetDBName)
+	}
 }
 
 func (u *UI) getExecutableDir() string {
