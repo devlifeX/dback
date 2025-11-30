@@ -326,7 +326,7 @@ func (u *UI) showErrorAndLog(title string, err error, action string) {
 	if err == nil {
 		return
 	}
-	u.log(action, fmt.Sprintf("%s: %v", title, err), "", "Failed", err.Error())
+	u.log(nil, action, fmt.Sprintf("%s: %v", title, err), "", "", "Failed", err.Error())
 	dialog.ShowError(err, u.window)
 }
 

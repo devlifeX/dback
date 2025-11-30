@@ -310,7 +310,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			wpKey := u.impWPKeyEntry.Text
 
 			go func() {
-				u.log("Import (WP)", "Starting import to WordPress", "", "In Progress", "")
+				u.log(nil, "Import (WP)", "Starting import to WordPress", "", "", "In Progress", "")
 				statusLabel.SetText("Uploading & Restoring...")
 				progressBar.SetValue(0)
 
@@ -334,12 +334,12 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 				if err != nil {
 					statusLabel.SetText("Import Failed")
-					u.log("Import (WP)", "WP Import Failed", "", "Failed", err.Error())
+					u.log(nil, "Import (WP)", "WP Import Failed", "", "", "Failed", err.Error())
 					return
 				}
 
 				statusLabel.SetText("Success! Restore Completed.")
-				u.log("Import (WP)", "Import completed", "", "Success", "")
+				u.log(nil, "Import (WP)", "Import completed", sourcePath, "", "Success", "")
 			}()
 			return
 		}
@@ -362,7 +362,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}
 
 		go func() {
-			u.log("Import", fmt.Sprintf("Starting import for DB: %s", p.TargetDBName), "", "In Progress", "")
+			u.log(&p, "Import", fmt.Sprintf("Starting import for DB: %s", p.TargetDBName), "", "", "In Progress", "")
 			statusLabel.SetText("Preparing...")
 			progressBar.SetValue(0)
 
@@ -386,7 +386,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			inFile, err := os.Open(sourcePath)
 			if err != nil {
 				statusLabel.SetText("Open File Failed")
-				u.log("Import", "Failed to open source file", "", "Failed", err.Error())
+				u.log(&p, "Import", "Failed to open source file", "", "", "Failed", err.Error())
 				return
 			}
 			defer inFile.Close()
@@ -428,7 +428,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 				if err := cmd.Wait(); err != nil {
 					statusLabel.SetText("Restore Failed")
-					u.log("Import", "Local restore failed", "", "Failed", err.Error())
+					u.log(&p, "Import", "Local restore failed", "", "", "Failed", err.Error())
 					return
 				}
 
@@ -438,7 +438,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				client, err := ssh.NewClient(p)
 				if err != nil {
 					statusLabel.SetText("SSH Connection Failed")
-					u.log("Import", "SSH Connection failed", "", "Failed", err.Error())
+					u.log(&p, "Import", "SSH Connection failed", "", "", "Failed", err.Error())
 					return
 				}
 				defer client.Close()
@@ -447,7 +447,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				stdin, session, err := client.RunCommandPipeInput(cmdStr)
 				if err != nil {
 					statusLabel.SetText("Remote Command Failed")
-					u.log("Import", "Remote command failed", "", "Failed", err.Error())
+					u.log(&p, "Import", "Remote command failed", "", "", "Failed", err.Error())
 					return
 				}
 				defer session.Close()
@@ -465,7 +465,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				_, err = io.Copy(stdin, progressR)
 				if err != nil {
 					statusLabel.SetText("Upload Stream Failed")
-					u.log("Import", "Upload stream failed", "", "Failed", err.Error())
+					u.log(&p, "Import", "Upload stream failed", "", "", "Failed", err.Error())
 					return
 				}
 
@@ -475,7 +475,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				// Wait for remote command to finish
 				if err := session.Wait(); err != nil {
 					statusLabel.SetText("Restore Process Failed")
-					u.log("Import", "Remote restore process failed", "", "Failed", err.Error())
+					u.log(&p, "Import", "Remote restore process failed", "", "", "Failed", err.Error())
 					return
 				}
 			}
@@ -483,7 +483,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			statusLabel.SetText("Restore Completed Successfully!")
 			progressBar.SetValue(1.0)
 			sizeStr := fmt.Sprintf("%.2f MB", float64(totalSize)/1024/1024)
-			u.log("Import", "Import completed successfully", sizeStr, "Success", "")
+			u.log(&p, "Import", "Import completed successfully", sourcePath, sizeStr, "Success", "")
 		}()
 	})
 	startBtn.Importance = widget.HighImportance

@@ -326,31 +326,28 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			wpKey := u.expWPKeyEntry.Text
 
 			go func() {
-				u.log("Export (WP)", "Starting export from WordPress", "", "In Progress", "")
+				u.log(nil, "Export (WP)", "Starting export from WordPress", "", "", "In Progress", "")
 				statusLabel.SetText("Requesting Export...")
 				progressBar.SetValue(0) // Indeterminate?
 
 				wpClient := wordpress.NewClient(wpUrl, wpKey)
 
-				fileName := fmt.Sprintf("wp_dump_%s.sql.gz", time.Now().Format("20060102_150405"))
+				fileName := fmt.Sprintf("wp_dump_%s.sql.gz", time.Now().Format("02_01_2006_15_04_05"))
 				fullPath := filepath.Join(destPath, fileName)
 
 				err := wpClient.Export(fullPath, func(curr int64) {
-					// We don't know total usually unless header provided.
-					// Client handles progress callback.
-					// Update UI
 					mb := float64(curr) / 1024 / 1024
 					statusLabel.SetText(fmt.Sprintf("Downloading: %.2f MB", mb))
 				})
 
 				if err != nil {
 					statusLabel.SetText("Export Failed")
-					u.log("Export (WP)", "WP Export Failed", "", "Failed", err.Error())
+					u.log(nil, "Export (WP)", "WP Export Failed", "", "", "Failed", err.Error())
 					return
 				}
 
 				statusLabel.SetText("Success! Saved to " + fileName)
-				u.log("Export (WP)", "Export completed", "", "Success", "")
+				u.log(nil, "Export (WP)", "Export completed", fullPath, "", "Success", "")
 			}()
 			return
 		}
@@ -374,14 +371,14 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		}
 
 		go func() {
-			u.log("Export", fmt.Sprintf("Starting export for DB: %s on %s", p.TargetDBName, p.Host), "", "In Progress", "")
+			u.log(&p, "Export", fmt.Sprintf("Starting export for DB: %s on %s", p.TargetDBName, p.Host), "", "", "In Progress", "")
 			statusLabel.SetText("Connecting...")
 			progressBar.SetValue(0)
 
 			client, err := ssh.NewClient(p)
 			if err != nil {
 				statusLabel.SetText("Connection Failed")
-				u.log("Export", "Connection failed", "", "Failed", err.Error())
+				u.log(&p, "Export", "Connection failed", "", "", "Failed", err.Error())
 				return
 			}
 			defer client.Close()
@@ -393,18 +390,21 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			stdout, session, err := client.RunCommandStream(cmd)
 			if err != nil {
 				statusLabel.SetText("Command Failed")
-				u.log("Export", "Command failed", "", "Failed", err.Error())
+				u.log(&p, "Export", "Command failed", "", "", "Failed", err.Error())
 				return
 			}
 			defer session.Close()
 
 			// Create local file
-			fileName := fmt.Sprintf("%s_%s.sql.gz", p.TargetDBName, time.Now().Format("20060102_150405"))
+			// Format: profile_name_database_name_day_month_year_hour_min_sec
+			safeProfileName := strings.ReplaceAll(p.Name, " ", "_")
+			fileName := fmt.Sprintf("%s_%s_%s.sql.gz", safeProfileName, p.TargetDBName, time.Now().Format("02_01_2006_15_04_05"))
+
 			fullPath := filepath.Join(destPath, fileName)
 			outFile, err := os.Create(fullPath)
 			if err != nil {
 				statusLabel.SetText("File Creation Failed")
-				u.log("Export", "Local file creation failed", "", "Failed", err.Error())
+				u.log(&p, "Export", "Local file creation failed", "", "", "Failed", err.Error())
 				return
 			}
 			defer outFile.Close()
@@ -424,14 +424,14 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			written, err := io.Copy(outFile, progressR)
 			if err != nil {
 				statusLabel.SetText("Download Failed")
-				u.log("Export", "Stream download failed", "", "Failed", err.Error())
+				u.log(&p, "Export", "Stream download failed", "", "", "Failed", err.Error())
 				return
 			}
 
 			statusLabel.SetText("Success! Saved to " + fileName)
 			progressBar.SetValue(1.0)
 			sizeStr := fmt.Sprintf("%.2f MB", float64(written)/1024/1024)
-			u.log("Export", "Export completed successfully", sizeStr, "Success", "")
+			u.log(&p, "Export", "Export completed successfully", fullPath, sizeStr, "Success", "")
 		}()
 	})
 	startBtn.Importance = widget.HighImportance

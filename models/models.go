@@ -61,12 +61,16 @@ type Profile struct {
 
 // LogEntry represents a single activity log
 type LogEntry struct {
-	Timestamp time.Time `json:"timestamp"`
-	Action    string    `json:"action"` // e.g., "Export", "Import"
-	Details   string    `json:"details"`
-	FileSize  string    `json:"file_size"` // E.g., "500 MB"
-	Status    string    `json:"status"`    // "Success", "Failed", "In Progress"
-	Error     string    `json:"error,omitempty"`
+	ID          string    `json:"id"`
+	ProfileID   string    `json:"profile_id"`
+	ProfileName string    `json:"profile_name"`
+	Timestamp   time.Time `json:"timestamp"`
+	Action      string    `json:"action"` // e.g., "Export", "Import"
+	Details     string    `json:"details"`
+	FilePath    string    `json:"file_path"`
+	FileSize    string    `json:"file_size"`
+	Status      string    `json:"status"`
+	Error       string    `json:"error,omitempty"`
 }
 
 // AppConfig holds application-wide configuration (like saved profiles)

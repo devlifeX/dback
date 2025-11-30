@@ -39,14 +39,19 @@ func (u *UI) createLogsTab() fyne.CanvasObject {
 	return container.NewBorder(nil, nil, nil, nil, u.logList)
 }
 
-func (u *UI) log(action, details, fileSize, status, errStr string) {
+func (u *UI) log(p *models.Profile, action, details, filePath, fileSize, status, errStr string) {
 	entry := models.LogEntry{
 		Timestamp: time.Now(),
 		Action:    action,
 		Details:   details,
+		FilePath:  filePath,
 		FileSize:  fileSize,
 		Status:    status,
 		Error:     errStr,
+	}
+	if p != nil {
+		entry.ProfileID = p.ID
+		entry.ProfileName = p.Name
 	}
 	u.logs = append(u.logs, entry)
 
