@@ -35,6 +35,13 @@ A cross-platform desktop GUI application built with Go and Fyne v2 for managing 
 *   **Test Connectivity:** Built-in tools to verify Server (SSH/HTTP) and Database connections before running heavy operations.
 *   **Comprehensive Logs:** detailed error logs capture remote command output for debugging.
 
+### ⚡ Why is it so fast?
+This app is designed for speed by removing common bottlenecks:
+*   **Direct Streaming:** It operates like a pipeline. Data flows directly from the database to the destination file without stopping. It doesn't wait to "download" the file before saving it; it saves it *while* it downloads.
+*   **No Middleman:** It uses the official, high-speed tools already installed on your server (like `mysqldump`, `pg_dump`, and `tar`) instead of trying to process the data itself.
+*   **Smart Compression:** It automatically uses **Zstandard (zstd)** if available. Zstd is a modern compression tool that is significantly faster than traditional methods like ZIP or GZIP, meaning less waiting for files to compress.
+*   **No Temporary Files:** By streaming data directly over the network (SSH), it avoids creating massive temporary backup files that fill up your server's disk space and slow things down.
+
 ## Installation & Running
 
 ### Run via Script (Linux)
