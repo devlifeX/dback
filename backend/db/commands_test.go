@@ -26,11 +26,13 @@ func TestBuildExportCommand_Syntax(t *testing.T) {
 	// The command is roughly: bash -c 'set -o pipefail; PGPASSWORD='pass'word' ...'
 	// This is definitely broken if not escaped.
 
-	// Try to execute it with "echo" replaced for pg_dump/zstd to verify syntax
-	// We replace the actual heavy commands with "true" or "echo"
-	safeCmd := strings.ReplaceAll(cmd, "pg_dump", "echo pg_dump")
-	safeCmd = strings.ReplaceAll(safeCmd, "zstd", "echo zstd")
-	safeCmd = strings.ReplaceAll(safeCmd, "gzip", "echo gzip")
+	// Try to execute it with safe replacements to verify syntax
+	// Replace dump commands with echo to produce output, compression with cat to consume input
+	safeCmd := strings.ReplaceAll(cmd, "pg_dump", "echo 'dummy data'")
+	safeCmd = strings.ReplaceAll(safeCmd, "mysqldump", "echo 'dummy data'")
+	safeCmd = strings.ReplaceAll(safeCmd, "tar cf -", "echo 'dummy data'")
+	safeCmd = strings.ReplaceAll(safeCmd, "zstd", "cat")
+	safeCmd = strings.ReplaceAll(safeCmd, "gzip", "cat")
 
 	// We wrap it in bash -c because that's how SSH executes it (roughly sh -c)
 	// exec.Command("bash", "-c", safeCmd)
