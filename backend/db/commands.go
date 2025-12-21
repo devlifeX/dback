@@ -110,7 +110,7 @@ func BuildImportCommand(p models.Profile) string {
 	} else if p.DBType == models.DBTypePostgreSQL {
 		// PostgreSQL Logic - drop and recreate database before import
 		authEnv := fmt.Sprintf("PGPASSWORD='%s'", p.DBPassword)
-		
+
 		if p.IsDocker {
 			// First drop/create, then pipe stdin to psql for import
 			cmd = fmt.Sprintf("sh -c '%s docker exec %s psql -U %s postgres -c \"DROP DATABASE IF EXISTS %s; CREATE DATABASE %s;\" && docker exec -i -e %s %s psql -U %s %s'",

@@ -7,3 +7,4 @@ dback-windows.exe
 *.sql
 *.sql.gz
 export_history.json
+DB_Sync_Manager.apk

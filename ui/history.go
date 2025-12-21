@@ -203,7 +203,7 @@ func (u *UI) createHistoryTab() fyne.CanvasObject {
 				if confirmed {
 					u.exportRecords = append(u.exportRecords[:realIdx], u.exportRecords[realIdx+1:]...)
 					u.saveExportHistory()
-					u.refreshHistory()
+		u.refreshHistory()
 					selectedIdx = -1
 				}
 			}, u.window)

@@ -425,8 +425,8 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 					
 					dialog.ShowInformation("Export Complete", fmt.Sprintf("Database exported successfully!\n\nFile: %s\nSize: %s", fileName, sizeStr), w)
 				} else {
-					statusLabel.SetText("Success! Saved to " + fileName)
-					u.log(nil, "Export (WP)", "Export completed", fullPath, "", "Success", "")
+				statusLabel.SetText("Success! Saved to " + fileName)
+				u.log(nil, "Export (WP)", "Export completed", fullPath, "", "Success", "")
 					progressBar.SetValue(1.0)
 					
 					// Add to export history with unknown size

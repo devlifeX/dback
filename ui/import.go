@@ -249,15 +249,15 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 	// Test DB Connectivity (Import)
 	testDBBtn := widget.NewButton("Test DB Connectivity", func() {
-		p := models.Profile{
-			DBHost:      strings.TrimSpace(u.impDBHostEntry.Text),
-			DBPort:      strings.TrimSpace(u.impDBPortEntry.Text),
-			DBUser:      strings.TrimSpace(u.impDBUserEntry.Text),
-			DBPassword:  strings.TrimSpace(u.impDBPassEntry.Text),
-			DBType:      models.DBType(u.impDBTypeSelect.Selected),
-			IsDocker:    u.impIsDockerCheck.Checked,
-			ContainerID: strings.TrimSpace(u.impContainerIDEntry.Text),
-		}
+			p := models.Profile{
+				DBHost:      strings.TrimSpace(u.impDBHostEntry.Text),
+				DBPort:      strings.TrimSpace(u.impDBPortEntry.Text),
+				DBUser:      strings.TrimSpace(u.impDBUserEntry.Text),
+				DBPassword:  strings.TrimSpace(u.impDBPassEntry.Text),
+				DBType:      models.DBType(u.impDBTypeSelect.Selected),
+				IsDocker:    u.impIsDockerCheck.Checked,
+				ContainerID: strings.TrimSpace(u.impContainerIDEntry.Text),
+			}
 
 		if restoreLocalCheck.Checked {
 			// Local DB Test
@@ -434,8 +434,8 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 				err = wpClient.Import(sourcePath, func(curr int64) {
 					pct := float64(curr) / float64(totalSize)
-					progressBar.SetValue(pct)
-					statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100))
+						progressBar.SetValue(pct)
+						statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100))
 				})
 
 				if err != nil {
