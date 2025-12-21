@@ -9,7 +9,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -516,21 +518,47 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 					return
 				}
 
-				// Copy with progress
+				// Copy with progress (upload phase: 0-50%)
 				progressR := &ssh.ProgressReader{
 					Reader: inFile,
 					Total:  totalSize,
 					Callback: func(current int64, total int64) {
-						pct := float64(current) / float64(total)
+						pct := float64(current) / float64(total) * 0.5 // 0-50%
 						progressBar.SetValue(pct)
-						statusLabel.SetText(fmt.Sprintf("Restoring: %.1f%%", pct*100))
+						statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100*2))
 					},
 				}
 
 				io.Copy(stdin, progressR)
 				stdin.Close()
 
-				if err := cmd.Wait(); err != nil {
+				// Processing phase: show indeterminate progress
+				statusLabel.SetText("⏳ Processing... Please wait (DROP + CREATE + IMPORT)")
+				progressBar.SetValue(0.5)
+				
+				// Animate progress bar while waiting
+				done := make(chan bool)
+				go func() {
+					val := 0.5
+					for {
+						select {
+						case <-done:
+							return
+						default:
+							val += 0.05
+							if val > 0.95 {
+								val = 0.5
+							}
+							progressBar.SetValue(val)
+							time.Sleep(200 * time.Millisecond)
+						}
+					}
+				}()
+
+				err = cmd.Wait()
+				done <- true
+				
+				if err != nil {
 					stderrStr := stderrBuf.String()
 					errMsg := fmt.Sprintf("Error: %v", err)
 					if stderrStr != "" {
@@ -570,13 +598,14 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 					io.Copy(&stderrBuf, stderr)
 				}()
 
+				// Upload phase: 0-50%
 				progressR := &ssh.ProgressReader{
 					Reader: inFile,
 					Total:  totalSize,
 					Callback: func(current int64, total int64) {
-						pct := float64(current) / float64(total)
+						pct := float64(current) / float64(total) * 0.5
 						progressBar.SetValue(pct)
-						statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100))
+						statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100*2))
 					},
 				}
 
@@ -590,8 +619,33 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				// Close stdin to signal EOF to remote process
 				stdin.Close()
 
+				// Processing phase: animate progress bar
+				statusLabel.SetText("⏳ Processing... Please wait (DROP + CREATE + IMPORT)")
+				progressBar.SetValue(0.5)
+				
+				done := make(chan bool)
+				go func() {
+					val := 0.5
+					for {
+						select {
+						case <-done:
+							return
+						default:
+							val += 0.05
+							if val > 0.95 {
+								val = 0.5
+							}
+							progressBar.SetValue(val)
+							time.Sleep(200 * time.Millisecond)
+						}
+					}
+				}()
+
 				// Wait for remote command to finish
-				if err := session.Wait(); err != nil {
+				err = session.Wait()
+				done <- true
+				
+				if err != nil {
 					errMsg := fmt.Sprintf("Process exited with error: %v. Stderr: %s", err, stderrBuf.String())
 					statusLabel.SetText("Restore Process Failed")
 					u.log(&p, "Import", "Remote restore process failed", "", "", "Failed", errMsg)
@@ -604,6 +658,11 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			progressBar.SetValue(1.0)
 			sizeStr := fmt.Sprintf("%.2f MB", float64(totalSize)/1024/1024)
 			u.log(&p, "Import", "Import completed successfully", sourcePath, sizeStr, "Success", "")
+			
+			// Show success dialog
+			dialog.ShowInformation("Import Complete", 
+				fmt.Sprintf("Database restored successfully!\n\nDatabase: %s\nFile: %s\nSize: %s", 
+					p.TargetDBName, filepath.Base(sourcePath), sizeStr), w)
 		}()
 	})
 	startBtn.Importance = widget.HighImportance

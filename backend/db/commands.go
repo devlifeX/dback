@@ -108,20 +108,24 @@ func BuildImportCommand(p models.Profile) string {
 			cmd = `sh -c 'sudo systemctl stop couchdb >&2; tar xf - -C /; sudo systemctl start couchdb >&2'`
 		}
 	} else if p.DBType == models.DBTypePostgreSQL {
-		// PostgreSQL Logic
+		// PostgreSQL Logic - drop and recreate database before import
 		authEnv := fmt.Sprintf("PGPASSWORD='%s'", p.DBPassword)
-		args := fmt.Sprintf("-U %s %s", p.DBUser, p.TargetDBName)
-
+		
 		if p.IsDocker {
-			cmd = fmt.Sprintf("docker exec -i -e %s %s psql %s",
-				authEnv, p.ContainerID, args)
+			// First drop/create, then pipe stdin to psql for import
+			cmd = fmt.Sprintf("sh -c '%s docker exec %s psql -U %s postgres -c \"DROP DATABASE IF EXISTS %s; CREATE DATABASE %s;\" && docker exec -i -e %s %s psql -U %s %s'",
+				authEnv, p.ContainerID, p.DBUser, p.TargetDBName, p.TargetDBName,
+				authEnv, p.ContainerID, p.DBUser, p.TargetDBName)
 		} else {
 			hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
-			cmd = fmt.Sprintf("%s psql %s %s", authEnv, hostArgs, args)
+			cmd = fmt.Sprintf("sh -c '%s psql %s -U %s postgres -c \"DROP DATABASE IF EXISTS %s; CREATE DATABASE %s;\" && %s psql %s -U %s %s'",
+				authEnv, hostArgs, p.DBUser, p.TargetDBName, p.TargetDBName,
+				authEnv, hostArgs, p.DBUser, p.TargetDBName)
 		}
 
 	} else {
 		// MySQL/MariaDB Logic - try mariadb first (for MariaDB 10.5+), fallback to mysql
+		// Connect WITHOUT database name so we can DROP and CREATE it
 		authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
 		hostArgs := ""
 		if !p.IsDocker {
@@ -129,25 +133,26 @@ func BuildImportCommand(p models.Profile) string {
 		}
 
 		if p.IsDocker {
-			// Inside container, check which command exists
-			cmd = fmt.Sprintf("docker exec -i %s sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s %s; else mysql %s %s; fi'",
-				p.ContainerID, authArgs, p.TargetDBName, authArgs, p.TargetDBName)
+			// Inside container - connect without database name
+			cmd = fmt.Sprintf("docker exec -i %s sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s; else mysql %s; fi'",
+				p.ContainerID, authArgs, authArgs)
 		} else {
-			// On host, check which command exists
-			cmd = fmt.Sprintf("sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s %s %s; else mysql %s %s %s; fi'",
-				hostArgs, authArgs, p.TargetDBName, hostArgs, authArgs, p.TargetDBName)
+			// On host - connect without database name
+			cmd = fmt.Sprintf("sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s %s; else mysql %s %s; fi'",
+				hostArgs, authArgs, hostArgs, authArgs)
 		}
 	}
 
 	// Decompression Logic: Detect format and decompress if needed
-	// Then prepend SET commands to disable strict mode and foreign key checks
 	decompressCmd := `F=/tmp/dback_import_$$.dat; cat > $F; 
 if file "$F" 2>/dev/null | grep -q "gzip"; then gunzip -c "$F"; 
 elif file "$F" 2>/dev/null | grep -q "Zstandard"; then zstd -d -c "$F"; 
 else cat "$F"; fi; rm -f "$F"`
 
-	// Prepend SQL settings before the actual data
-	prependSQL := `echo "SET SESSION sql_mode=''; SET FOREIGN_KEY_CHECKS=0;"`
+	// Prepend SQL: Drop and recreate database, then set session options
+	// Using escaped quotes to avoid bash interpreting backticks
+	dropAndCreate := fmt.Sprintf(`printf 'DROP DATABASE IF EXISTS %s; CREATE DATABASE %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE %s; SET SESSION sql_mode='"'"''"'"'; SET FOREIGN_KEY_CHECKS=0;\n'`,
+		p.TargetDBName, p.TargetDBName, p.TargetDBName)
 
-	return fmt.Sprintf("{ %s; { %s; }; } | %s", prependSQL, decompressCmd, cmd)
+	return fmt.Sprintf("{ %s; { %s; }; } | %s", dropAndCreate, decompressCmd, cmd)
 }
