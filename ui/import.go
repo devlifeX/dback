@@ -137,7 +137,51 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 		}
 
 		if connType == models.ConnectionTypeWordPress {
-			dialog.ShowInformation("Info", "To test WP, try starting upload.", w)
+			// Test WP via Ping endpoint
+			wpUrl := u.impWPUrlEntry.Text
+			wpKey := u.impWPKeyEntry.Text
+
+			if wpUrl == "" {
+				dialog.ShowError(fmt.Errorf("WordPress URL is required"), w)
+				return
+			}
+			if wpKey == "" {
+				dialog.ShowError(fmt.Errorf("API Key is required"), w)
+				return
+			}
+
+			loading := u.showLoading("Testing Connection", "Connecting to WordPress...")
+			go func() {
+				wpClient := wordpress.NewClient(wpUrl, wpKey)
+				pingResp, err := wpClient.Ping()
+				loading.Hide()
+
+				if err != nil {
+					errMsg := fmt.Sprintf("WordPress Connection Failed:\n\n%s\n\nPossible causes:\n• Plugin not installed/activated\n• Wrong URL or API key\n• Site not reachable", err.Error())
+					dialog.ShowError(fmt.Errorf(errMsg), w)
+					return
+				}
+
+				// Format server info
+				info := fmt.Sprintf("✓ Connection Successful!\n\n"+
+					"Plugin Version: %s\n"+
+					"Shell Available: %v\n"+
+					"DB Connected: %v",
+					pingResp.Version,
+					pingResp.CanUseShell,
+					pingResp.DBConnected)
+
+				// Warn about import-specific issues
+				warnings := ""
+				if !pingResp.CanUseShell {
+					warnings += "\n\n⚠️ Shell disabled: mysql command not available, import will fail"
+				}
+				if !pingResp.DBConnected {
+					warnings += "\n\n⚠️ Database not connected: import will fail"
+				}
+
+				dialog.ShowInformation("WordPress Connection", info+warnings, w)
+			}()
 			return
 		}
 
@@ -203,28 +247,74 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 
 	// Test DB Connectivity (Import)
 	testDBBtn := widget.NewButton("Test DB Connectivity", func() {
+		p := models.Profile{
+			DBHost:      strings.TrimSpace(u.impDBHostEntry.Text),
+			DBPort:      strings.TrimSpace(u.impDBPortEntry.Text),
+			DBUser:      strings.TrimSpace(u.impDBUserEntry.Text),
+			DBPassword:  strings.TrimSpace(u.impDBPassEntry.Text),
+			DBType:      models.DBType(u.impDBTypeSelect.Selected),
+			IsDocker:    u.impIsDockerCheck.Checked,
+			ContainerID: strings.TrimSpace(u.impContainerIDEntry.Text),
+		}
+
 		if restoreLocalCheck.Checked {
-			dialog.ShowInformation("Info", "Local DB test not implemented yet.", w)
+			// Local DB Test
+			loading := u.showLoading("Testing Local DB", "Connecting to database...")
+			go func() {
+				var cmdStr string
+				authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
+
+				if p.DBType == models.DBTypePostgreSQL {
+					authEnv := fmt.Sprintf("PGPASSWORD='%s'", p.DBPassword)
+					if p.IsDocker {
+						cmdStr = fmt.Sprintf("docker exec %s sh -c '%s pg_isready -U %s'", p.ContainerID, authEnv, p.DBUser)
+					} else {
+						hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
+						cmdStr = fmt.Sprintf("%s pg_isready %s -U %s", authEnv, hostArgs, p.DBUser)
+					}
+				} else if p.DBType == models.DBTypeCouchDB {
+					targetHost := p.DBHost
+					if p.IsDocker {
+						targetHost = "127.0.0.1"
+					}
+					url := fmt.Sprintf("http://%s:%s/", targetHost, p.DBPort)
+					cmdStr = fmt.Sprintf("curl -s -f -u %s:%s %s", p.DBUser, p.DBPassword, url)
+				} else {
+					// MySQL/MariaDB - try both commands
+					if p.IsDocker {
+						cmdStr = fmt.Sprintf("docker exec %s sh -c 'if command -v mariadb-admin >/dev/null 2>&1; then mariadb-admin %s ping; else mysqladmin %s ping; fi'",
+							p.ContainerID, authArgs, authArgs)
+					} else {
+						hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+						cmdStr = fmt.Sprintf("sh -c 'if command -v mariadb-admin >/dev/null 2>&1; then mariadb-admin %s %s ping; else mysqladmin %s %s ping; fi'",
+							hostArgs, authArgs, hostArgs, authArgs)
+					}
+				}
+
+				cmd := exec.Command("bash", "-c", cmdStr)
+				output, err := cmd.CombinedOutput()
+				loading.Hide()
+
+				if err != nil {
+					errMsg := fmt.Sprintf("Connection Failed\n\nError: %v\nOutput: %s\n\nCommand: %s", err, string(output), cmdStr)
+					dialog.ShowError(fmt.Errorf(errMsg), w)
+					return
+				}
+
+				dialog.ShowInformation("Success", "Database Connection Successful!\n"+string(output), w)
+			}()
 			return
 		}
 
+		// Remote DB Test via SSH
 		loading := u.showLoading("Testing DB", "Connecting to Database...")
 		go func() {
-			p := models.Profile{
-				Host:        strings.TrimSpace(u.impHostEntry.Text),
-				Port:        strings.TrimSpace(u.impPortEntry.Text),
-				SSHUser:     strings.TrimSpace(u.impSSHUserEntry.Text),
-				SSHPassword: strings.TrimSpace(u.impSSHPassEntry.Text),
-				AuthType:    models.AuthType(u.impAuthTypeSelect.Selected),
-				AuthKeyPath: strings.TrimSpace(u.impKeyPathEntry.Text),
-				DBHost:      strings.TrimSpace(u.impDBHostEntry.Text),
-				DBPort:      strings.TrimSpace(u.impDBPortEntry.Text),
-				DBUser:      strings.TrimSpace(u.impDBUserEntry.Text),
-				DBPassword:  strings.TrimSpace(u.impDBPassEntry.Text),
-				DBType:      models.DBType(u.impDBTypeSelect.Selected),
-				IsDocker:    u.impIsDockerCheck.Checked,
-				ContainerID: strings.TrimSpace(u.impContainerIDEntry.Text),
-			}
+			p.Host = strings.TrimSpace(u.impHostEntry.Text)
+			p.Port = strings.TrimSpace(u.impPortEntry.Text)
+			p.SSHUser = strings.TrimSpace(u.impSSHUserEntry.Text)
+			p.SSHPassword = strings.TrimSpace(u.impSSHPassEntry.Text)
+			p.AuthType = models.AuthType(u.impAuthTypeSelect.Selected)
+			p.AuthKeyPath = strings.TrimSpace(u.impKeyPathEntry.Text)
 
 			client, err := ssh.NewClient(p)
 			if err != nil {
@@ -256,12 +346,15 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 					cmd = fmt.Sprintf("curl -s -f %s %s", auth, url)
 				}
 			} else {
+				// MySQL/MariaDB - try both commands
 				authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
 				if p.IsDocker {
-					cmd = fmt.Sprintf("docker exec -i %s mysqladmin %s ping", p.ContainerID, authArgs)
+					cmd = fmt.Sprintf("docker exec %s sh -c 'if command -v mariadb-admin >/dev/null 2>&1; then mariadb-admin %s ping; else mysqladmin %s ping; fi'",
+						p.ContainerID, authArgs, authArgs)
 				} else {
 					hostArgs := fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
-					cmd = fmt.Sprintf("mysqladmin %s %s ping", hostArgs, authArgs)
+					cmd = fmt.Sprintf("sh -c 'if command -v mariadb-admin >/dev/null 2>&1; then mariadb-admin %s %s ping; else mysqladmin %s %s ping; fi'",
+						hostArgs, authArgs, hostArgs, authArgs)
 				}
 			}
 
@@ -310,30 +403,51 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 			wpUrl := u.impWPUrlEntry.Text
 			wpKey := u.impWPKeyEntry.Text
 
+			// Validate inputs
+			if wpUrl == "" {
+				dialog.ShowError(fmt.Errorf("WordPress URL is required"), w)
+				return
+			}
+			if wpKey == "" {
+				dialog.ShowError(fmt.Errorf("API Key is required"), w)
+				return
+			}
+
 			go func() {
-				u.log(nil, "Import (WP)", "Starting import to WordPress", "", "", "In Progress", "")
+				u.log(nil, "Import (WP)", "Starting import to WordPress: "+wpUrl, "", "", "In Progress", "")
 				statusLabel.SetText("Uploading & Restoring...")
 				progressBar.SetValue(0)
 
 				wpClient := wordpress.NewClient(wpUrl, wpKey)
 
-				err := wpClient.Import(sourcePath, func(curr int64) {
-					f, _ := os.Stat(sourcePath)
-					if f != nil {
-						pct := float64(curr) / float64(f.Size())
-						progressBar.SetValue(pct)
-						statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100))
-					}
+				// Get file size for progress
+				fileInfo, err := os.Stat(sourcePath)
+				if err != nil {
+					statusLabel.SetText("Failed to read file")
+					u.log(nil, "Import (WP)", "Failed to stat source file", "", "", "Failed", err.Error())
+					dialog.ShowError(fmt.Errorf("Failed to read source file: %v", err), w)
+					return
+				}
+				totalSize := fileInfo.Size()
+
+				err = wpClient.Import(sourcePath, func(curr int64) {
+					pct := float64(curr) / float64(totalSize)
+					progressBar.SetValue(pct)
+					statusLabel.SetText(fmt.Sprintf("Uploading: %.1f%%", pct*100))
 				})
 
 				if err != nil {
 					statusLabel.SetText("Import Failed")
 					u.log(nil, "Import (WP)", "WP Import Failed", "", "", "Failed", err.Error())
+					dialog.ShowError(fmt.Errorf("WordPress Import Failed:\n%s", err.Error()), w)
 					return
 				}
 
-				statusLabel.SetText("Success! Restore Completed.")
-				u.log(nil, "Import (WP)", "Import completed", sourcePath, "", "Success", "")
+				progressBar.SetValue(1.0)
+				sizeStr := fmt.Sprintf("%.2f MB", float64(totalSize)/1024/1024)
+				statusLabel.SetText(fmt.Sprintf("Success! Restore Completed (%s)", sizeStr))
+				u.log(nil, "Import (WP)", "Import completed", sourcePath, sizeStr, "Success", "")
+				dialog.ShowInformation("Import Complete", fmt.Sprintf("Database restored successfully!\n\nFile: %s\nSize: %s", sourcePath, sizeStr), w)
 			}()
 			return
 		}
@@ -382,12 +496,23 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				stdin, err := cmd.StdinPipe()
 				if err != nil {
 					statusLabel.SetText("Local Pipe Failed")
+					dialog.ShowError(fmt.Errorf("Failed to create stdin pipe: %v", err), w)
 					return
+				}
+
+				// Capture stderr for error messages
+				stderrPipe, _ := cmd.StderrPipe()
+				var stderrBuf strings.Builder
+				if stderrPipe != nil {
+					go func() {
+						io.Copy(&stderrBuf, stderrPipe)
+					}()
 				}
 
 				// Start command
 				if err := cmd.Start(); err != nil {
 					statusLabel.SetText("Local Command Start Failed")
+					dialog.ShowError(fmt.Errorf("Failed to start command: %v\n\nCommand: %s", err, cmdStr), w)
 					return
 				}
 
@@ -398,7 +523,7 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 					Callback: func(current int64, total int64) {
 						pct := float64(current) / float64(total)
 						progressBar.SetValue(pct)
-						statusLabel.SetText(fmt.Sprintf("Uploading/Restoring: %.1f%%", pct*100))
+						statusLabel.SetText(fmt.Sprintf("Restoring: %.1f%%", pct*100))
 					},
 				}
 
@@ -406,8 +531,16 @@ func (u *UI) createImportTab(w fyne.Window) fyne.CanvasObject {
 				stdin.Close()
 
 				if err := cmd.Wait(); err != nil {
+					stderrStr := stderrBuf.String()
+					errMsg := fmt.Sprintf("Error: %v", err)
+					if stderrStr != "" {
+						errMsg += fmt.Sprintf("\n\nDetails:\n%s", stderrStr)
+					}
+					errMsg += fmt.Sprintf("\n\nCommand:\n%s", cmdStr)
+
 					statusLabel.SetText("Restore Failed")
-					u.log(&p, "Import", "Local restore failed", "", "", "Failed", err.Error())
+					u.log(&p, "Import", "Local restore failed", "", "", "Failed", errMsg)
+					dialog.ShowError(fmt.Errorf("Local Restore Failed:\n\n%s", errMsg), w)
 					return
 				}
 

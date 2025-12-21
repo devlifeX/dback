@@ -121,14 +121,62 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 		connType := models.ConnectionType(u.expConnectionTypeSelect.Selected)
 
 		if connType == models.ConnectionTypeWordPress {
-			// Test WP
-			// Use a simple check (e.g. try export but cancel? or create a ping endpoint?)
-			// Since we don't have a ping endpoint in template, we can't easily check without triggering dump.
-			// But user can check if URL is reachable.
-			// Ideally we add a ping route. I'll skip for now and rely on user trying export.
-			// Or I can update template to add ping.
-			// Let's just assume success if URL is valid for MVP or try a GET.
-			dialog.ShowInformation("Info", "To test, try starting backup. Errors will be reported.", w)
+			// Test WP via Ping endpoint
+			wpUrl := u.expWPUrlEntry.Text
+			wpKey := u.expWPKeyEntry.Text
+
+			if wpUrl == "" {
+				dialog.ShowError(fmt.Errorf("WordPress URL is required"), w)
+				return
+			}
+			if wpKey == "" {
+				dialog.ShowError(fmt.Errorf("API Key is required. Generate a plugin first."), w)
+				return
+			}
+
+			loading := u.showLoading("Testing Connection", "Connecting to WordPress...")
+			go func() {
+				wpClient := wordpress.NewClient(wpUrl, wpKey)
+				pingResp, err := wpClient.Ping()
+				loading.Hide()
+
+				if err != nil {
+					errMsg := fmt.Sprintf("WordPress Connection Failed:\n\n%s\n\nPossible causes:\n• Plugin not installed/activated\n• Wrong URL or API key\n• Site not reachable", err.Error())
+					dialog.ShowError(fmt.Errorf(errMsg), w)
+					return
+				}
+
+				// Format server info
+				info := fmt.Sprintf("✓ Connection Successful!\n\n"+
+					"Plugin Version: %s\n"+
+					"PHP Version: %s\n"+
+					"WordPress Version: %s\n"+
+					"Shell Available: %v\n"+
+					"DB Connected: %v\n"+
+					"Upload Dir Writable: %v\n"+
+					"Memory Limit: %s",
+					pingResp.Version,
+					pingResp.PHPVersion,
+					pingResp.WPVersion,
+					pingResp.CanUseShell,
+					pingResp.DBConnected,
+					pingResp.UploadDirWritable,
+					pingResp.MemoryLimit)
+
+				// Warn about potential issues
+				warnings := ""
+				if !pingResp.CanUseShell {
+					warnings += "\n\n⚠️ Shell disabled: mysqldump not available, will use slower PHP export"
+				}
+				if !pingResp.UploadDirWritable {
+					warnings += "\n\n⚠️ Upload directory not writable: exports will fail"
+				}
+				if !pingResp.DBConnected {
+					warnings += "\n\n⚠️ Database not connected: exports will fail"
+				}
+
+				dialog.ShowInformation("WordPress Connection", info+warnings, w)
+			}()
 			return
 		}
 
@@ -333,10 +381,20 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			wpUrl := u.expWPUrlEntry.Text
 			wpKey := u.expWPKeyEntry.Text
 
+			// Validate inputs
+			if wpUrl == "" {
+				dialog.ShowError(fmt.Errorf("WordPress URL is required"), w)
+				return
+			}
+			if wpKey == "" {
+				dialog.ShowError(fmt.Errorf("API Key is required. Generate a plugin first."), w)
+				return
+			}
+
 			go func() {
-				u.log(nil, "Export (WP)", "Starting export from WordPress", "", "", "In Progress", "")
+				u.log(nil, "Export (WP)", "Starting export from WordPress: "+wpUrl, "", "", "In Progress", "")
 				statusLabel.SetText("Requesting Export...")
-				progressBar.SetValue(0) // Indeterminate?
+				progressBar.SetValue(0)
 
 				wpClient := wordpress.NewClient(wpUrl, wpKey)
 
@@ -351,11 +409,22 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 				if err != nil {
 					statusLabel.SetText("Export Failed")
 					u.log(nil, "Export (WP)", "WP Export Failed", "", "", "Failed", err.Error())
+					dialog.ShowError(fmt.Errorf("WordPress Export Failed:\n%s", err.Error()), w)
 					return
 				}
 
-				statusLabel.SetText("Success! Saved to " + fileName)
-				u.log(nil, "Export (WP)", "Export completed", fullPath, "", "Success", "")
+				// Check file size for extra validation
+				if info, err := os.Stat(fullPath); err == nil {
+					sizeStr := fmt.Sprintf("%.2f MB", float64(info.Size())/1024/1024)
+					statusLabel.SetText(fmt.Sprintf("Success! Saved to %s (%s)", fileName, sizeStr))
+					u.log(nil, "Export (WP)", "Export completed", fullPath, sizeStr, "Success", "")
+					progressBar.SetValue(1.0)
+					dialog.ShowInformation("Export Complete", fmt.Sprintf("Database exported successfully!\n\nFile: %s\nSize: %s", fileName, sizeStr), w)
+				} else {
+					statusLabel.SetText("Success! Saved to " + fileName)
+					u.log(nil, "Export (WP)", "Export completed", fullPath, "", "Success", "")
+					progressBar.SetValue(1.0)
+				}
 			}()
 			return
 		}

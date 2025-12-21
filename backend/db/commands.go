@@ -16,14 +16,13 @@ func BuildExportCommand(p models.Profile) string {
 	var cmd string
 
 	if p.DBType == models.DBTypeCouchDB {
-		// CouchDB Logic
-		// Note: CouchDB logic uses complex sh -c string, we assume fixed structure safe.
-		// But p.ContainerID might need escaping?
-		// For simplicity, we keep CouchDB logic as is, assuming alphanumeric IDs.
+		// CouchDB Logic - backup the data directory
 		if p.IsDocker {
-			cmd = fmt.Sprintf(`sh -c 'DATA_DIR=$(docker inspect %s --format "{{ range .Mounts }}{{ if eq .Destination \"/opt/couchdb/data\" }}{{ .Destination }}{{ end }}{{ end }}"); if [ -z "$DATA_DIR" ]; then DATA_DIR="/opt/couchdb/data"; fi; docker exec %s tar cf - $DATA_DIR'`, p.ContainerID, p.ContainerID)
+			// For Docker, backup /opt/couchdb/data from inside the container
+			cmd = fmt.Sprintf("docker exec %s tar cf - /opt/couchdb/data", p.ContainerID)
 		} else {
-			cmd = `sh -c 'DATA_DIR=$(grep -r "database_dir" /opt/couchdb/etc/local.ini 2>/dev/null | awk "{print $3}"); if [ -z "$DATA_DIR" ]; then DATA_DIR="/var/lib/couchdb"; fi; sudo systemctl stop couchdb >&2; tar cf - $DATA_DIR; sudo systemctl start couchdb >&2'`
+			// For native install, find and backup the data directory
+			cmd = `sh -c 'DATA_DIR=$(grep -r "database_dir" /opt/couchdb/etc/local.ini 2>/dev/null | awk "{print \$3}"); if [ -z "$DATA_DIR" ]; then DATA_DIR="/var/lib/couchdb"; fi; tar cf - "$DATA_DIR"'`
 		}
 	} else if p.DBType == models.DBTypePostgreSQL {
 		// PostgreSQL Logic
@@ -122,7 +121,7 @@ func BuildImportCommand(p models.Profile) string {
 		}
 
 	} else {
-		// MySQL/MariaDB Logic
+		// MySQL/MariaDB Logic - try mariadb first (for MariaDB 10.5+), fallback to mysql
 		authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
 		hostArgs := ""
 		if !p.IsDocker {
@@ -130,15 +129,25 @@ func BuildImportCommand(p models.Profile) string {
 		}
 
 		if p.IsDocker {
-			cmd = fmt.Sprintf("docker exec -i %s mysql %s %s",
-				p.ContainerID, authArgs, p.TargetDBName)
+			// Inside container, check which command exists
+			cmd = fmt.Sprintf("docker exec -i %s sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s %s; else mysql %s %s; fi'",
+				p.ContainerID, authArgs, p.TargetDBName, authArgs, p.TargetDBName)
 		} else {
-			cmd = fmt.Sprintf("mysql %s %s %s",
-				hostArgs, authArgs, p.TargetDBName)
+			// On host, check which command exists
+			cmd = fmt.Sprintf("sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s %s %s; else mysql %s %s %s; fi'",
+				hostArgs, authArgs, p.TargetDBName, hostArgs, authArgs, p.TargetDBName)
 		}
 	}
 
-	// Decompression Logic: Try zstd, fallback to gzip
-	decompressCmd := "if command -v zstd >/dev/null 2>&1; then zstd -d 2>/dev/null || gunzip -c; else gunzip -c; fi"
-	return fmt.Sprintf("{ %s; } | %s", decompressCmd, cmd)
+	// Decompression Logic: Detect format and decompress if needed
+	// Then prepend SET commands to disable strict mode and foreign key checks
+	decompressCmd := `F=/tmp/dback_import_$$.dat; cat > $F; 
+if file "$F" 2>/dev/null | grep -q "gzip"; then gunzip -c "$F"; 
+elif file "$F" 2>/dev/null | grep -q "Zstandard"; then zstd -d -c "$F"; 
+else cat "$F"; fi; rm -f "$F"`
+
+	// Prepend SQL settings before the actual data
+	prependSQL := `echo "SET SESSION sql_mode=''; SET FOREIGN_KEY_CHECKS=0;"`
+
+	return fmt.Sprintf("{ %s; { %s; }; } | %s", prependSQL, decompressCmd, cmd)
 }

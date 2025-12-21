@@ -82,7 +82,7 @@ func NewUI(app fyne.App) *UI {
 
 // Run initializes and starts the UI
 func (u *UI) Run() {
-	u.window = u.app.NewWindow("DB Sync Manager")
+	u.window = u.app.NewWindow("DB Sync Manager v1.5")
 	u.window.Resize(fyne.NewSize(1200, 800))
 	// u.window.SetFullScreen(true) // Removed per user request (hides controls)
 
