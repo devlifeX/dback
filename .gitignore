@@ -6,3 +6,4 @@ dback-windows.exe
 *.tar.gz
 *.sql
 *.sql.gz
+export_history.json

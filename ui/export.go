@@ -419,11 +419,18 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 					statusLabel.SetText(fmt.Sprintf("Success! Saved to %s (%s)", fileName, sizeStr))
 					u.log(nil, "Export (WP)", "Export completed", fullPath, sizeStr, "Success", "")
 					progressBar.SetValue(1.0)
+					
+					// Add to export history
+					u.addExportRecord("wp", "WordPress: "+wpUrl, "wordpress", fullPath, info.Size())
+					
 					dialog.ShowInformation("Export Complete", fmt.Sprintf("Database exported successfully!\n\nFile: %s\nSize: %s", fileName, sizeStr), w)
 				} else {
 					statusLabel.SetText("Success! Saved to " + fileName)
 					u.log(nil, "Export (WP)", "Export completed", fullPath, "", "Success", "")
 					progressBar.SetValue(1.0)
+					
+					// Add to export history with unknown size
+					u.addExportRecord("wp", "WordPress: "+wpUrl, "wordpress", fullPath, 0)
 				}
 			}()
 			return
@@ -527,6 +534,23 @@ func (u *UI) createExportTab(w fyne.Window) fyne.CanvasObject {
 			progressBar.SetValue(1.0)
 			sizeStr := fmt.Sprintf("%.2f MB", float64(written)/1024/1024)
 			u.log(&p, "Export", "Export completed successfully", fullPath, sizeStr, "Success", "")
+			
+			// Add to export history - use current profile if available
+			profileID := u.currentProfileID
+			profileName := p.Host + " / " + p.TargetDBName
+			if profileID != "" {
+				// Find the profile name from profiles list
+				for _, prof := range u.profiles {
+					if prof.ID == profileID {
+						profileName = prof.Name
+						break
+					}
+				}
+			} else {
+				// Generate a temp ID based on connection info
+				profileID = fmt.Sprintf("temp_%s_%s", p.Host, p.TargetDBName)
+			}
+			u.addExportRecord(profileID, profileName, p.TargetDBName, fullPath, written)
 		}()
 	})
 	startBtn.Importance = widget.HighImportance

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"dback/models"
@@ -68,15 +69,20 @@ type UI struct {
 
 	currentTab       string
 	historyTable     *widget.Table
+	historyList      *widget.List
 	filteredLogs     []models.LogEntry
 	currentProfileID string
+
+	// Export History (successful exports only)
+	exportRecords []models.ExportRecord
 }
 
 // NewUI creates a new UI instance
 func NewUI(app fyne.App) *UI {
 	return &UI{
-		app:  app,
-		logs: []models.LogEntry{},
+		app:           app,
+		logs:          []models.LogEntry{},
+		exportRecords: []models.ExportRecord{},
 	}
 }
 
@@ -89,6 +95,7 @@ func (u *UI) Run() {
 	// Load data
 	u.loadProfiles()
 	u.loadLogs()
+	u.loadExportHistory()
 
 	// Create Tabs
 	exportTab := container.NewTabItem("Export (Backup)", u.createExportTab(u.window))
@@ -380,9 +387,60 @@ func (u *UI) populateForms(p models.Profile) {
 }
 
 func (u *UI) getExecutableDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "."
+	// First try current working directory
+	cwd, err := os.Getwd()
+	if err == nil && cwd != "" {
+		return cwd
 	}
-	return filepath.Dir(exe)
+
+	// Fallback to executable directory
+	exe, err := os.Executable()
+	if err == nil {
+		dir := filepath.Dir(exe)
+		// Check if it's a temp directory (go run)
+		if !strings.Contains(dir, "go-build") && !strings.Contains(dir, "/tmp/") {
+			return dir
+		}
+	}
+
+	// Fallback to home directory
+	home, err := os.UserHomeDir()
+	if err == nil {
+		return home
+	}
+
+	return "."
+}
+
+// Export History Functions
+func (u *UI) loadExportHistory() {
+	file, err := os.Open("export_history.json")
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	bytes, _ := ioutil.ReadAll(file)
+	json.Unmarshal(bytes, &u.exportRecords)
+}
+
+func (u *UI) saveExportHistory() {
+	bytes, _ := json.MarshalIndent(u.exportRecords, "", "  ")
+	ioutil.WriteFile("export_history.json", bytes, 0644)
+}
+
+func (u *UI) addExportRecord(profileID, profileName, dbName, filePath string, fileSizeBytes int64) {
+	record := models.ExportRecord{
+		ID:            fmt.Sprintf("%d", time.Now().UnixNano()),
+		ProfileID:     profileID,
+		ProfileName:   profileName,
+		DatabaseName:  dbName,
+		ExportDate:    time.Now(),
+		FilePath:      filePath,
+		FileSize:      fmt.Sprintf("%.2f MB", float64(fileSizeBytes)/1024/1024),
+		FileSizeBytes: fileSizeBytes,
+	}
+	u.exportRecords = append(u.exportRecords, record)
+	u.saveExportHistory()
+	u.refreshHistory()
 }

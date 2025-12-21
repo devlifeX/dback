@@ -78,3 +78,15 @@ type LogEntry struct {
 type AppConfig struct {
 	Profiles []Profile `json:"profiles"`
 }
+
+// ExportRecord represents a successful export entry for the history
+type ExportRecord struct {
+	ID           string    `json:"id"`
+	ProfileID    string    `json:"profile_id"`
+	ProfileName  string    `json:"profile_name"`
+	DatabaseName string    `json:"database_name"`
+	ExportDate   time.Time `json:"export_date"`
+	FilePath     string    `json:"file_path"`
+	FileSize     string    `json:"file_size"`
+	FileSizeBytes int64    `json:"file_size_bytes"`
+}
