@@ -727,6 +727,12 @@ type settingsEditor struct {
 	sshPassword    *widget.Entry
 	authType       *widget.Select
 	keyPath        *widget.Entry
+	jumpHost       *widget.Entry
+	jumpPort       *widget.Entry
+	jumpUser       *widget.Entry
+	jumpPassword   *widget.Entry
+	jumpAuthType   *widget.Select
+	jumpKeyPath    *widget.Entry
 	wpURL          *widget.Entry
 	wpKey          *widget.Entry
 	dbHost         *widget.Entry
@@ -743,13 +749,19 @@ type settingsEditor struct {
 
 func newSettingsEditor(p models.Profile) *settingsEditor {
 	e := &settingsEditor{
-		connectionType: widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeWordPress)}, nil),
+		connectionType: widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeJumpHost), string(models.ConnectionTypeWordPress)}, nil),
 		host:           widget.NewEntry(),
 		port:           widget.NewEntry(),
 		sshUser:        widget.NewEntry(),
 		sshPassword:    widget.NewPasswordEntry(),
 		authType:       widget.NewSelect([]string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}, nil),
 		keyPath:        widget.NewEntry(),
+		jumpHost:       widget.NewEntry(),
+		jumpPort:       widget.NewEntry(),
+		jumpUser:       widget.NewEntry(),
+		jumpPassword:   widget.NewPasswordEntry(),
+		jumpAuthType:   widget.NewSelect([]string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}, nil),
+		jumpKeyPath:    widget.NewEntry(),
 		wpURL:          widget.NewEntry(),
 		wpKey:          widget.NewPasswordEntry(),
 		dbHost:         widget.NewEntry(),
@@ -769,6 +781,12 @@ func newSettingsEditor(p models.Profile) *settingsEditor {
 	e.sshPassword.SetText(p.SSHPassword)
 	e.authType.SetSelected(defaultString(string(p.AuthType), string(models.AuthTypePassword)))
 	e.keyPath.SetText(p.AuthKeyPath)
+	e.jumpHost.SetText(p.JumpHost)
+	e.jumpPort.SetText(defaultString(p.JumpPort, "22"))
+	e.jumpUser.SetText(p.JumpUser)
+	e.jumpPassword.SetText(p.JumpPassword)
+	e.jumpAuthType.SetSelected(defaultString(string(p.JumpAuthType), string(models.AuthTypePassword)))
+	e.jumpKeyPath.SetText(p.JumpAuthKeyPath)
 	e.wpURL.SetText(p.WPUrl)
 	e.wpKey.SetText(p.WPKey)
 	e.dbHost.SetText(defaultString(p.DBHost, "127.0.0.1"))
@@ -788,6 +806,15 @@ func (e *settingsEditor) form(w fyne.Window) fyne.CanvasObject {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err == nil && reader != nil {
 				e.keyPath.SetText(reader.URI().Path())
+				_ = reader.Close()
+			}
+		}, w)
+		fd.Show()
+	})
+	jumpKeyBtn := widget.NewButton("Select Jump Key", func() {
+		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err == nil && reader != nil {
+				e.jumpKeyPath.SetText(reader.URI().Path())
 				_ = reader.Close()
 			}
 		}, w)
@@ -817,12 +844,20 @@ func (e *settingsEditor) form(w fyne.Window) fyne.CanvasObject {
 		fd.Show()
 	})
 	sshRows := []fyne.CanvasObject{
-		labeledField("Host", e.host),
+		labeledField("Target SSH Host", e.host),
 		labeledField("Port", e.port),
 		labeledField("SSH User", e.sshUser),
 		labeledField("SSH Password", e.sshPassword),
 		labeledField("Auth Type", e.authType),
 		labeledField("Key Path", container.NewBorder(nil, nil, nil, keyBtn, e.keyPath)),
+	}
+	jumpRows := []fyne.CanvasObject{
+		labeledField("Jump Host", e.jumpHost),
+		labeledField("Jump Port", e.jumpPort),
+		labeledField("Jump User", e.jumpUser),
+		labeledField("Jump Password", e.jumpPassword),
+		labeledField("Jump Auth Type", e.jumpAuthType),
+		labeledField("Jump Key Path", container.NewBorder(nil, nil, nil, jumpKeyBtn, e.jumpKeyPath)),
 	}
 	wpRows := []fyne.CanvasObject{
 		labeledField("WordPress URL", e.wpURL),
@@ -840,19 +875,29 @@ func (e *settingsEditor) form(w fyne.Window) fyne.CanvasObject {
 		labeledField("Database", e.targetDB),
 	}
 	sshGrid := responsiveGrid(sshRows...)
+	jumpGrid := responsiveGrid(jumpRows...)
 	wpGrid := responsiveGrid(wpRows...)
 	dbCard := widget.NewCard("Database", "", responsiveGrid(dbRows...))
 	keyRow := sshRows[5]
 	passwordRow := sshRows[3]
+	jumpKeyRow := jumpRows[5]
+	jumpPasswordRow := jumpRows[3]
 
 	e.refresh = func() {
 		isWP := e.connectionType.Selected == string(models.ConnectionTypeWordPress)
+		isJump := e.connectionType.Selected == string(models.ConnectionTypeJumpHost)
 		if isWP {
 			sshGrid.Hide()
+			jumpGrid.Hide()
 			wpGrid.Show()
 			dbCard.Hide()
 		} else {
 			sshGrid.Show()
+			if isJump {
+				jumpGrid.Show()
+			} else {
+				jumpGrid.Hide()
+			}
 			wpGrid.Hide()
 			dbCard.Show()
 		}
@@ -863,18 +908,28 @@ func (e *settingsEditor) form(w fyne.Window) fyne.CanvasObject {
 			keyRow.Hide()
 			passwordRow.Show()
 		}
+		if e.jumpAuthType.Selected == string(models.AuthTypeKeyFile) {
+			jumpKeyRow.Show()
+			jumpPasswordRow.Hide()
+		} else {
+			jumpKeyRow.Hide()
+			jumpPasswordRow.Show()
+		}
 		sshGrid.Refresh()
+		jumpGrid.Refresh()
 		wpGrid.Refresh()
 		dbCard.Refresh()
 	}
 	e.connectionType.OnChanged = func(string) { e.refresh() }
 	e.authType.OnChanged = func(string) { e.refresh() }
+	e.jumpAuthType.OnChanged = func(string) { e.refresh() }
 	e.refresh()
 
 	return container.NewVScroll(container.NewVBox(
 		widget.NewCard("Connection", "", container.NewVBox(
 			responsiveGrid(labeledField("Type", e.connectionType)),
 			sshGrid,
+			jumpGrid,
 			wpGrid,
 		)),
 		dbCard,
@@ -897,24 +952,30 @@ func responsiveGrid(items ...fyne.CanvasObject) *fyne.Container {
 
 func (e *settingsEditor) settings() models.TransferSettings {
 	return models.TransferSettings{
-		ConnectionType: models.ConnectionType(e.connectionType.Selected),
-		Host:           strings.TrimSpace(e.host.Text),
-		Port:           strings.TrimSpace(e.port.Text),
-		SSHUser:        strings.TrimSpace(e.sshUser.Text),
-		SSHPassword:    e.sshPassword.Text,
-		AuthType:       models.AuthType(e.authType.Selected),
-		AuthKeyPath:    strings.TrimSpace(e.keyPath.Text),
-		WPUrl:          strings.TrimSpace(e.wpURL.Text),
-		WPKey:          e.wpKey.Text,
-		DBHost:         strings.TrimSpace(e.dbHost.Text),
-		DBPort:         strings.TrimSpace(e.dbPort.Text),
-		DBUser:         strings.TrimSpace(e.dbUser.Text),
-		DBPassword:     e.dbPassword.Text,
-		DBType:         models.DBType(e.dbType.Selected),
-		IsDocker:       e.isDocker.Checked,
-		ContainerID:    strings.TrimSpace(e.containerID.Text),
-		TargetDBName:   strings.TrimSpace(e.targetDB.Text),
-		Destination:    strings.TrimSpace(e.destination.Text),
+		ConnectionType:  models.ConnectionType(e.connectionType.Selected),
+		Host:            strings.TrimSpace(e.host.Text),
+		Port:            strings.TrimSpace(e.port.Text),
+		SSHUser:         strings.TrimSpace(e.sshUser.Text),
+		SSHPassword:     e.sshPassword.Text,
+		AuthType:        models.AuthType(e.authType.Selected),
+		AuthKeyPath:     strings.TrimSpace(e.keyPath.Text),
+		JumpHost:        strings.TrimSpace(e.jumpHost.Text),
+		JumpPort:        strings.TrimSpace(e.jumpPort.Text),
+		JumpUser:        strings.TrimSpace(e.jumpUser.Text),
+		JumpPassword:    e.jumpPassword.Text,
+		JumpAuthType:    models.AuthType(e.jumpAuthType.Selected),
+		JumpAuthKeyPath: strings.TrimSpace(e.jumpKeyPath.Text),
+		WPUrl:           strings.TrimSpace(e.wpURL.Text),
+		WPKey:           e.wpKey.Text,
+		DBHost:          strings.TrimSpace(e.dbHost.Text),
+		DBPort:          strings.TrimSpace(e.dbPort.Text),
+		DBUser:          strings.TrimSpace(e.dbUser.Text),
+		DBPassword:      e.dbPassword.Text,
+		DBType:          models.DBType(e.dbType.Selected),
+		IsDocker:        e.isDocker.Checked,
+		ContainerID:     strings.TrimSpace(e.containerID.Text),
+		TargetDBName:    strings.TrimSpace(e.targetDB.Text),
+		Destination:     strings.TrimSpace(e.destination.Text),
 	}
 }
 
@@ -926,6 +987,12 @@ func (e *settingsEditor) apply(settings models.TransferSettings) {
 	e.sshPassword.SetText(settings.SSHPassword)
 	e.authType.SetSelected(defaultString(string(settings.AuthType), string(models.AuthTypePassword)))
 	e.keyPath.SetText(settings.AuthKeyPath)
+	e.jumpHost.SetText(settings.JumpHost)
+	e.jumpPort.SetText(defaultString(settings.JumpPort, "22"))
+	e.jumpUser.SetText(settings.JumpUser)
+	e.jumpPassword.SetText(settings.JumpPassword)
+	e.jumpAuthType.SetSelected(defaultString(string(settings.JumpAuthType), string(models.AuthTypePassword)))
+	e.jumpKeyPath.SetText(settings.JumpAuthKeyPath)
 	e.wpURL.SetText(settings.WPUrl)
 	e.wpKey.SetText(settings.WPKey)
 	e.dbHost.SetText(defaultString(settings.DBHost, "127.0.0.1"))
@@ -951,6 +1018,8 @@ func defaultProfile() models.Profile {
 		ConnectionType: models.ConnectionTypeSSH,
 		Port:           "22",
 		AuthType:       models.AuthTypePassword,
+		JumpPort:       "22",
+		JumpAuthType:   models.AuthTypePassword,
 		DBHost:         "127.0.0.1",
 		DBPort:         "3306",
 		DBType:         models.DBTypeMySQL,
@@ -970,6 +1039,12 @@ func withLegacy(p models.Profile, settings models.TransferSettings) models.Profi
 	p.SSHPassword = settings.SSHPassword
 	p.AuthType = settings.AuthType
 	p.AuthKeyPath = settings.AuthKeyPath
+	p.JumpHost = settings.JumpHost
+	p.JumpPort = settings.JumpPort
+	p.JumpUser = settings.JumpUser
+	p.JumpPassword = settings.JumpPassword
+	p.JumpAuthType = settings.JumpAuthType
+	p.JumpAuthKeyPath = settings.JumpAuthKeyPath
 	p.WPUrl = settings.WPUrl
 	p.WPKey = settings.WPKey
 	p.DBHost = settings.DBHost

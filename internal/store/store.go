@@ -170,6 +170,12 @@ func migrateProfiles(profiles []models.Profile) []models.Profile {
 		if p.AuthType == "" {
 			p.AuthType = models.AuthTypePassword
 		}
+		if p.JumpPort == "" {
+			p.JumpPort = "22"
+		}
+		if p.JumpAuthType == "" {
+			p.JumpAuthType = models.AuthTypePassword
+		}
 		if p.DBType == "" {
 			p.DBType = models.DBTypeMySQL
 		}
@@ -188,15 +194,18 @@ func migrateProfiles(profiles []models.Profile) []models.Profile {
 func stripSecrets(profiles []models.Profile) []models.Profile {
 	for i := range profiles {
 		profiles[i].SSHPassword = ""
+		profiles[i].JumpPassword = ""
 		profiles[i].DBPassword = ""
 		profiles[i].WPKey = ""
 		if profiles[i].ExportSettings != nil {
 			profiles[i].ExportSettings.SSHPassword = ""
+			profiles[i].ExportSettings.JumpPassword = ""
 			profiles[i].ExportSettings.DBPassword = ""
 			profiles[i].ExportSettings.WPKey = ""
 		}
 		if profiles[i].ImportSettings != nil {
 			profiles[i].ImportSettings.SSHPassword = ""
+			profiles[i].ImportSettings.JumpPassword = ""
 			profiles[i].ImportSettings.DBPassword = ""
 			profiles[i].ImportSettings.WPKey = ""
 		}

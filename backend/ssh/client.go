@@ -14,40 +14,43 @@ import (
 
 // Client wraps the ssh.Client and provides high-level operations
 type Client struct {
-	conn *ssh.Client
+	conn     *ssh.Client
+	jumpConn *ssh.Client
 }
 
 // NewClient creates a new SSH client based on the profile
 func NewClient(p models.Profile) (*Client, error) {
+	targetConfig, err := sshConfig(p.SSHUser, p.SSHPassword, p.AuthType, p.AuthKeyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	targetAddr := net.JoinHostPort(p.Host, p.Port)
+	if p.ConnectionType == models.ConnectionTypeJumpHost {
+		return newJumpClient(p, targetConfig, targetAddr)
+	}
+
+	client, err := ssh.Dial("tcp", targetAddr, targetConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{conn: client}, nil
+}
+
+func sshConfig(user, password string, authType models.AuthType, keyPath string) (*ssh.ClientConfig, error) {
 	config := &ssh.ClientConfig{
-		User:            p.SSHUser,
+		User:            user,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For simplicity; in prod, verify host keys
 		Timeout:         10 * time.Second,
 	}
 
-	if p.AuthType == models.AuthTypePassword {
-		// Need to prompt or have password in profile?
-		// The requirements imply saving credentials, so we assume it's in the profile or user prompts?
-		// The Profile struct in models.go has DBPassword but not SSHPassword.
-		// Wait, requirement says: "Auth method path, DB creds".
-		// Usually SSH password isn't saved for security or is keyed in.
-		// For this MVP, let's assume we might need to add SSHPassword to Profile or prompt.
-		// Revisiting requirements: "Auth Type selector (Password vs. Key File entry)."
-		// If "Password" is selected, there should be a password field.
-		// I'll assume for now we might have an SSHPassword field or similar.
-		// Let's check models.go... It's missing SSHPassword. I should probably add it or assume KeyFile is preferred.
-		// But "Password authentication" is a requirement.
-		// I will update models.go later or handling it by adding SSHPassword to the struct if I missed it.
-		// Let's look at the previous models.go content... Yes, SSHPassword is missing.
-		// I will proceed assuming I can add it, or I'll stick to KeyFile for now and fix later.
-		// Actually, I'll use a placeholder or if I can't edit models now, I'll handle it.
-		// Just checked models.go again, indeed missing. I will assume for this step that I'll update models.go next.
+	if authType == models.AuthTypePassword {
 		config.Auth = []ssh.AuthMethod{
-			ssh.Password(p.SSHPassword),
+			ssh.Password(password),
 		}
 	} else {
-		// Key File
-		key, err := ioutil.ReadFile(p.AuthKeyPath)
+		key, err := ioutil.ReadFile(keyPath)
 		if err != nil {
 			return nil, fmt.Errorf("unable to read private key: %v", err)
 		}
@@ -60,19 +63,60 @@ func NewClient(p models.Profile) (*Client, error) {
 		}
 	}
 
-	addr := net.JoinHostPort(p.Host, p.Port)
-	client, err := ssh.Dial("tcp", addr, config)
+	return config, nil
+}
+
+func newJumpClient(p models.Profile, targetConfig *ssh.ClientConfig, targetAddr string) (*Client, error) {
+	jumpPort := p.JumpPort
+	if jumpPort == "" {
+		jumpPort = "22"
+	}
+	jumpAuthType := p.JumpAuthType
+	if jumpAuthType == "" {
+		jumpAuthType = models.AuthTypePassword
+	}
+	jumpConfig, err := sshConfig(p.JumpUser, p.JumpPassword, jumpAuthType, p.JumpAuthKeyPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("jump host auth failed: %w", err)
+	}
+	jumpAddr := net.JoinHostPort(p.JumpHost, jumpPort)
+	jumpClient, err := ssh.Dial("tcp", jumpAddr, jumpConfig)
+	if err != nil {
+		return nil, fmt.Errorf("jump host connection failed: %w", err)
 	}
 
-	return &Client{conn: client}, nil
+	targetConn, err := jumpClient.Dial("tcp", targetAddr)
+	if err != nil {
+		jumpClient.Close()
+		return nil, fmt.Errorf("target connection through jump host failed: %w", err)
+	}
+
+	conn, chans, reqs, err := ssh.NewClientConn(targetConn, targetAddr, targetConfig)
+	if err != nil {
+		targetConn.Close()
+		jumpClient.Close()
+		return nil, fmt.Errorf("target ssh handshake through jump host failed: %w", err)
+	}
+
+	return &Client{
+		conn:     ssh.NewClient(conn, chans, reqs),
+		jumpConn: jumpClient,
+	}, nil
 }
 
 // Close closes the SSH connection
 func (c *Client) Close() error {
 	if c.conn != nil {
-		return c.conn.Close()
+		err := c.conn.Close()
+		if c.jumpConn != nil {
+			if jumpErr := c.jumpConn.Close(); err == nil {
+				err = jumpErr
+			}
+		}
+		return err
+	}
+	if c.jumpConn != nil {
+		return c.jumpConn.Close()
 	}
 	return nil
 }

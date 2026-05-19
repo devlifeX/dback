@@ -17,6 +17,7 @@ type ConnectionType string
 
 const (
 	ConnectionTypeSSH       ConnectionType = "SSH"
+	ConnectionTypeJumpHost  ConnectionType = "JumpHost"
 	ConnectionTypeWordPress ConnectionType = "WordPress"
 )
 
@@ -44,6 +45,14 @@ type Profile struct {
 	SSHPassword string   `json:"ssh_password"`
 	AuthType    AuthType `json:"auth_type"`
 	AuthKeyPath string   `json:"auth_key_path"`
+
+	// Jump Host Fields (optional SSH bastion)
+	JumpHost        string   `json:"jump_host,omitempty"`
+	JumpPort        string   `json:"jump_port,omitempty"`
+	JumpUser        string   `json:"jump_user,omitempty"`
+	JumpPassword    string   `json:"jump_password,omitempty"`
+	JumpAuthType    AuthType `json:"jump_auth_type,omitempty"`
+	JumpAuthKeyPath string   `json:"jump_auth_key_path,omitempty"`
 
 	// WordPress Fields
 	WPUrl      string `json:"wp_url"`      // e.g. https://example.com
@@ -102,24 +111,30 @@ type ExportRecord struct {
 
 // TransferSettings keeps export and import settings independent for each profile.
 type TransferSettings struct {
-	ConnectionType ConnectionType `json:"connection_type"`
-	Host           string         `json:"host"`
-	Port           string         `json:"port"`
-	SSHUser        string         `json:"ssh_user"`
-	SSHPassword    string         `json:"ssh_password,omitempty"`
-	AuthType       AuthType       `json:"auth_type"`
-	AuthKeyPath    string         `json:"auth_key_path,omitempty"`
-	WPUrl          string         `json:"wp_url,omitempty"`
-	WPKey          string         `json:"wp_key,omitempty"`
-	DBHost         string         `json:"db_host"`
-	DBPort         string         `json:"db_port"`
-	DBUser         string         `json:"db_user"`
-	DBPassword     string         `json:"db_password,omitempty"`
-	DBType         DBType         `json:"db_type"`
-	IsDocker       bool           `json:"is_docker"`
-	ContainerID    string         `json:"container_id,omitempty"`
-	TargetDBName   string         `json:"target_db_name"`
-	Destination    string         `json:"destination,omitempty"`
+	ConnectionType  ConnectionType `json:"connection_type"`
+	Host            string         `json:"host"`
+	Port            string         `json:"port"`
+	SSHUser         string         `json:"ssh_user"`
+	SSHPassword     string         `json:"ssh_password,omitempty"`
+	AuthType        AuthType       `json:"auth_type"`
+	AuthKeyPath     string         `json:"auth_key_path,omitempty"`
+	JumpHost        string         `json:"jump_host,omitempty"`
+	JumpPort        string         `json:"jump_port,omitempty"`
+	JumpUser        string         `json:"jump_user,omitempty"`
+	JumpPassword    string         `json:"jump_password,omitempty"`
+	JumpAuthType    AuthType       `json:"jump_auth_type,omitempty"`
+	JumpAuthKeyPath string         `json:"jump_auth_key_path,omitempty"`
+	WPUrl           string         `json:"wp_url,omitempty"`
+	WPKey           string         `json:"wp_key,omitempty"`
+	DBHost          string         `json:"db_host"`
+	DBPort          string         `json:"db_port"`
+	DBUser          string         `json:"db_user"`
+	DBPassword      string         `json:"db_password,omitempty"`
+	DBType          DBType         `json:"db_type"`
+	IsDocker        bool           `json:"is_docker"`
+	ContainerID     string         `json:"container_id,omitempty"`
+	TargetDBName    string         `json:"target_db_name"`
+	Destination     string         `json:"destination,omitempty"`
 }
 
 type ProfileBundle struct {
@@ -159,6 +174,12 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 	p.SSHPassword = s.SSHPassword
 	p.AuthType = s.AuthType
 	p.AuthKeyPath = s.AuthKeyPath
+	p.JumpHost = s.JumpHost
+	p.JumpPort = s.JumpPort
+	p.JumpUser = s.JumpUser
+	p.JumpPassword = s.JumpPassword
+	p.JumpAuthType = s.JumpAuthType
+	p.JumpAuthKeyPath = s.JumpAuthKeyPath
 	p.WPUrl = s.WPUrl
 	p.WPKey = s.WPKey
 	p.DBHost = s.DBHost
@@ -175,23 +196,29 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 
 func SettingsFromProfile(p Profile) TransferSettings {
 	return TransferSettings{
-		ConnectionType: p.ConnectionType,
-		Host:           p.Host,
-		Port:           p.Port,
-		SSHUser:        p.SSHUser,
-		SSHPassword:    p.SSHPassword,
-		AuthType:       p.AuthType,
-		AuthKeyPath:    p.AuthKeyPath,
-		WPUrl:          p.WPUrl,
-		WPKey:          p.WPKey,
-		DBHost:         p.DBHost,
-		DBPort:         p.DBPort,
-		DBUser:         p.DBUser,
-		DBPassword:     p.DBPassword,
-		DBType:         p.DBType,
-		IsDocker:       p.IsDocker,
-		ContainerID:    p.ContainerID,
-		TargetDBName:   p.TargetDBName,
-		Destination:    p.Destination,
+		ConnectionType:  p.ConnectionType,
+		Host:            p.Host,
+		Port:            p.Port,
+		SSHUser:         p.SSHUser,
+		SSHPassword:     p.SSHPassword,
+		AuthType:        p.AuthType,
+		AuthKeyPath:     p.AuthKeyPath,
+		JumpHost:        p.JumpHost,
+		JumpPort:        p.JumpPort,
+		JumpUser:        p.JumpUser,
+		JumpPassword:    p.JumpPassword,
+		JumpAuthType:    p.JumpAuthType,
+		JumpAuthKeyPath: p.JumpAuthKeyPath,
+		WPUrl:           p.WPUrl,
+		WPKey:           p.WPKey,
+		DBHost:          p.DBHost,
+		DBPort:          p.DBPort,
+		DBUser:          p.DBUser,
+		DBPassword:      p.DBPassword,
+		DBType:          p.DBType,
+		IsDocker:        p.IsDocker,
+		ContainerID:     p.ContainerID,
+		TargetDBName:    p.TargetDBName,
+		Destination:     p.Destination,
 	}
 }
