@@ -6,6 +6,7 @@ APP_NAME="dback"
 APP_ID="com.dbsync.manager"
 DIST_DIR="dist"
 ICON_PATH="logo.png"
+APP_VERSION="${APP_VERSION:-1.0.0}"
 ANDROID_API_LEVEL="35"
 ANDROID_BUILD_TOOLS="35.0.0"
 ANDROID_NDK_VERSION="26.3.11579264"
@@ -199,7 +200,7 @@ build_android() {
     ensure_icon || return 1
     ensure_android_sdk || return 1
 
-    if fyne package -os android -appID "$APP_ID" -name "$APP_NAME" -icon "$ICON_PATH"; then
+    if fyne package -os android -appID "$APP_ID" -appVersion "$APP_VERSION" -name "$APP_NAME" -icon "$ICON_PATH"; then
         mv "${APP_NAME}.apk" "$DIST_DIR/${APP_NAME}-android.apk" 2>/dev/null || true
         print_success "Android build: ./$DIST_DIR/${APP_NAME}-android.apk"
         return 0

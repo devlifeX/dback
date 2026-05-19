@@ -128,7 +128,8 @@ jobs:
           ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
         run: |
           mkdir -p dist
-          "$(go env GOPATH)/bin/fyne" package -os android -appID com.dbsync.manager -name dback -icon logo.png
+          VERSION="${GITHUB_REF_NAME#v}"
+          "$(go env GOPATH)/bin/fyne" package -os android -appID com.dbsync.manager -appVersion "$VERSION" -name dback -icon logo.png
           mv dback.apk dist/dback-android.apk
 
       - name: Upload artifact
