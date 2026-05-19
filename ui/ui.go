@@ -34,6 +34,7 @@ type UI struct {
 	search            *widget.Entry
 	selectedProfileID string
 	currentSection    string
+	backupTab         string
 	jobsMu            sync.Mutex
 	jobs              []*operationJob
 }
@@ -289,6 +290,7 @@ func (u *UI) showProfileEditorWith(p models.Profile) {
 func (u *UI) runBackup(p models.Profile) {
 	ctx, cancel := context.WithCancel(context.Background())
 	job := u.addJob("Backup", p.Name, cancel)
+	u.backupTab = "jobs"
 	u.showBackups()
 	go func() {
 		defer cancel()
@@ -377,12 +379,28 @@ func (u *UI) currentJobs() []*operationJob {
 
 func (u *UI) showBackups() {
 	u.currentSection = "backups"
+	if u.backupTab == "" {
+		u.backupTab = "files"
+	}
 	filesTab := container.NewTabItem("Backup Files", u.createBackupFilesTable())
 	jobsTab := container.NewTabItem("Jobs", u.createJobsTable())
+	tabs := container.NewAppTabs(filesTab, jobsTab)
+	tabs.OnSelected = func(item *container.TabItem) {
+		if item == jobsTab {
+			u.backupTab = "jobs"
+			return
+		}
+		u.backupTab = "files"
+	}
+	if u.backupTab == "jobs" {
+		tabs.Select(jobsTab)
+	} else {
+		tabs.Select(filesTab)
+	}
 	u.setContent(container.NewBorder(
 		widget.NewLabelWithStyle("Backups", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		nil, nil, nil,
-		container.NewAppTabs(filesTab, jobsTab),
+		tabs,
 	))
 }
 
@@ -558,6 +576,7 @@ func (u *UI) showBackupActions(record models.ExportRecord) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		job := u.addJob("Import", p.Name, cancel)
+		u.backupTab = "jobs"
 		u.showBackups()
 		go func() {
 			defer cancel()

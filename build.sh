@@ -101,7 +101,7 @@ ensure_macos_deps() {
 
 ensure_android_sdk() {
     install_apt_packages openjdk-17-jdk unzip wget ca-certificates || return 1
-    ensure_go_tool fyne fyne.io/fyne/v2/cmd/fyne@latest || return 1
+    ensure_go_tool fyne fyne.io/tools/cmd/fyne@latest || return 1
 
     mkdir -p "$ANDROID_SDK_DIR/cmdline-tools"
 
