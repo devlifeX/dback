@@ -49,6 +49,12 @@ type operationJob struct {
 	Cancel      context.CancelFunc
 }
 
+type tableCell struct {
+	label  *widget.Label
+	button *widget.Button
+	box    *fyne.Container
+}
+
 func NewUI(app fyne.App) *UI {
 	return &UI{app: app, currentSection: "hosts"}
 }
@@ -371,59 +377,162 @@ func (u *UI) currentJobs() []*operationJob {
 
 func (u *UI) showBackups() {
 	u.currentSection = "backups"
-	records := u.core.History()
-	jobs := u.currentJobs()
-	running := container.NewVBox()
-	if len(jobs) > 0 {
-		running.Add(widget.NewLabelWithStyle("Running", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-		for _, job := range jobs {
-			j := job
-			progress := widget.NewProgressBar()
-			progress.SetValue(j.Progress)
-			status := j.Status
-			if j.Err != "" {
-				status += " - " + j.Err
-			}
-			cancelBtn := widget.NewButton("Cancel", func() {
-				if j.Cancel != nil && !j.Done {
-					j.Cancel()
-					u.updateJob(j.ID, "Canceling...", j.Progress, "")
-				}
-			})
-			if j.Done {
-				cancelBtn.Disable()
-			}
-			running.Add(widget.NewCard(j.Kind+" - "+j.ProfileName, status, container.NewVBox(
-				progress,
-				u.actionBox(cancelBtn),
-			)))
-		}
-		running.Add(widget.NewSeparator())
-	}
-	list := widget.NewList(
-		func() int { return len(records) },
-		func() fyne.CanvasObject {
-			return widget.NewCard("Backup", "", widget.NewLabel("details"))
-		},
-		func(i widget.ListItemID, o fyne.CanvasObject) {
-			record := records[len(records)-1-i]
-			card := o.(*widget.Card)
-			card.SetTitle(record.ProfileName)
-			card.SetSubTitle(record.ExportDate.Format("2006-01-02 15:04") + " - " + record.FileSize)
-			card.SetContent(widget.NewLabel(filepath.Base(record.FilePath)))
-		},
-	)
-	list.OnSelected = func(id widget.ListItemID) {
-		record := records[len(records)-1-id]
-		u.showBackupActions(record)
-	}
+	filesTab := container.NewTabItem("Backup Files", u.createBackupFilesTable())
+	jobsTab := container.NewTabItem("Jobs", u.createJobsTable())
 	u.setContent(container.NewBorder(
 		widget.NewLabelWithStyle("Backups", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		nil, nil, nil,
-		container.NewBorder(running, nil, nil, nil,
-			list,
-		),
+		container.NewAppTabs(filesTab, jobsTab),
 	))
+}
+
+func newTableCell() fyne.CanvasObject {
+	label := widget.NewLabel("")
+	label.Truncation = fyne.TextTruncateEllipsis
+	button := widget.NewButton("", nil)
+	button.Hide()
+	return container.NewMax(label, button)
+}
+
+func unpackTableCell(o fyne.CanvasObject) *tableCell {
+	box := o.(*fyne.Container)
+	return &tableCell{
+		label:  box.Objects[0].(*widget.Label),
+		button: box.Objects[1].(*widget.Button),
+		box:    box,
+	}
+}
+
+func setCellLabel(o fyne.CanvasObject, text string, bold bool) {
+	cell := unpackTableCell(o)
+	cell.button.Hide()
+	cell.label.Show()
+	cell.label.TextStyle = fyne.TextStyle{Bold: bold}
+	cell.label.SetText(text)
+}
+
+func setCellButton(o fyne.CanvasObject, text string, enabled bool, tapped func()) {
+	cell := unpackTableCell(o)
+	cell.label.Hide()
+	cell.button.Show()
+	cell.button.SetText(text)
+	cell.button.OnTapped = tapped
+	if enabled {
+		cell.button.Enable()
+	} else {
+		cell.button.Disable()
+	}
+}
+
+func (u *UI) createBackupFilesTable() fyne.CanvasObject {
+	records := u.core.History()
+	headers := []string{"Date", "Profile", "Database", "Size", "File", "Action"}
+	var selected *models.ExportRecord
+	status := widget.NewLabel("Select a backup file to import or open its folder.")
+	importBtn := widget.NewButtonWithIcon("Import Selected", theme.DownloadIcon(), func() {
+		if selected == nil {
+			dialog.ShowInformation("Backup Files", "Select a backup first.", u.window)
+			return
+		}
+		u.showBackupActions(*selected)
+	})
+	openBtn := widget.NewButtonWithIcon("Open Folder", theme.FolderOpenIcon(), func() {
+		if selected == nil {
+			dialog.ShowInformation("Backup Files", "Select a backup first.", u.window)
+			return
+		}
+		u.openFolder(filepath.Dir(selected.FilePath))
+	})
+
+	table := widget.NewTable(
+		func() (int, int) { return len(records) + 1, len(headers) },
+		newTableCell,
+		func(id widget.TableCellID, o fyne.CanvasObject) {
+			if id.Row == 0 {
+				setCellLabel(o, headers[id.Col], true)
+				return
+			}
+			record := records[len(records)-id.Row]
+			switch id.Col {
+			case 0:
+				setCellLabel(o, record.ExportDate.Format("2006-01-02 15:04"), false)
+			case 1:
+				setCellLabel(o, record.ProfileName, false)
+			case 2:
+				setCellLabel(o, record.DatabaseName, false)
+			case 3:
+				setCellLabel(o, record.FileSize, false)
+			case 4:
+				setCellLabel(o, filepath.Base(record.FilePath), false)
+			case 5:
+				setCellButton(o, "Import", true, func() {
+					u.showBackupActions(record)
+				})
+			}
+		},
+	)
+	table.SetColumnWidth(0, 145)
+	table.SetColumnWidth(1, 170)
+	table.SetColumnWidth(2, 130)
+	table.SetColumnWidth(3, 80)
+	table.SetColumnWidth(4, 260)
+	table.SetColumnWidth(5, 90)
+	table.SetRowHeight(0, 34)
+	table.OnSelected = func(id widget.TableCellID) {
+		if id.Row == 0 {
+			return
+		}
+		record := records[len(records)-id.Row]
+		selected = &record
+		status.SetText(filepath.Base(record.FilePath))
+	}
+
+	return container.NewBorder(nil, container.NewVBox(status, u.actionBox(importBtn, openBtn)), nil, nil, table)
+}
+
+func (u *UI) createJobsTable() fyne.CanvasObject {
+	jobs := u.currentJobs()
+	headers := []string{"Type", "Profile", "Status", "Progress", "Action"}
+	table := widget.NewTable(
+		func() (int, int) { return len(jobs) + 1, len(headers) },
+		newTableCell,
+		func(id widget.TableCellID, o fyne.CanvasObject) {
+			if id.Row == 0 {
+				setCellLabel(o, headers[id.Col], true)
+				return
+			}
+			job := jobs[id.Row-1]
+			status := job.Status
+			if job.Err != "" {
+				status += " - " + job.Err
+			}
+			switch id.Col {
+			case 0:
+				setCellLabel(o, job.Kind, false)
+			case 1:
+				setCellLabel(o, job.ProfileName, false)
+			case 2:
+				setCellLabel(o, status, false)
+			case 3:
+				setCellLabel(o, fmt.Sprintf("%.0f%%", job.Progress*100), false)
+			case 4:
+				setCellButton(o, "Cancel", !job.Done, func() {
+					if job.Cancel != nil && !job.Done {
+						job.Cancel()
+						u.updateJob(job.ID, "Canceling...", job.Progress, "")
+					}
+				})
+			}
+		},
+	)
+	table.SetColumnWidth(0, 80)
+	table.SetColumnWidth(1, 180)
+	table.SetColumnWidth(2, 520)
+	table.SetColumnWidth(3, 80)
+	table.SetColumnWidth(4, 90)
+	table.SetRowHeight(0, 34)
+
+	return container.NewBorder(nil, nil, nil, nil, table)
 }
 
 func (u *UI) showBackupActions(record models.ExportRecord) {
