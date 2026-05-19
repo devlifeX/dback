@@ -200,7 +200,12 @@ build_android() {
     ensure_icon || return 1
     ensure_android_sdk || return 1
 
-    if fyne package -os android -appID "$APP_ID" -appVersion "$APP_VERSION" -name "$APP_NAME" -icon "$ICON_PATH"; then
+    if fyne package \
+        --target android \
+        --app-id "$APP_ID" \
+        --app-version "$APP_VERSION" \
+        --name "$APP_NAME" \
+        --icon "$ICON_PATH"; then
         mv "${APP_NAME}.apk" "$DIST_DIR/${APP_NAME}-android.apk" 2>/dev/null || true
         print_success "Android build: ./$DIST_DIR/${APP_NAME}-android.apk"
         return 0

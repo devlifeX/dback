@@ -129,7 +129,12 @@ jobs:
         run: |
           mkdir -p dist
           VERSION="${GITHUB_REF_NAME#v}"
-          "$(go env GOPATH)/bin/fyne" package -os android -appID com.dbsync.manager -appVersion "$VERSION" -name dback -icon logo.png
+          "$(go env GOPATH)/bin/fyne" package \
+            --target android \
+            --app-id com.dbsync.manager \
+            --app-version "$VERSION" \
+            --name dback \
+            --icon logo.png
           mv dback.apk dist/dback-android.apk
 
       - name: Upload artifact
