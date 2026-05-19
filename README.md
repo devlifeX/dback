@@ -1,8 +1,10 @@
+![DBack](dback.png)
+
 # DB Sync Manager
 
 ![DB Sync Manager Screenshot](desgin/app.png)
 
-A cross-platform desktop GUI application built with Go and Fyne v2 for managing database synchronizations. It allows you to export large databases from remote Linux servers via SSH, WordPress sites, or Docker containers, and restore them efficiently.
+A cross-platform desktop and mobile-ready GUI application built with Go and Fyne v2 for managing database backups and restores. DBack can connect to remote Linux servers via SSH, WordPress sites via a generated plugin, or databases running inside Docker containers, then stream backups directly to local files and restore them to another profile.
 
 **Repository:** [https://github.com/devlifeX/dback/](https://github.com/devlifeX/dback/)
 
@@ -18,18 +20,22 @@ A cross-platform desktop GUI application built with Go and Fyne v2 for managing 
 *   **Export (Backup):** Stream large database dumps (5GB+) with on-the-fly compression.
     *   **Smart Compression:** Automatically detects and uses `zstd` if available for faster compression, falling back to `gzip`.
 *   **Import (Restore):** Stream uploads and restores to remote servers or local instances.
+*   **Backup Center:** Backup and import jobs appear in the **Backups** screen with progress and cancel controls.
+*   **Clickable Backup History:** Select a saved backup record and import it into any destination profile.
 *   **Secure:** All database credentials are shell-escaped to prevent command injection.
 *   **Reliable:** Uses `pipefail` to ensure backup failures are caught even if compression succeeds.
 
 ### 👤 Profile Management
-*   **Profiles:** Create, Save, Clone (Duplicate), and Delete connection profiles.
-*   **Smart History:** Remembers your last destination folder per profile.
+*   **Hosts:** Create, edit, group, search, and delete saved host profiles.
+*   **Separate Export/Import Settings:** Each profile can keep different settings for source backup and destination restore.
+*   **Copy Settings:** Copy Export settings to Import, or Import settings to Export, to avoid duplicate typing.
+*   **Profile Transfer:** Export and import all profiles from **Settings**. Passwords/API keys are excluded unless explicitly included.
 *   **Filename Formatting:** Exports are named with the profile, database name, and timestamp for easy organization.
 
-### 📊 Activity & History
-*   **History Tab:** A persistent data grid view of all past operations including file sizes, status, and paths.
-*   **Context Actions:** Import or delete files directly from the History list.
-*   **Persistence:** All logs are saved locally to `logs.json`.
+### 📱 UI and Mobile
+*   **Responsive Layout:** Desktop uses a sidebar and multi-column forms; mobile uses bottom navigation and single-column forms.
+*   **Conditional Fields:** SSH and WordPress fields are shown only when relevant.
+*   **About Screen:** Includes project and author information inside the app.
 
 ### 🛠️ Diagnostics
 *   **Test Connectivity:** Built-in tools to verify Server (SSH/HTTP) and Database connections before running heavy operations.
@@ -53,12 +59,30 @@ This script handles dependency checks and runs the application.
 *Note: You may need to install `gcc`, `libgl1-mesa-dev`, and `xorg-dev` if prompted.*
 
 ### Build Binaries
-To generate standalone executables for Linux, Windows, and macOS:
+Run the interactive build script and choose a target:
 
 ```bash
 ./build.sh
 ```
-*Artifacts will be created as `dback-linux`, `dback-windows.exe`, and `dback-macos`.*
+
+You can also build a target directly:
+
+```bash
+./build.sh linux
+./build.sh windows
+./build.sh macos
+./build.sh android
+./build.sh all
+```
+
+Artifacts are written to `dist/`, including:
+
+*   `dist/dback-linux`
+*   `dist/dback-windows.exe`
+*   `dist/dback-macos`
+*   `dist/dback-android.apk`
+
+The build script tries to install missing prerequisites automatically on apt-based Linux systems. Android builds install the Fyne CLI and Android command-line tools into `~/.android-sdk` when needed.
 
 ## Build Requirements
 
@@ -71,6 +95,7 @@ To build the application from source, you need **Go 1.21+** and the following pl
 | **macOS** | Xcode Command Line Tools (`xcode-select --install`) |
 | **Cross-Compile (Linux -> Windows)** | `mingw-w64` (`gcc-mingw-w64`) |
 | **Cross-Compile (Linux -> macOS)** | `zig` or `osxcross` |
+| **Android** | Fyne CLI, Android SDK, Android NDK, JDK 17 |
 
 ### Docker Alternative
 If you have issues with system dependencies, you can run the app in a container:
@@ -81,13 +106,20 @@ If you have issues with system dependencies, you can run the app in a container:
 
 ## WordPress Integration Guide
 
-1.  Open the **Export** tab.
-2.  Select **Type: WordPress**.
-3.  Click **Generate Plugin** and save the `dback-sync-plugin.zip`.
+1.  Open or create a host profile from **Hosts**.
+2.  In the Export or Import settings, select **Type: WordPress**.
+3.  Click **Generate WordPress Plugin** and save the `dback-sync-plugin.zip`.
 4.  **Install** this plugin on your WordPress site (Plugins > Add New > Upload).
 5.  Copy your WordPress **URL** into the app.
 6.  The **API Key** is automatically filled (it matches the key embedded in the plugin).
-7.  Click **Test Connectivity** or **Start Backup**.
+7.  Click **Test Export Connection**, **Test Import Connection**, or start a backup from the host card.
+
+## About
+
+Created by **dariush vesal**.
+
+*   Email: `dariush.vesal@gmail.com`
+*   GitHub: [https://github.com/devlifeX/dback](https://github.com/devlifeX/dback)
 
 ## FAQ
 

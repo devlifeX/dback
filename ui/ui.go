@@ -1,409 +1,588 @@
 package ui
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
+	"dback/backend/wordpress"
+	coreapp "dback/internal/app"
 	"dback/models"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
-// UI holds the application state and UI components
 type UI struct {
-	app      fyne.App
-	window   fyne.Window
-	logs     []models.LogEntry
-	logList  *widget.List
-	profiles []models.Profile
-
-	// Export Tab Widgets (exposed for Profile saving)
-	expConnectionTypeSelect *widget.Select
-	expWPUrlEntry           *widget.Entry
-	expWPKeyEntry           *widget.Entry
-	// expWPPluginPathEntry    *widget.Entry // Removed as not in model
-
-	expHostEntry        *widget.Entry
-	expPortEntry        *widget.Entry
-	expSSHUserEntry     *widget.Entry
-	expSSHPassEntry     *widget.Entry
-	expAuthTypeSelect   *widget.Select
-	expKeyPathEntry     *widget.Entry
-	expDBHostEntry      *widget.Entry
-	expDBPortEntry      *widget.Entry
-	expDBUserEntry      *widget.Entry
-	expDBPassEntry      *widget.Entry
-	expDBTypeSelect     *widget.Select
-	expIsDockerCheck    *widget.Check
-	expContainerIDEntry *widget.Entry
-	expTargetDBEntry    *widget.Entry
-	expDestPathLabel    *widget.Label // To bind destination
-
-	// Import Tab Widgets
-	impConnectionTypeSelect *widget.Select
-	impWPUrlEntry           *widget.Entry
-	impWPKeyEntry           *widget.Entry
-	impHostEntry            *widget.Entry
-	impPortEntry            *widget.Entry
-	impSSHUserEntry         *widget.Entry
-	impSSHPassEntry         *widget.Entry
-	impAuthTypeSelect       *widget.Select
-	impKeyPathEntry         *widget.Entry
-	impDBHostEntry          *widget.Entry
-	impDBPortEntry          *widget.Entry
-	impDBUserEntry          *widget.Entry
-	impDBPassEntry          *widget.Entry
-	impDBTypeSelect         *widget.Select
-	impIsDockerCheck        *widget.Check
-	impContainerIDEntry     *widget.Entry
-	impTargetDBEntry        *widget.Entry
-
-	currentTab       string
-	historyTable     *widget.Table
-	historyList      *widget.List
-	filteredLogs     []models.LogEntry
-	currentProfileID string
-
-	// Export History (successful exports only)
-	exportRecords []models.ExportRecord
+	app               fyne.App
+	window            fyne.Window
+	core              *coreapp.App
+	content           *fyne.Container
+	sidebar           *fyne.Container
+	search            *widget.Entry
+	selectedProfileID string
+	currentSection    string
+	jobsMu            sync.Mutex
+	jobs              []*operationJob
 }
 
-// NewUI creates a new UI instance
+type operationJob struct {
+	ID          string
+	Kind        string
+	ProfileName string
+	Status      string
+	Progress    float64
+	Done        bool
+	Err         string
+	Cancel      context.CancelFunc
+}
+
 func NewUI(app fyne.App) *UI {
-	return &UI{
-		app:           app,
-		logs:          []models.LogEntry{},
-		exportRecords: []models.ExportRecord{},
-	}
+	return &UI{app: app, currentSection: "hosts"}
 }
 
-// Run initializes and starts the UI
 func (u *UI) Run() {
-	u.window = u.app.NewWindow("DB Sync Manager v1.5")
+	var err error
+	u.core, err = coreapp.New(".")
+	if err != nil {
+		panic(err)
+	}
+
+	u.window = u.app.NewWindow("DBack")
 	u.window.Resize(fyne.NewSize(1200, 800))
-	// u.window.SetFullScreen(true) // Removed per user request (hides controls)
-
-	// Load data
-	u.loadProfiles()
-	u.loadLogs()
-	u.loadExportHistory()
-
-	// Create Tabs
-	exportTab := container.NewTabItem("Export (Backup)", u.createExportTab(u.window))
-	importTab := container.NewTabItem("Import (Restore)", u.createImportTab(u.window))
-	historyTab := container.NewTabItem("History", u.createHistoryTab())
-	logsTab := container.NewTabItem("Activity Logs", u.createLogsTab())
-
-	tabs := container.NewAppTabs(exportTab, importTab, historyTab, logsTab)
-	tabs.OnSelected = func(t *container.TabItem) {
-		u.currentTab = t.Text
+	u.content = container.NewMax()
+	u.sidebar = u.createSidebar()
+	if fyne.CurrentDevice().IsMobile() {
+		u.window.SetContent(container.NewBorder(nil, u.createBottomNav(), nil, nil, u.content))
+	} else {
+		u.window.SetContent(container.NewBorder(nil, nil, u.sidebar, nil, u.content))
 	}
-	// Default
-	u.currentTab = "Export (Backup)"
-
-	// Sidebar (Saved Profiles)
-	var sidebar *widget.List
-	sidebar = widget.NewList(
-		func() int {
-			return len(u.profiles)
-		},
-		func() fyne.CanvasObject {
-			label := widget.NewLabel("Profile Name")
-			saveBtn := widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), nil)
-			duplicateBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), nil)
-			renameBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), nil) // Pencil/Edit icon
-			deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
-			buttons := container.NewHBox(saveBtn, duplicateBtn, renameBtn, deleteBtn)
-			return container.NewBorder(nil, nil, nil, buttons, label)
-		},
-		func(i int, o fyne.CanvasObject) {
-			c := o.(*fyne.Container)
-			var label *widget.Label
-			var btnContainer *fyne.Container
-
-			for _, obj := range c.Objects {
-				if l, ok := obj.(*widget.Label); ok {
-					label = l
-				} else if cont, ok := obj.(*fyne.Container); ok {
-					btnContainer = cont
-				}
-			}
-
-			saveBtn := btnContainer.Objects[0].(*widget.Button)
-			duplicateBtn := btnContainer.Objects[1].(*widget.Button)
-			renameBtn := btnContainer.Objects[2].(*widget.Button)
-			deleteBtn := btnContainer.Objects[3].(*widget.Button)
-
-			p := u.profiles[i]
-			label.SetText(p.Name)
-
-			saveBtn.OnTapped = func() {
-				if i >= len(u.profiles) {
-					return
-				}
-
-				// Save based on current tab
-				if u.currentTab == "Import (Restore)" {
-					u.profiles[i].ConnectionType = models.ConnectionType(u.impConnectionTypeSelect.Selected)
-					u.profiles[i].WPUrl = u.impWPUrlEntry.Text
-					u.profiles[i].WPKey = u.impWPKeyEntry.Text
-					u.profiles[i].Host = u.impHostEntry.Text
-					u.profiles[i].Port = u.impPortEntry.Text
-					u.profiles[i].SSHUser = u.impSSHUserEntry.Text
-					u.profiles[i].SSHPassword = u.impSSHPassEntry.Text
-					u.profiles[i].AuthType = models.AuthType(u.impAuthTypeSelect.Selected)
-					u.profiles[i].AuthKeyPath = u.impKeyPathEntry.Text
-					u.profiles[i].DBHost = u.impDBHostEntry.Text
-					u.profiles[i].DBPort = u.impDBPortEntry.Text
-					u.profiles[i].DBUser = u.impDBUserEntry.Text
-					u.profiles[i].DBPassword = u.impDBPassEntry.Text
-					u.profiles[i].DBType = models.DBType(u.impDBTypeSelect.Selected)
-					u.profiles[i].IsDocker = u.impIsDockerCheck.Checked
-					u.profiles[i].ContainerID = u.impContainerIDEntry.Text
-					u.profiles[i].TargetDBName = u.impTargetDBEntry.Text
-					// Import tab doesn't have Destination Path binding yet
-				} else {
-					// Default to Export fields
-					u.profiles[i].ConnectionType = models.ConnectionType(u.expConnectionTypeSelect.Selected)
-					u.profiles[i].WPUrl = u.expWPUrlEntry.Text
-					u.profiles[i].WPKey = u.expWPKeyEntry.Text
-					u.profiles[i].Host = u.expHostEntry.Text
-					u.profiles[i].Port = u.expPortEntry.Text
-					u.profiles[i].SSHUser = u.expSSHUserEntry.Text
-					u.profiles[i].SSHPassword = u.expSSHPassEntry.Text
-					u.profiles[i].AuthType = models.AuthType(u.expAuthTypeSelect.Selected)
-					u.profiles[i].AuthKeyPath = u.expKeyPathEntry.Text
-					u.profiles[i].DBHost = u.expDBHostEntry.Text
-					u.profiles[i].DBPort = u.expDBPortEntry.Text
-					u.profiles[i].DBUser = u.expDBUserEntry.Text
-					u.profiles[i].DBPassword = u.expDBPassEntry.Text
-					u.profiles[i].DBType = models.DBType(u.expDBTypeSelect.Selected)
-					u.profiles[i].IsDocker = u.expIsDockerCheck.Checked
-					u.profiles[i].ContainerID = u.expContainerIDEntry.Text
-					u.profiles[i].TargetDBName = u.expTargetDBEntry.Text
-					u.profiles[i].Destination = u.expDestPathLabel.Text
-				}
-
-				u.saveProfiles()
-				// Refresh forms to sync both tabs
-				u.populateForms(u.profiles[i])
-				dialog.ShowInformation("Saved", fmt.Sprintf("Profile '%s' updated from %s tab", p.Name, u.currentTab), u.window)
-			}
-
-			duplicateBtn.OnTapped = func() {
-				// Clone profile
-				newProfile := p
-				newProfile.ID = fmt.Sprintf("%d", time.Now().Unix())
-				newProfile.Name = p.Name + " (Copy)"
-
-				u.profiles = append(u.profiles, newProfile)
-				u.saveProfiles()
-				sidebar.Refresh()
-				sidebar.Select(len(u.profiles) - 1)
-			}
-
-			renameBtn.OnTapped = func() {
-				entry := widget.NewEntry()
-				entry.SetText(p.Name)
-				dialog.ShowCustomConfirm("Rename Profile", "Rename", "Cancel", entry, func(b bool) {
-					if b && entry.Text != "" {
-						u.profiles[i].Name = entry.Text
-						u.saveProfiles()
-						sidebar.Refresh()
-					}
-				}, u.window)
-			}
-
-			deleteBtn.OnTapped = func() {
-				dialog.ShowConfirm("Delete Profile", fmt.Sprintf("Are you sure you want to delete '%s'?", p.Name), func(b bool) {
-					if b {
-						// Remove profile
-						u.profiles = append(u.profiles[:i], u.profiles[i+1:]...)
-						u.saveProfiles()
-						sidebar.Refresh()
-					}
-				}, u.window)
-			}
-		},
-	)
-
-	sidebar.OnSelected = func(id int) {
-		p := u.profiles[id]
-		u.currentProfileID = p.ID
-		u.populateForms(p)
-		u.refreshHistory()
-	}
-
-	// New Profile Button
-	addProfileBtn := widget.NewButtonWithIcon("New Profile", theme.ContentAddIcon(), func() {
-		// Create new empty profile
-		nameEntry := widget.NewEntry()
-		nameEntry.SetPlaceHolder("Profile Name")
-
-		dialog.ShowCustomConfirm("New Profile", "Create", "Cancel", nameEntry, func(b bool) {
-			if b && nameEntry.Text != "" {
-				newProfile := models.Profile{
-					ID:   fmt.Sprintf("%d", time.Now().Unix()),
-					Name: nameEntry.Text,
-					// Initialize with current fields or empty? Usually empty or defaults.
-					// For convenience, let's use current fields as 'clone' or defaults?
-					// User asked for "create new", usually implies blank or current state as template.
-					// I'll use current state as template to populate it, but user can clear if they want.
-					ConnectionType: models.ConnectionType(u.expConnectionTypeSelect.Selected),
-					WPUrl:          u.expWPUrlEntry.Text,
-					WPKey:          u.expWPKeyEntry.Text,
-					// PluginPath removed
-
-					Host:         u.expHostEntry.Text,
-					Port:         u.expPortEntry.Text,
-					SSHUser:      u.expSSHUserEntry.Text,
-					SSHPassword:  u.expSSHPassEntry.Text,
-					AuthType:     models.AuthType(u.expAuthTypeSelect.Selected),
-					AuthKeyPath:  u.expKeyPathEntry.Text,
-					DBHost:       u.expDBHostEntry.Text,
-					DBPort:       u.expDBPortEntry.Text,
-					DBUser:       u.expDBUserEntry.Text,
-					DBPassword:   u.expDBPassEntry.Text,
-					DBType:       models.DBType(u.expDBTypeSelect.Selected),
-					IsDocker:     u.expIsDockerCheck.Checked,
-					ContainerID:  u.expContainerIDEntry.Text,
-					TargetDBName: u.expTargetDBEntry.Text,
-					Destination:  u.expDestPathLabel.Text,
-				}
-
-				u.profiles = append(u.profiles, newProfile)
-				u.saveProfiles()
-				sidebar.Refresh()
-				// Select the new profile
-				sidebar.Select(len(u.profiles) - 1)
-			}
-		}, u.window)
-	})
-
-	sidebarContainer := container.NewBorder(nil, addProfileBtn, nil, nil, sidebar)
-
-	split := container.NewHSplit(
-		container.NewBorder(widget.NewLabel("Saved Profiles"), nil, nil, nil, sidebarContainer),
-		tabs,
-	)
-	split.SetOffset(0.25)
-
-	u.window.SetContent(split)
+	u.showHosts()
 	u.window.ShowAndRun()
 }
 
-func (u *UI) loadProfiles() {
-	// Load from profiles.json
-	file, err := os.Open("profiles.json")
-	if err != nil {
-		return
-	}
-	defer file.Close()
-
-	bytes, _ := ioutil.ReadAll(file)
-	var config models.AppConfig
-	json.Unmarshal(bytes, &config)
-	u.profiles = config.Profiles
-}
-
-func (u *UI) saveProfiles() {
-	config := models.AppConfig{
-		Profiles: u.profiles,
-	}
-	bytes, _ := json.MarshalIndent(config, "", "  ")
-	ioutil.WriteFile("profiles.json", bytes, 0644)
-}
-
-func (u *UI) showLoading(title, message string) *dialog.CustomDialog {
-	content := container.NewVBox(
-		widget.NewLabel(message),
-		widget.NewProgressBarInfinite(),
+func (u *UI) createSidebar() *fyne.Container {
+	logoImage := canvas.NewImageFromFile("logo.png")
+	logoImage.SetMinSize(fyne.NewSize(56, 56))
+	logoImage.FillMode = canvas.ImageFillContain
+	logo := container.NewVBox(
+		logoImage,
+		widget.NewLabelWithStyle("DBack", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 	)
-	d := dialog.NewCustom(title, "Cancel", content, u.window)
-	d.Show()
-	return d
+	return container.NewBorder(logo, nil, nil, nil, container.NewVBox(
+		u.navButton("Hosts", theme.ComputerIcon(), u.showHosts),
+		u.navButton("Backups", theme.StorageIcon(), u.showBackups),
+		u.navButton("Settings", theme.SettingsIcon(), u.showSettings),
+		u.navButton("About", theme.InfoIcon(), u.showAbout),
+	))
 }
 
-func (u *UI) showErrorAndLog(title string, err error, action string) {
-	if err == nil {
-		return
-	}
-	u.log(nil, action, fmt.Sprintf("%s: %v", title, err), "", "", "Failed", err.Error())
-	dialog.ShowError(err, u.window)
+func (u *UI) createBottomNav() fyne.CanvasObject {
+	return container.NewGridWithColumns(4,
+		u.navButton("Hosts", theme.ComputerIcon(), u.showHosts),
+		u.navButton("Backups", theme.StorageIcon(), u.showBackups),
+		u.navButton("Settings", theme.SettingsIcon(), u.showSettings),
+		u.navButton("About", theme.InfoIcon(), u.showAbout),
+	)
 }
 
-func (u *UI) populateForms(p models.Profile) {
-	// Export Tab
-	u.expConnectionTypeSelect.SetSelected(string(p.ConnectionType))
-	u.expWPUrlEntry.SetText(p.WPUrl)
-	u.expWPKeyEntry.SetText(p.WPKey)
-	u.expHostEntry.SetText(p.Host)
-	u.expPortEntry.SetText(p.Port)
-	u.expSSHUserEntry.SetText(p.SSHUser)
-	u.expSSHPassEntry.SetText(p.SSHPassword)
-	u.expAuthTypeSelect.SetSelected(string(p.AuthType))
-	u.expKeyPathEntry.SetText(p.AuthKeyPath)
-	u.expDBHostEntry.SetText(p.DBHost)
-	u.expDBPortEntry.SetText(p.DBPort)
-	u.expDBUserEntry.SetText(p.DBUser)
-	u.expDBPassEntry.SetText(p.DBPassword)
-	u.expDBTypeSelect.SetSelected(string(p.DBType))
-	u.expIsDockerCheck.SetChecked(p.IsDocker)
-	u.expContainerIDEntry.SetText(p.ContainerID)
-	u.expTargetDBEntry.SetText(p.TargetDBName)
-	if u.expDestPathLabel != nil {
-		u.expDestPathLabel.SetText(p.Destination)
+func (u *UI) navButton(label string, icon fyne.Resource, tapped func()) *widget.Button {
+	return widget.NewButtonWithIcon(label, icon, func() {
+		u.currentSection = strings.ToLower(label)
+		tapped()
+	})
+}
+
+func (u *UI) setContent(content fyne.CanvasObject) {
+	u.content.Objects = []fyne.CanvasObject{content}
+	u.content.Refresh()
+}
+
+func (u *UI) cardGrid() *fyne.Container {
+	if fyne.CurrentDevice().IsMobile() {
+		return container.NewGridWithColumns(1)
+	}
+	return container.NewAdaptiveGrid(3)
+}
+
+func (u *UI) actionBox(objects ...fyne.CanvasObject) fyne.CanvasObject {
+	if fyne.CurrentDevice().IsMobile() {
+		return container.NewVBox(objects...)
+	}
+	return container.NewHBox(objects...)
+}
+
+func (u *UI) showHosts() {
+	u.search = widget.NewEntry()
+	u.search.SetPlaceHolder("Search hosts...")
+	u.search.OnChanged = func(_ string) {
+		u.showHosts()
 	}
 
-	// Import Tab (if initialized)
-	if u.impHostEntry != nil {
-		u.impConnectionTypeSelect.SetSelected(string(p.ConnectionType))
-		u.impWPUrlEntry.SetText(p.WPUrl)
-		u.impWPKeyEntry.SetText(p.WPKey)
-		u.impHostEntry.SetText(p.Host)
-		u.impPortEntry.SetText(p.Port)
-		u.impSSHUserEntry.SetText(p.SSHUser)
-		u.impSSHPassEntry.SetText(p.SSHPassword)
-		u.impAuthTypeSelect.SetSelected(string(p.AuthType))
-		u.impKeyPathEntry.SetText(p.AuthKeyPath)
-		u.impDBHostEntry.SetText(p.DBHost)
-		u.impDBPortEntry.SetText(p.DBPort)
-		u.impDBUserEntry.SetText(p.DBUser)
-		u.impDBPassEntry.SetText(p.DBPassword)
-		u.impDBTypeSelect.SetSelected(string(p.DBType))
-		u.impIsDockerCheck.SetChecked(p.IsDocker)
-		u.impContainerIDEntry.SetText(p.ContainerID)
-		u.impTargetDBEntry.SetText(p.TargetDBName)
+	profiles := u.filteredProfiles()
+	groupCards := u.groupSummaryCards(profiles)
+	hostCards := u.cardGrid()
+	for _, profile := range profiles {
+		p := profile
+		hostCards.Add(u.profileCard(p))
 	}
+
+	top := container.NewBorder(nil, nil, nil,
+		widget.NewButtonWithIcon("Host", theme.ContentAddIcon(), u.showProfileEditor),
+		container.NewVBox(widget.NewLabelWithStyle("Hosts", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), u.search),
+	)
+	u.setContent(container.NewBorder(top, nil, nil, nil, container.NewVScroll(container.NewVBox(
+		widget.NewLabel("Groups"),
+		groupCards,
+		widget.NewSeparator(),
+		widget.NewLabel("Hosts"),
+		hostCards,
+	))))
+}
+
+func (u *UI) filteredProfiles() []models.Profile {
+	profiles := u.core.Profiles()
+	if u.search == nil || strings.TrimSpace(u.search.Text) == "" {
+		return profiles
+	}
+	q := strings.ToLower(strings.TrimSpace(u.search.Text))
+	var filtered []models.Profile
+	for _, p := range profiles {
+		if strings.Contains(strings.ToLower(p.Name), q) || strings.Contains(strings.ToLower(p.Host), q) || strings.Contains(strings.ToLower(p.Group), q) {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
+}
+
+func (u *UI) groupSummaryCards(profiles []models.Profile) fyne.CanvasObject {
+	counts := map[string]int{}
+	for _, p := range profiles {
+		group := p.Group
+		if group == "" {
+			group = "Default"
+		}
+		counts[group]++
+	}
+	grid := u.cardGrid()
+	if len(counts) == 0 {
+		grid.Add(widget.NewCard("No groups", "", widget.NewLabel("Create a host to start.")))
+		return grid
+	}
+	for group, count := range counts {
+		grid.Add(widget.NewCard(group, fmt.Sprintf("%d hosts", count), widget.NewIcon(theme.FolderIcon())))
+	}
+	return grid
+}
+
+func (u *UI) profileCard(p models.Profile) fyne.CanvasObject {
+	settings := p.EffectiveExport()
+	subtitle := fmt.Sprintf("%s@%s:%s - %s", settings.SSHUser, settings.Host, settings.Port, settings.TargetDBName)
+	if settings.ConnectionType == models.ConnectionTypeWordPress {
+		subtitle = settings.WPUrl + " - WordPress"
+	}
+	backupBtn := widget.NewButtonWithIcon("Backup", theme.UploadIcon(), func() {
+		u.runBackup(p)
+	})
+	editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), func() {
+		u.showProfileEditorWith(p)
+	})
+	deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+		dialog.ShowConfirm("Delete host", "Delete "+p.Name+"?", func(ok bool) {
+			if ok {
+				if err := u.core.DeleteProfile(p.ID); err != nil {
+					dialog.ShowError(err, u.window)
+					return
+				}
+				u.showHosts()
+			}
+		}, u.window)
+	})
+	body := container.NewVBox(
+		widget.NewLabel(subtitle),
+		u.actionBox(backupBtn, editBtn, deleteBtn),
+	)
+	return widget.NewCard(p.Name, p.Group, body)
+}
+
+func (u *UI) showProfileEditor() {
+	p := defaultProfile()
+	u.showProfileEditorWith(p)
+}
+
+func (u *UI) showProfileEditorWith(p models.Profile) {
+	name := widget.NewEntry()
+	name.SetText(p.Name)
+	group := widget.NewEntry()
+	group.SetText(p.Group)
+	exportEditor := newSettingsEditor(p.EffectiveExport())
+	importEditor := newSettingsEditor(p.EffectiveImport())
+
+	save := widget.NewButtonWithIcon("Save Profile", theme.DocumentSaveIcon(), func() {
+		p.Name = strings.TrimSpace(name.Text)
+		p.Group = strings.TrimSpace(group.Text)
+		if p.Name == "" {
+			dialog.ShowError(fmt.Errorf("profile name is required"), u.window)
+			return
+		}
+		exportSettings := exportEditor.settings()
+		importSettings := importEditor.settings()
+		p.ExportSettings = &exportSettings
+		p.ImportSettings = &importSettings
+		legacy := withLegacy(p, exportSettings)
+		if err := u.core.SaveProfile(legacy); err != nil {
+			dialog.ShowError(err, u.window)
+			return
+		}
+		u.showHosts()
+	})
+	testExport := widget.NewButtonWithIcon("Test Export Connection", theme.ConfirmIcon(), func() {
+		u.testProfileConnection(p, name.Text, group.Text, exportEditor, importEditor, false)
+	})
+	testImport := widget.NewButtonWithIcon("Test Import Connection", theme.ConfirmIcon(), func() {
+		u.testProfileConnection(p, name.Text, group.Text, exportEditor, importEditor, true)
+	})
+	copyExportToImport := widget.NewButton("Copy Export to Import", func() {
+		importEditor.apply(exportEditor.settings())
+	})
+	copyImportToExport := widget.NewButton("Copy Import to Export", func() {
+		exportEditor.apply(importEditor.settings())
+	})
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Export", exportEditor.form(u.window)),
+		container.NewTabItem("Import", importEditor.form(u.window)),
+	)
+	u.setContent(container.NewBorder(
+		container.NewVBox(widget.NewLabelWithStyle("Host Profile", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewForm(
+			widget.NewFormItem("Name", name),
+			widget.NewFormItem("Group", group),
+		)),
+		container.NewVBox(
+			u.actionBox(copyExportToImport, copyImportToExport),
+			u.actionBox(save, testExport, testImport),
+		),
+		nil,
+		nil,
+		tabs,
+	))
+}
+
+func (u *UI) runBackup(p models.Profile) {
+	ctx, cancel := context.WithCancel(context.Background())
+	job := u.addJob("Backup", p.Name, cancel)
+	u.showBackups()
+	go func() {
+		defer cancel()
+		record, err := u.core.Backup(ctx, p, func(message string, current int64, total int64) {
+			progress := job.Progress
+			if total > 0 {
+				progress = float64(current) / float64(total)
+			} else {
+				progress += 0.03
+				if progress > 0.95 {
+					progress = 0.1
+				}
+			}
+			u.updateJob(job.ID, message, progress, "")
+		})
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				u.finishJob(job.ID, "Backup canceled", nil)
+				return
+			}
+			u.finishJob(job.ID, "Backup canceled or failed", err)
+			return
+		}
+		u.finishJob(job.ID, "Backup complete: "+filepath.Base(record.FilePath), nil)
+		u.showBackups()
+	}()
+}
+
+func (u *UI) addJob(kind, profileName string, cancel context.CancelFunc) *operationJob {
+	job := &operationJob{
+		ID:          fmt.Sprintf("%d", time.Now().UnixNano()),
+		Kind:        kind,
+		ProfileName: profileName,
+		Status:      "Starting...",
+		Cancel:      cancel,
+	}
+	u.jobsMu.Lock()
+	u.jobs = append([]*operationJob{job}, u.jobs...)
+	u.jobsMu.Unlock()
+	return job
+}
+
+func (u *UI) updateJob(id, status string, progress float64, errText string) {
+	u.jobsMu.Lock()
+	for _, job := range u.jobs {
+		if job.ID == id {
+			job.Status = status
+			job.Progress = progress
+			job.Err = errText
+			break
+		}
+	}
+	u.jobsMu.Unlock()
+	if u.currentSection == "backups" {
+		u.showBackups()
+	}
+}
+
+func (u *UI) finishJob(id, status string, err error) {
+	u.jobsMu.Lock()
+	for _, job := range u.jobs {
+		if job.ID == id {
+			job.Done = true
+			job.Status = status
+			job.Progress = 1
+			if err != nil {
+				job.Err = err.Error()
+				job.Progress = 0
+			}
+			break
+		}
+	}
+	u.jobsMu.Unlock()
+	if u.currentSection == "backups" {
+		u.showBackups()
+	}
+}
+
+func (u *UI) currentJobs() []*operationJob {
+	u.jobsMu.Lock()
+	defer u.jobsMu.Unlock()
+	jobs := make([]*operationJob, len(u.jobs))
+	copy(jobs, u.jobs)
+	return jobs
+}
+
+func (u *UI) showBackups() {
+	u.currentSection = "backups"
+	records := u.core.History()
+	jobs := u.currentJobs()
+	running := container.NewVBox()
+	if len(jobs) > 0 {
+		running.Add(widget.NewLabelWithStyle("Running", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		for _, job := range jobs {
+			j := job
+			progress := widget.NewProgressBar()
+			progress.SetValue(j.Progress)
+			status := j.Status
+			if j.Err != "" {
+				status += " - " + j.Err
+			}
+			cancelBtn := widget.NewButton("Cancel", func() {
+				if j.Cancel != nil && !j.Done {
+					j.Cancel()
+					u.updateJob(j.ID, "Canceling...", j.Progress, "")
+				}
+			})
+			if j.Done {
+				cancelBtn.Disable()
+			}
+			running.Add(widget.NewCard(j.Kind+" - "+j.ProfileName, status, container.NewVBox(
+				progress,
+				u.actionBox(cancelBtn),
+			)))
+		}
+		running.Add(widget.NewSeparator())
+	}
+	list := widget.NewList(
+		func() int { return len(records) },
+		func() fyne.CanvasObject {
+			return widget.NewCard("Backup", "", widget.NewLabel("details"))
+		},
+		func(i widget.ListItemID, o fyne.CanvasObject) {
+			record := records[len(records)-1-i]
+			card := o.(*widget.Card)
+			card.SetTitle(record.ProfileName)
+			card.SetSubTitle(record.ExportDate.Format("2006-01-02 15:04") + " - " + record.FileSize)
+			card.SetContent(widget.NewLabel(filepath.Base(record.FilePath)))
+		},
+	)
+	list.OnSelected = func(id widget.ListItemID) {
+		record := records[len(records)-1-id]
+		u.showBackupActions(record)
+	}
+	u.setContent(container.NewBorder(
+		widget.NewLabelWithStyle("Backups", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		nil, nil, nil,
+		container.NewBorder(running, nil, nil, nil,
+			list,
+		),
+	))
+}
+
+func (u *UI) showBackupActions(record models.ExportRecord) {
+	profiles := u.core.Profiles()
+	names := make([]string, 0, len(profiles))
+	byName := map[string]models.Profile{}
+	for _, p := range profiles {
+		label := p.Name
+		names = append(names, label)
+		byName[label] = p
+	}
+	dest := widget.NewSelect(names, nil)
+	if len(names) > 0 {
+		dest.SetSelected(names[0])
+	}
+	progress := widget.NewProgressBar()
+	status := widget.NewLabel("Choose a destination profile.")
+	restoreBtn := widget.NewButtonWithIcon("Import to Selected Host", theme.DownloadIcon(), func() {
+		p, ok := byName[dest.Selected]
+		if !ok {
+			dialog.ShowError(fmt.Errorf("select a destination profile"), u.window)
+			return
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		job := u.addJob("Import", p.Name, cancel)
+		u.showBackups()
+		go func() {
+			defer cancel()
+			err := u.core.Restore(ctx, record, p, func(message string, current int64, total int64) {
+				if total > 0 {
+					u.updateJob(job.ID, message, float64(current)/float64(total), "")
+				} else {
+					u.updateJob(job.ID, message, job.Progress, "")
+				}
+			})
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					u.finishJob(job.ID, "Import canceled", nil)
+					return
+				}
+				u.finishJob(job.ID, "Import canceled or failed", err)
+				return
+			}
+			u.finishJob(job.ID, "Import complete", nil)
+			u.showBackups()
+		}()
+	})
+	openBtn := widget.NewButtonWithIcon("Open Folder", theme.FolderOpenIcon(), func() {
+		u.openFolder(filepath.Dir(record.FilePath))
+	})
+	u.setContent(container.NewBorder(
+		widget.NewLabelWithStyle("Backup Detail", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewButtonWithIcon("Back", theme.NavigateBackIcon(), u.showBackups),
+		nil, nil,
+		container.NewVBox(
+			widget.NewCard(record.ProfileName, record.FileSize, widget.NewLabel(record.FilePath)),
+			widget.NewForm(widget.NewFormItem("Destination", dest)),
+			u.actionBox(restoreBtn, openBtn),
+			status,
+			progress,
+		),
+	))
+}
+
+func (u *UI) testProfileConnection(base models.Profile, name, group string, exportEditor, importEditor *settingsEditor, useImport bool) {
+	exportSettings := exportEditor.settings()
+	importSettings := importEditor.settings()
+	base.Name = defaultString(strings.TrimSpace(name), "Unsaved Profile")
+	base.Group = defaultString(strings.TrimSpace(group), "Default")
+	base.ExportSettings = &exportSettings
+	base.ImportSettings = &importSettings
+
+	loading := dialog.NewCustomWithoutButtons("Testing connection", container.NewVBox(
+		widget.NewLabel("Connecting..."),
+		widget.NewProgressBarInfinite(),
+	), u.window)
+	loading.Show()
+	go func() {
+		err := u.core.TestConnection(withLegacy(base, exportSettings), useImport)
+		loading.Hide()
+		if err != nil {
+			dialog.ShowError(err, u.window)
+			return
+		}
+		dialog.ShowInformation("Connection OK", "Connection test succeeded.", u.window)
+	}()
+}
+
+func (u *UI) showSettings() {
+	includeSecrets := widget.NewCheck("Include saved passwords/API keys", nil)
+	exportBtn := widget.NewButtonWithIcon("Export Profiles", theme.UploadIcon(), func() {
+		fd := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+			if err != nil || writer == nil {
+				return
+			}
+			path := writer.URI().Path()
+			_ = writer.Close()
+			if err := u.core.ExportProfiles(path, includeSecrets.Checked); err != nil {
+				dialog.ShowError(err, u.window)
+				return
+			}
+			dialog.ShowInformation("Export complete", path, u.window)
+		}, u.window)
+		fd.SetFileName("dback-profiles.json")
+		fd.Show()
+	})
+	importBtn := widget.NewButtonWithIcon("Import Profiles", theme.DownloadIcon(), func() {
+		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil || reader == nil {
+				return
+			}
+			path := reader.URI().Path()
+			_ = reader.Close()
+			if err := u.core.ImportProfiles(path, includeSecrets.Checked); err != nil {
+				dialog.ShowError(err, u.window)
+				return
+			}
+			dialog.ShowInformation("Import complete", "Profiles imported.", u.window)
+			u.showHosts()
+		}, u.window)
+		fd.Show()
+	})
+	u.setContent(container.NewVBox(
+		widget.NewLabelWithStyle("Settings", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewCard("Profile Transfer", "Move or backup all host profiles.", container.NewVBox(
+			includeSecrets,
+			u.actionBox(exportBtn, importBtn),
+			widget.NewLabel("Passwords and API keys are excluded unless you explicitly include them."),
+		)),
+		widget.NewButtonWithIcon("About", theme.InfoIcon(), u.showAbout),
+	))
+}
+
+func (u *UI) showAbout() {
+	githubURL, _ := url.Parse("https://github.com/devlifeX/dback")
+	logo := canvas.NewImageFromFile("logo.png")
+	logo.SetMinSize(fyne.NewSize(96, 96))
+	logo.FillMode = canvas.ImageFillContain
+
+	u.setContent(container.NewCenter(widget.NewCard("About DBack", "DB Sync Manager", container.NewVBox(
+		container.NewCenter(logo),
+		widget.NewLabelWithStyle("dariush vesal", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("dariush.vesal@gmail.com", fyne.TextAlignCenter, fyne.TextStyle{}),
+		container.NewCenter(widget.NewHyperlink("https://github.com/devlifeX/dback", githubURL)),
+	))))
 }
 
 func (u *UI) getExecutableDir() string {
-	// First try current working directory
 	cwd, err := os.Getwd()
 	if err == nil && cwd != "" {
 		return cwd
 	}
-
-	// Fallback to executable directory
 	exe, err := os.Executable()
 	if err == nil {
 		dir := filepath.Dir(exe)
-		// Check if it's a temp directory (go run)
 		if !strings.Contains(dir, "go-build") && !strings.Contains(dir, "/tmp/") {
 			return dir
 		}
 	}
-
-	// Fallback to home directory
 	home, err := os.UserHomeDir()
 	if err == nil {
 		return home
@@ -412,35 +591,292 @@ func (u *UI) getExecutableDir() string {
 	return "."
 }
 
-// Export History Functions
-func (u *UI) loadExportHistory() {
-	file, err := os.Open("export_history.json")
-	if err != nil {
+type settingsEditor struct {
+	connectionType *widget.Select
+	host           *widget.Entry
+	port           *widget.Entry
+	sshUser        *widget.Entry
+	sshPassword    *widget.Entry
+	authType       *widget.Select
+	keyPath        *widget.Entry
+	wpURL          *widget.Entry
+	wpKey          *widget.Entry
+	dbHost         *widget.Entry
+	dbPort         *widget.Entry
+	dbUser         *widget.Entry
+	dbPassword     *widget.Entry
+	dbType         *widget.Select
+	isDocker       *widget.Check
+	containerID    *widget.Entry
+	targetDB       *widget.Entry
+	destination    *widget.Entry
+	refresh        func()
+}
+
+func newSettingsEditor(p models.Profile) *settingsEditor {
+	e := &settingsEditor{
+		connectionType: widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeWordPress)}, nil),
+		host:           widget.NewEntry(),
+		port:           widget.NewEntry(),
+		sshUser:        widget.NewEntry(),
+		sshPassword:    widget.NewPasswordEntry(),
+		authType:       widget.NewSelect([]string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}, nil),
+		keyPath:        widget.NewEntry(),
+		wpURL:          widget.NewEntry(),
+		wpKey:          widget.NewPasswordEntry(),
+		dbHost:         widget.NewEntry(),
+		dbPort:         widget.NewEntry(),
+		dbUser:         widget.NewEntry(),
+		dbPassword:     widget.NewPasswordEntry(),
+		dbType:         widget.NewSelect([]string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL), string(models.DBTypeCouchDB)}, nil),
+		isDocker:       widget.NewCheck("Docker container", nil),
+		containerID:    widget.NewEntry(),
+		targetDB:       widget.NewEntry(),
+		destination:    widget.NewEntry(),
+	}
+	e.connectionType.SetSelected(defaultString(string(p.ConnectionType), string(models.ConnectionTypeSSH)))
+	e.host.SetText(p.Host)
+	e.port.SetText(defaultString(p.Port, "22"))
+	e.sshUser.SetText(p.SSHUser)
+	e.sshPassword.SetText(p.SSHPassword)
+	e.authType.SetSelected(defaultString(string(p.AuthType), string(models.AuthTypePassword)))
+	e.keyPath.SetText(p.AuthKeyPath)
+	e.wpURL.SetText(p.WPUrl)
+	e.wpKey.SetText(p.WPKey)
+	e.dbHost.SetText(defaultString(p.DBHost, "127.0.0.1"))
+	e.dbPort.SetText(defaultString(p.DBPort, "3306"))
+	e.dbUser.SetText(p.DBUser)
+	e.dbPassword.SetText(p.DBPassword)
+	e.dbType.SetSelected(defaultString(string(p.DBType), string(models.DBTypeMySQL)))
+	e.isDocker.SetChecked(p.IsDocker)
+	e.containerID.SetText(p.ContainerID)
+	e.targetDB.SetText(p.TargetDBName)
+	e.destination.SetText(p.Destination)
+	return e
+}
+
+func (e *settingsEditor) form(w fyne.Window) fyne.CanvasObject {
+	keyBtn := widget.NewButton("Select Key", func() {
+		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err == nil && reader != nil {
+				e.keyPath.SetText(reader.URI().Path())
+				_ = reader.Close()
+			}
+		}, w)
+		fd.Show()
+	})
+	folderBtn := widget.NewButton("Select Destination", func() {
+		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+			if err == nil && uri != nil {
+				e.destination.SetText(uri.Path())
+			}
+		}, w)
+		fd.Show()
+	})
+	generatePluginBtn := widget.NewButton("Generate WordPress Plugin", func() {
+		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+			if err != nil || uri == nil {
+				return
+			}
+			key, path, err := wordpress.GeneratePlugin("plugin_template/dback-sync.php", uri.Path())
+			if err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			e.wpKey.SetText(key)
+			dialog.ShowInformation("Plugin Generated", path, w)
+		}, w)
+		fd.Show()
+	})
+	sshRows := []fyne.CanvasObject{
+		labeledField("Host", e.host),
+		labeledField("Port", e.port),
+		labeledField("SSH User", e.sshUser),
+		labeledField("SSH Password", e.sshPassword),
+		labeledField("Auth Type", e.authType),
+		labeledField("Key Path", container.NewBorder(nil, nil, nil, keyBtn, e.keyPath)),
+	}
+	wpRows := []fyne.CanvasObject{
+		labeledField("WordPress URL", e.wpURL),
+		labeledField("WordPress API Key", e.wpKey),
+		generatePluginBtn,
+	}
+	dbRows := []fyne.CanvasObject{
+		e.isDocker,
+		labeledField("Container", e.containerID),
+		labeledField("DB Type", e.dbType),
+		labeledField("DB Host", e.dbHost),
+		labeledField("DB Port", e.dbPort),
+		labeledField("DB User", e.dbUser),
+		labeledField("DB Password", e.dbPassword),
+		labeledField("Database", e.targetDB),
+	}
+	sshGrid := responsiveGrid(sshRows...)
+	wpGrid := responsiveGrid(wpRows...)
+	dbCard := widget.NewCard("Database", "", responsiveGrid(dbRows...))
+	keyRow := sshRows[5]
+	passwordRow := sshRows[3]
+
+	e.refresh = func() {
+		isWP := e.connectionType.Selected == string(models.ConnectionTypeWordPress)
+		if isWP {
+			sshGrid.Hide()
+			wpGrid.Show()
+			dbCard.Hide()
+		} else {
+			sshGrid.Show()
+			wpGrid.Hide()
+			dbCard.Show()
+		}
+		if e.authType.Selected == string(models.AuthTypeKeyFile) {
+			keyRow.Show()
+			passwordRow.Hide()
+		} else {
+			keyRow.Hide()
+			passwordRow.Show()
+		}
+		sshGrid.Refresh()
+		wpGrid.Refresh()
+		dbCard.Refresh()
+	}
+	e.connectionType.OnChanged = func(string) { e.refresh() }
+	e.authType.OnChanged = func(string) { e.refresh() }
+	e.refresh()
+
+	return container.NewVScroll(container.NewVBox(
+		widget.NewCard("Connection", "", container.NewVBox(
+			responsiveGrid(labeledField("Type", e.connectionType)),
+			sshGrid,
+			wpGrid,
+		)),
+		dbCard,
+		widget.NewCard("Files", "", responsiveGrid(
+			labeledField("Destination Folder", container.NewBorder(nil, nil, nil, folderBtn, e.destination)),
+		)),
+	))
+}
+
+func labeledField(label string, object fyne.CanvasObject) fyne.CanvasObject {
+	return container.NewBorder(widget.NewLabel(label), nil, nil, nil, object)
+}
+
+func responsiveGrid(items ...fyne.CanvasObject) *fyne.Container {
+	if fyne.CurrentDevice().IsMobile() {
+		return container.NewGridWithColumns(1, items...)
+	}
+	return container.NewGridWithColumns(2, items...)
+}
+
+func (e *settingsEditor) settings() models.TransferSettings {
+	return models.TransferSettings{
+		ConnectionType: models.ConnectionType(e.connectionType.Selected),
+		Host:           strings.TrimSpace(e.host.Text),
+		Port:           strings.TrimSpace(e.port.Text),
+		SSHUser:        strings.TrimSpace(e.sshUser.Text),
+		SSHPassword:    e.sshPassword.Text,
+		AuthType:       models.AuthType(e.authType.Selected),
+		AuthKeyPath:    strings.TrimSpace(e.keyPath.Text),
+		WPUrl:          strings.TrimSpace(e.wpURL.Text),
+		WPKey:          e.wpKey.Text,
+		DBHost:         strings.TrimSpace(e.dbHost.Text),
+		DBPort:         strings.TrimSpace(e.dbPort.Text),
+		DBUser:         strings.TrimSpace(e.dbUser.Text),
+		DBPassword:     e.dbPassword.Text,
+		DBType:         models.DBType(e.dbType.Selected),
+		IsDocker:       e.isDocker.Checked,
+		ContainerID:    strings.TrimSpace(e.containerID.Text),
+		TargetDBName:   strings.TrimSpace(e.targetDB.Text),
+		Destination:    strings.TrimSpace(e.destination.Text),
+	}
+}
+
+func (e *settingsEditor) apply(settings models.TransferSettings) {
+	e.connectionType.SetSelected(defaultString(string(settings.ConnectionType), string(models.ConnectionTypeSSH)))
+	e.host.SetText(settings.Host)
+	e.port.SetText(defaultString(settings.Port, "22"))
+	e.sshUser.SetText(settings.SSHUser)
+	e.sshPassword.SetText(settings.SSHPassword)
+	e.authType.SetSelected(defaultString(string(settings.AuthType), string(models.AuthTypePassword)))
+	e.keyPath.SetText(settings.AuthKeyPath)
+	e.wpURL.SetText(settings.WPUrl)
+	e.wpKey.SetText(settings.WPKey)
+	e.dbHost.SetText(defaultString(settings.DBHost, "127.0.0.1"))
+	e.dbPort.SetText(defaultString(settings.DBPort, "3306"))
+	e.dbUser.SetText(settings.DBUser)
+	e.dbPassword.SetText(settings.DBPassword)
+	e.dbType.SetSelected(defaultString(string(settings.DBType), string(models.DBTypeMySQL)))
+	e.isDocker.SetChecked(settings.IsDocker)
+	e.containerID.SetText(settings.ContainerID)
+	e.targetDB.SetText(settings.TargetDBName)
+	e.destination.SetText(settings.Destination)
+	if e.refresh != nil {
+		e.refresh()
+	}
+}
+
+func defaultProfile() models.Profile {
+	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	p := models.Profile{
+		ID:             id,
+		Name:           "New Host",
+		Group:          "Default",
+		ConnectionType: models.ConnectionTypeSSH,
+		Port:           "22",
+		AuthType:       models.AuthTypePassword,
+		DBHost:         "127.0.0.1",
+		DBPort:         "3306",
+		DBType:         models.DBTypeMySQL,
+		Destination:    ".",
+	}
+	settings := models.SettingsFromProfile(p)
+	p.ExportSettings = &settings
+	p.ImportSettings = &settings
+	return p
+}
+
+func withLegacy(p models.Profile, settings models.TransferSettings) models.Profile {
+	p.ConnectionType = settings.ConnectionType
+	p.Host = settings.Host
+	p.Port = settings.Port
+	p.SSHUser = settings.SSHUser
+	p.SSHPassword = settings.SSHPassword
+	p.AuthType = settings.AuthType
+	p.AuthKeyPath = settings.AuthKeyPath
+	p.WPUrl = settings.WPUrl
+	p.WPKey = settings.WPKey
+	p.DBHost = settings.DBHost
+	p.DBPort = settings.DBPort
+	p.DBUser = settings.DBUser
+	p.DBPassword = settings.DBPassword
+	p.DBType = settings.DBType
+	p.IsDocker = settings.IsDocker
+	p.ContainerID = settings.ContainerID
+	p.TargetDBName = settings.TargetDBName
+	p.Destination = settings.Destination
+	return p
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func (u *UI) openFolder(path string) {
+	if path == "" {
 		return
 	}
-	defer file.Close()
-
-	bytes, _ := ioutil.ReadAll(file)
-	json.Unmarshal(bytes, &u.exportRecords)
-}
-
-func (u *UI) saveExportHistory() {
-	bytes, _ := json.MarshalIndent(u.exportRecords, "", "  ")
-	ioutil.WriteFile("export_history.json", bytes, 0644)
-}
-
-func (u *UI) addExportRecord(profileID, profileName, dbName, filePath string, fileSizeBytes int64) {
-	record := models.ExportRecord{
-		ID:            fmt.Sprintf("%d", time.Now().UnixNano()),
-		ProfileID:     profileID,
-		ProfileName:   profileName,
-		DatabaseName:  dbName,
-		ExportDate:    time.Now(),
-		FilePath:      filePath,
-		FileSize:      fmt.Sprintf("%.2f MB", float64(fileSizeBytes)/1024/1024),
-		FileSizeBytes: fileSizeBytes,
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", path)
+	case "windows":
+		cmd = exec.Command("explorer", path)
+	default:
+		cmd = exec.Command("xdg-open", path)
 	}
-	u.exportRecords = append(u.exportRecords, record)
-	u.saveExportHistory()
-	u.refreshHistory()
+	if err := cmd.Start(); err != nil {
+		dialog.ShowInformation("Folder", path, u.window)
+	}
 }

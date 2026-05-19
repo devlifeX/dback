@@ -1,6 +1,7 @@
 package wordpress
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -96,10 +97,14 @@ func (c *Client) Ping() (*PingResponse, error) {
 
 // Export triggers a DB dump on WP and streams it to destPath
 func (c *Client) Export(destPath string, progressCallback func(int64)) error {
+	return c.ExportContext(context.Background(), destPath, progressCallback)
+}
+
+func (c *Client) ExportContext(ctx context.Context, destPath string, progressCallback func(int64)) error {
 	// URL: /wp-json/dback/v1/export
 	apiURL := fmt.Sprintf("%s/wp-json/dback/v1/export", c.BaseURL)
 
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -186,6 +191,10 @@ func (c *Client) Export(destPath string, progressCallback func(int64)) error {
 
 // Import uploads a SQL dump to WP
 func (c *Client) Import(sourcePath string, progressCallback func(int64)) error {
+	return c.ImportContext(context.Background(), sourcePath, progressCallback)
+}
+
+func (c *Client) ImportContext(ctx context.Context, sourcePath string, progressCallback func(int64)) error {
 	apiURL := fmt.Sprintf("%s/wp-json/dback/v1/import", c.BaseURL)
 
 	file, err := os.Open(sourcePath)
@@ -210,7 +219,7 @@ func (c *Client) Import(sourcePath string, progressCallback func(int64)) error {
 	}
 
 	// We send raw body (application/gzip)
-	req, err := http.NewRequest("POST", apiURL, pr)
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, pr)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

@@ -9,21 +9,46 @@ on:
     branches: ["master"]
 
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}
+  test:
+    name: Test
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev
+
+      - name: Test
+        run: go test -v ./...
+
+  desktop-build:
+    name: Build ${{ matrix.name }}
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            output_name: dback-linux
-            asset_name: dback-linux
-          - os: macos-latest
-            output_name: dback-macos
-            asset_name: dback-macos
-          - os: windows-latest
-            output_name: dback-windows.exe
-            asset_name: dback-windows.exe
+          - name: Linux
+            os: ubuntu-latest
+            output: dist/dback-linux
+            artifact: dback-linux
+          - name: macOS
+            os: macos-latest
+            output: dist/dback-macos
+            artifact: dback-macos
+          - name: Windows
+            os: windows-latest
+            output: dist/dback-windows.exe
+            artifact: dback-windows.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -33,54 +58,105 @@ jobs:
         with:
           go-version: "1.21"
 
-      # Install dependencies only on Linux
-      - name: Install Linux Dependencies
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+          sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev
 
-      # Build
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Add MinGW to PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
+
       - name: Build
-        run: go build -v -o ${{ matrix.output_name }} main.go
+        shell: bash
+        run: |
+          mkdir -p dist
+          go build -v -o "${{ matrix.output }}" main.go
 
-      # Test (Skip on Windows if problematic with CGO, but usually fine)
       - name: Test
         run: go test -v ./...
 
-      # Upload Artifact
-      - name: Upload Artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
-          path: ${{ matrix.output_name }}
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.output }}
+
+  android-build:
+    name: Build Android
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;26.3.11579264"
+          go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Build Android APK
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+        run: |
+          mkdir -p dist
+          "$(go env GOPATH)/bin/fyne" package -os android -appID com.dbsync.manager -name dback -icon logo.png
+          mv dback.apk dist/dback-android.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dback-android.apk
+          path: dist/dback-android.apk
 
   release:
-    needs: build
+    needs:
+      - desktop-build
+      - android-build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download Linux Artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dback-linux
-
-      - name: Download macOS Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dback-macos
-
-      - name: Download Windows Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dback-windows.exe
+          path: release-assets
+          merge-multiple: true
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
-            dback-linux
-            dback-macos
-            dback-windows.exe
+            release-assets/dback-linux
+            release-assets/dback-macos
+            release-assets/dback-windows.exe
+            release-assets/dback-android.apk
