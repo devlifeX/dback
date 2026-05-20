@@ -17,6 +17,23 @@ DBack connects to remote Linux servers, streams database dumps to local files wi
 - **SQL templates** — reusable snippets with placeholders for pre/post import queries
 - **Modern UI** — dark GitHub-style desktop interface with sidebar navigation
 
+## Screenshots
+
+### Hosts
+Manage remote servers, filter by group, search, and run backup actions from host cards.
+
+![Hosts screen](screenshot/1.png)
+
+### SQL Templates
+Create reusable SQL snippets with placeholders for pre/post import queries.
+
+![SQL template editor](screenshot/2.png)
+
+### Host profile — import queries
+Configure pre-import SQL, append templates, and test queries before restore.
+
+![Host profile queries](screenshot/3.png)
+
 ## Features
 
 ### Connectivity
