@@ -2,11 +2,20 @@
 
 # DBack — DB Sync Manager
 
-![DB Sync Manager Screenshot](desgin/app.png)
+**Linux desktop GUI for MySQL/MariaDB backup and restore over SSH, Jump Host, or Docker.**
 
-A Linux desktop GUI built with Go and [Gio](https://gioui.org) for MySQL/MariaDB backup and restore. DBack connects to remote Linux servers via SSH or Jump Host, or databases inside Docker containers. Backups stream to local files; restores target any saved host.
+DBack connects to remote Linux servers, streams database dumps to local files with compression, and restores backups to any saved host. Hosts, templates, history, and logs live in an encrypted local vault. Built with Go and [Gio](https://gioui.org).
 
-**Repository:** [https://github.com/devlifeX/dback/](https://github.com/devlifeX/dback/)
+**Repository:** [github.com/devlifeX/dback](https://github.com/devlifeX/dback/)
+
+## Highlights
+
+- **Streaming backups** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
+- **Smart fallback** — retries with a remote tmp-file when SSH streams fail; supports resume and checksum validation
+- **Unified hosts** — one connection, backup folder, and import queries per host
+- **Encrypted vault** — profiles, templates, history, and logs stored in `app_data.vault.json`
+- **SQL templates** — reusable snippets with placeholders for pre/post import queries
+- **Modern UI** — dark GitHub-style desktop interface with sidebar navigation
 
 ## Features
 
@@ -16,40 +25,34 @@ A Linux desktop GUI built with Go and [Gio](https://gioui.org) for MySQL/MariaDB
 - **Databases** — MySQL and MariaDB only
 
 ### Backup & Restore
-- **Streaming first** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
-- **Smart fallback** — automatic retry with remote tmp-file when SSH streams fail
-- **Resume & checksum** — tmp-file strategy supports offset resume and size/checksum validation
-- **Preflight** — mandatory checks before each job: Linux OS, dump/client tools, compression, disk space, writable tmp paths, Docker container status
+- **Preflight checks** — Linux OS, dump/client tools, compression, disk space, writable tmp paths, Docker container status
 - **Restore flow** — select a backup, pick a destination host, run import with that host's pre/post queries
-- **Job center** — progress and cancel controls in the Backups screen
+- **Job center** — progress and cancel controls on the Backups screen
 
 ### Host Management
-- **Unified host model** — one connection, backup folder, and import queries per host (no separate Export/Import tabs)
-- **Duplicate** — clone a host with one click; the copy gets a new ID and a numbered name (`Production 1`, `Production 2`, …)
-- **Groups & search** — clickable group filters, single-line search, and compact group chips
-- **Legacy migration** — old profiles with separate export/import settings are flattened on load; differing import settings become a separate host named `Name (import)`
+- **Duplicate** — clone a host with one click (`Production 1`, `Production 2`, …)
+- **Groups & search** — filter by group, search by name
+- **Legacy migration** — old export/import profiles are flattened on load
 
 ### App Data Transfer
 - Export/import hosts, templates, backup history metadata, and activity logs from **Settings**
 - Backup `.sql.gz` files are **not** included in the bundle
-- Secrets excluded by default
-- Optional **encrypted export** with master password (Argon2id + AES-256-GCM)
-- **Non-destructive merge** — imported data merges by ID or name; conflicts prompt for confirmation before overwrite
-- Legacy profile-only bundles are still accepted on import
+- Encrypted export with export password (Argon2id + AES-256-GCM)
+- Non-destructive merge — conflicts prompt before overwrite
 
 ### SQL Templates
-- **Templates** section — create, edit, delete reusable SQL snippets
-- **Append** — add template text to pre/post import queries without overwriting existing SQL
-- **Placeholders** — `{databasename}`, `{host}`, `{profile}`, `{dbuser}`
+- Create, edit, and delete reusable SQL snippets
+- Append template text to pre/post import queries
+- Placeholders: `{databasename}`, `{host}`, `{profile}`, `{dbuser}`
 
 ### Diagnostics & Logging
-- Test SSH/HTTP and database connectivity from the host editor
-- Structured activity logs in `~/.config/dback/logs.json`: operation ID, phase, strategy, attempt, masked commands
+- Test SSH and database connectivity from the host editor
+- Structured activity logs (operation ID, phase, strategy, attempt, masked commands)
 - Debug mode mirrors logs to stderr (`--debug` or `DBACK_DEBUG=1`)
 
 ## Quick Start
 
-### Run
+### Run from source
 
 ```bash
 ./run.sh
@@ -63,7 +66,7 @@ With debug logging:
 DBACK_DEBUG=1 ./run.sh
 ```
 
-### Build (Linux only)
+### Build (Linux)
 
 ```bash
 ./build.sh
@@ -73,7 +76,15 @@ DBACK_DEBUG=1 ./run.sh
 
 Output: `dist/dback-linux`
 
-### Build from source
+Set the app version at build time:
+
+```bash
+APP_VERSION=1.0.0 ./build.sh linux
+```
+
+Version appears in **About** inside the app.
+
+### Build manually
 
 Requirements: **Go 1.21+** and Gio development libraries.
 
@@ -89,7 +100,7 @@ sudo apt-get update && sudo apt-get install -y \
 Then:
 
 ```bash
-go build -o dist/dback-linux .
+go build -ldflags "-X main.appVersion=1.0.0" -o dist/dback-linux .
 ```
 
 ### Docker alternative
@@ -106,22 +117,19 @@ If system dependencies are problematic:
 |---------|------|
 | App config & data | `~/.config/dback` |
 | Default backups | `~/dback/backups` |
-| Profiles (vault) | `~/.config/dback/app_data.vault.json` |
-| Templates | encrypted inside vault |
-| Backup history | encrypted inside vault |
-| Activity logs | encrypted inside vault |
+| Encrypted vault | `~/.config/dback/app_data.vault.json` |
+| SSH known hosts | `~/.config/dback/ssh_known_hosts` |
 
-Each host can override the backup destination folder.
+Hosts, templates, backup history, and activity logs are stored inside the encrypted vault. Each host can override the backup destination folder.
 
 ## Security
 
-- On first launch (or when upgrading from legacy plaintext storage), DBack prompts for a **master key** (minimum 8 characters; confirmation required when creating a new vault).
-- All internal app data (`profiles`, `templates`, `history`, `logs`) is stored in a single encrypted vault at `~/.config/dback/app_data.vault.json`.
-- Legacy plaintext files are **removed** after successful migration into the vault; no `.legacy` copies are kept.
-- **App Data Transfer** exports are encrypted by default and require an export password. History and activity log metadata may still contain sensitive host names and paths.
-- SSH connections use **TOFU host key verification** via `~/.config/dback/ssh_known_hosts`. Unknown host keys are saved on first connect; mismatches are rejected.
-- Remote database commands validate and shell-escape profile fields (`DBUser`, `DBHost`, `DBPort`, `ContainerID`) to reduce command injection risk.
-- Password fields in the host editor are masked. UI error messages are sanitized unless debug mode is enabled (`--debug` or `DBACK_DEBUG=1`).
+- On first launch, DBack prompts for a **master key** (minimum 8 characters; confirmation required when creating a new vault).
+- Legacy plaintext files are removed after successful migration into the vault.
+- **App Data Transfer** exports require an export password. Metadata in history and logs may still contain host names and paths.
+- SSH uses **TOFU host key verification** — unknown keys are saved on first connect; mismatches are rejected.
+- Remote database commands validate and shell-escape profile fields to reduce injection risk.
+- Password fields are masked in the UI. Error messages are sanitized unless debug mode is enabled.
 
 ## Usage
 
@@ -133,15 +141,15 @@ Each host can override the backup destination folder.
 5. Use **Backup** on the host card, or **Duplicate** to clone settings
 
 ### Restore
-1. Open **Backups** → filter by host if needed (newest backups appear first)
+1. Open **Backups** → filter by host if needed
 2. Select a backup file
 3. Choose a destination host
 4. Click **Import to Selected Host**
 
 ### App data export/import
 1. Open **Settings**
-2. **Export App Data** — enter an export password to encrypt hosts, templates, history, and logs
-3. **Import App Data** — enter the export password for encrypted bundles (legacy plain bundles without secrets are still accepted)
+2. **Export App Data** — enter an export password
+3. **Import App Data** — enter the export password for encrypted bundles
 
 ## Why is it fast?
 
@@ -155,7 +163,7 @@ Each host can override the backup destination folder.
 Created by **dariush vesal**.
 
 - Email: `dariush.vesal@gmail.com`
-- GitHub: [https://github.com/devlifeX/dback](https://github.com/devlifeX/dback)
+- GitHub: [github.com/devlifeX/dback](https://github.com/devlifeX/dback/)
 
 ## FAQ
 
