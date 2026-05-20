@@ -12,6 +12,9 @@ import (
 //go:embed logo.png
 var logoBytes []byte
 
+// appVersion is set at build time via -ldflags; defaults to "dev" for local runs.
+var appVersion = "dev"
+
 func main() {
 	args := os.Args[1:]
 	if debugEnabledFromArgs(args) || debug.EnabledFromEnv() {
@@ -29,7 +32,7 @@ func main() {
 		}
 	}()
 
-	ui.New(logoBytes).Run()
+	ui.New(logoBytes, appVersion).Run()
 }
 
 func debugEnabledFromArgs(args []string) bool {

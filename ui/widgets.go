@@ -34,9 +34,32 @@ func fillRoundedRect(gtx layout.Context, size image.Point, radius int, col color
 	paint.PaintOp{}.Add(gtx.Ops)
 }
 
+func strokeRoundedRect(gtx layout.Context, size image.Point, radius int, col color.NRGBA, width int) {
+	if width <= 0 {
+		return
+	}
+	path := clip.UniformRRect(image.Rectangle{Max: size}, radius).Path(gtx.Ops)
+	defer clip.Stroke{Path: path, Width: float32(width)}.Op().Push(gtx.Ops).Pop()
+	paint.ColorOp{Color: col}.Add(gtx.Ops)
+	paint.PaintOp{}.Add(gtx.Ops)
+}
+
+func borderedRoundedRect(gtx layout.Context, size image.Point, radius int, fill, border color.NRGBA, borderWidth int) {
+	fillRoundedRect(gtx, size, radius, fill)
+	if borderWidth > 0 {
+		strokeRoundedRect(gtx, size, radius, border, borderWidth)
+	}
+}
+
 func sectionTitle(gtx layout.Context, th *material.Theme, theme *AppTheme, title string) layout.Dimensions {
-	lbl := material.H5(th, title)
+	lbl := material.H4(th, title)
 	lbl.Color = theme.Text
+	return lbl.Layout(gtx)
+}
+
+func sectionLabel(gtx layout.Context, th *material.Theme, theme *AppTheme, text string) layout.Dimensions {
+	lbl := material.Subtitle2(th, text)
+	lbl.Color = theme.TextMuted
 	return lbl.Layout(gtx)
 }
 
@@ -46,15 +69,34 @@ func mutedLabel(gtx layout.Context, th *material.Theme, theme *AppTheme, text st
 	return lbl.Layout(gtx)
 }
 
+func pageHeader(gtx layout.Context, th *material.Theme, theme *AppTheme, title string, action layout.Widget) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return sectionTitle(gtx, th, theme, title)
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if action == nil {
+				return layout.Dimensions{}
+			}
+			return action(gtx)
+		}),
+	)
+}
+
 func card(gtx layout.Context, theme *AppTheme, w layout.Widget) layout.Dimensions {
 	macro := op.Record(gtx.Ops)
 	dims := layout.Inset{
-		Top: theme.Padding, Bottom: theme.Padding,
-		Left: theme.Padding, Right: theme.Padding,
+		Top: theme.CardPadding, Bottom: theme.CardPadding,
+		Left: theme.CardPadding, Right: theme.CardPadding,
 	}.Layout(gtx, w)
 	call := macro.Stop()
 
-	fillRoundedRect(gtx, dims.Size, gtx.Dp(theme.Radius), theme.Surface)
+	radius := gtx.Dp(theme.Radius)
+	borderedRoundedRect(gtx, dims.Size, radius, theme.Surface, theme.Border, gtx.Dp(unit.Dp(1)))
 	call.Add(gtx.Ops)
 	return dims
 }
@@ -62,9 +104,9 @@ func card(gtx layout.Context, theme *AppTheme, w layout.Widget) layout.Dimension
 func borderedInput(gtx layout.Context, theme *AppTheme, focused bool, w layout.Widget) layout.Dimensions {
 	borderCol := theme.Border
 	if focused {
-		borderCol = theme.Accent
+		borderCol = theme.Link
 	}
-	radius := gtx.Dp(theme.Radius)
+	radius := gtx.Dp(theme.RadiusSm)
 	border := gtx.Dp(unit.Dp(1))
 	innerRadius := radius - border
 	if innerRadius < 0 {
@@ -78,26 +120,16 @@ func borderedInput(gtx layout.Context, theme *AppTheme, focused bool, w layout.W
 
 	macro := op.Record(gtx.Ops)
 	dims := layout.Inset{
-		Top: unit.Dp(9), Bottom: unit.Dp(9),
-		Left: unit.Dp(13), Right: unit.Dp(13),
+		Top: unit.Dp(11), Bottom: unit.Dp(11),
+		Left: unit.Dp(14), Right: unit.Dp(14),
 	}.Layout(inputGtx, w)
 	call := macro.Stop()
 
-	minHeight := gtx.Dp(unit.Dp(42))
+	minHeight := gtx.Dp(unit.Dp(44))
 	if dims.Size.Y < minHeight {
 		dims.Size.Y = minHeight
 	}
-	fillRoundedRect(gtx, dims.Size, radius, borderCol)
-	inner := image.Rectangle{
-		Min: image.Pt(border, border),
-		Max: image.Pt(dims.Size.X-border, dims.Size.Y-border),
-	}
-	if inner.Dx() > 0 && inner.Dy() > 0 {
-		stack := clip.UniformRRect(inner, innerRadius).Push(gtx.Ops)
-		paint.ColorOp{Color: theme.InputBg}.Add(gtx.Ops)
-		paint.PaintOp{}.Add(gtx.Ops)
-		stack.Pop()
-	}
+	borderedRoundedRect(gtx, dims.Size, radius, theme.InputBg, borderCol, border)
 	call.Add(gtx.Ops)
 	return dims
 }
@@ -117,10 +149,12 @@ func hgap(theme *AppTheme) layout.Widget {
 func labeledField(gtx layout.Context, th *material.Theme, theme *AppTheme, label string, w layout.Widget) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return mutedLabel(gtx, th, theme, label)
+			lbl := material.Body2(th, label)
+			lbl.Color = theme.Text
+			return lbl.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, w)
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, w)
 		}),
 	)
 }
@@ -149,27 +183,51 @@ func actionButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *
 }
 
 func renderButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, style buttonStyle, active bool) layout.Dimensions {
-	b := material.Button(th, btn, label)
+	var bg, fg, border color.NRGBA
+	borderWidth := 0
+	radius := gtx.Dp(theme.RadiusSm)
+
 	switch style {
 	case btnPrimary:
-		b.Background = theme.Accent
-		b.Color = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		bg = theme.Accent
+		fg = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 	case btnDanger:
-		b.Background = theme.Danger
-		b.Color = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		bg = theme.Danger
+		fg = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 	case btnTab:
 		if active {
-			b.Background = theme.Accent
-			b.Color = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+			bg = theme.SurfaceAlt
+			fg = theme.Text
+			border = theme.Border
+			borderWidth = gtx.Dp(unit.Dp(1))
 		} else {
-			b.Background = theme.SurfaceAlt
-			b.Color = theme.TextMuted
+			bg = theme.Bg
+			fg = theme.TextMuted
+			borderWidth = 0
 		}
 	default:
-		b.Background = theme.SurfaceAlt
-		b.Color = theme.Text
+		bg = theme.SurfaceAlt
+		fg = theme.Text
+		border = theme.Border
+		borderWidth = gtx.Dp(unit.Dp(1))
 	}
-	return b.Layout(gtx)
+
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		macro := op.Record(gtx.Ops)
+		dims := layout.Inset{
+			Top: unit.Dp(10), Bottom: unit.Dp(10),
+			Left: unit.Dp(16), Right: unit.Dp(16),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Body2(th, label)
+			lbl.Color = fg
+			return lbl.Layout(gtx)
+		})
+		call := macro.Stop()
+
+		borderedRoundedRect(gtx, dims.Size, radius, bg, border, borderWidth)
+		call.Add(gtx.Ops)
+		return dims
+	})
 }
 
 func primaryButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
@@ -188,6 +246,52 @@ func tabButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *wid
 	return actionButton(gtx, th, theme, btn, label, btnTab, active, onClick)
 }
 
+func linkButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
+	if btn.Clicked(gtx) && onClick != nil {
+		onClick()
+	}
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		lbl := material.Body2(th, label)
+		lbl.Color = theme.Link
+		return lbl.Layout(gtx)
+	})
+}
+
+func tabBar(gtx layout.Context, th *material.Theme, theme *AppTheme, tabs ...layout.Widget) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		func() []layout.FlexChild {
+			var children []layout.FlexChild
+			for i, tab := range tabs {
+				if i > 0 {
+					children = append(children, layout.Rigid(hgap(theme)))
+				}
+				tab := tab
+				children = append(children, layout.Rigid(tab))
+			}
+			return children
+		}()...,
+	)
+}
+
+func badge(gtx layout.Context, th *material.Theme, theme *AppTheme, label string) layout.Dimensions {
+	bg := theme.SurfaceAlt
+	fg := theme.TextMuted
+	border := theme.Border
+	macro := op.Record(gtx.Ops)
+	dims := layout.Inset{
+		Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		lbl := material.Caption(th, label)
+		lbl.Color = fg
+		return lbl.Layout(gtx)
+	})
+	call := macro.Stop()
+	borderPx := gtx.Dp(unit.Dp(1))
+	borderedRoundedRect(gtx, dims.Size, gtx.Dp(theme.RadiusSm), bg, border, borderPx)
+	call.Add(gtx.Ops)
+	return dims
+}
+
 func searchField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {
 	e.SingleLine = true
 	e.Submit = true
@@ -195,13 +299,13 @@ func searchField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *wid
 }
 
 func chipButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label, sublabel string, active bool, onClick func()) layout.Dimensions {
-	bg := theme.SurfaceAlt
+	bg := theme.Surface
 	fg := theme.TextMuted
 	border := theme.Border
 	if active {
-		bg = theme.AccentDim
-		fg = theme.Text
-		border = theme.Accent
+		bg = theme.AccentSoft
+		fg = theme.Link
+		border = theme.Link
 	}
 	clicked := btn.Clicked(gtx)
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -210,7 +314,7 @@ func chipButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *wi
 		}
 		macro := op.Record(gtx.Ops)
 		dims := layout.Inset{
-			Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(10), Right: unit.Dp(10),
+			Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(14), Right: unit.Dp(14),
 		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -228,17 +332,7 @@ func chipButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *wi
 		})
 		call := macro.Stop()
 		borderPx := gtx.Dp(unit.Dp(1))
-		fillRoundedRect(gtx, dims.Size, gtx.Dp(theme.Radius), border)
-		inner := image.Rectangle{
-			Min: image.Pt(borderPx, borderPx),
-			Max: image.Pt(dims.Size.X-borderPx, dims.Size.Y-borderPx),
-		}
-		if inner.Dx() > 0 && inner.Dy() > 0 {
-			stack := clip.UniformRRect(inner, gtx.Dp(theme.Radius)-borderPx).Push(gtx.Ops)
-			paint.ColorOp{Color: bg}.Add(gtx.Ops)
-			paint.PaintOp{}.Add(gtx.Ops)
-			stack.Pop()
-		}
+		borderedRoundedRect(gtx, dims.Size, gtx.Dp(theme.RadiusSm), bg, border, borderPx)
 		call.Add(gtx.Ops)
 		return dims
 	})
@@ -278,7 +372,7 @@ func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, labe
 			return mutedLabel(gtx, th, theme, label)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				clicked := toggle.Clicked(gtx)
 				if clicked {
 					*open = !*open
@@ -427,19 +521,21 @@ func labeledEnumField(gtx layout.Context, th *material.Theme, theme *AppTheme, e
 			return mutedLabel(gtx, th, theme, label)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return borderedInput(gtx, theme, false, func(gtx layout.Context) layout.Dimensions {
-				var children []layout.FlexChild
-				for _, v := range values {
-					v := v
-					display := labelByValue[v]
-					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						rb := material.RadioButton(th, e, v, display)
-						rb.Color = theme.Text
-						return rb.Layout(gtx)
-					}))
-					children = append(children, layout.Rigid(hgap(theme)))
-				}
-				return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceStart}.Layout(gtx, children...)
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return borderedInput(gtx, theme, false, func(gtx layout.Context) layout.Dimensions {
+					var children []layout.FlexChild
+					for _, v := range values {
+						v := v
+						display := labelByValue[v]
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							rb := material.RadioButton(th, e, v, display)
+							rb.Color = theme.Text
+							return rb.Layout(gtx)
+						}))
+						children = append(children, layout.Rigid(vgap(theme)))
+					}
+					return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceStart}.Layout(gtx, children...)
+				})
 			})
 		}),
 	)
@@ -457,6 +553,13 @@ func spacer(theme *AppTheme, height unit.Dp) layout.Widget {
 	}
 }
 
+func divider(gtx layout.Context, theme *AppTheme) layout.Dimensions {
+	h := gtx.Dp(unit.Dp(1))
+	w := gtx.Constraints.Max.X
+	fillRect(gtx, image.Pt(w, h), theme.Border)
+	return layout.Dimensions{Size: image.Pt(w, h)}
+}
+
 func progressBar(gtx layout.Context, theme *AppTheme, progress float64) layout.Dimensions {
 	if progress < 0 {
 		progress = 0.5
@@ -465,11 +568,24 @@ func progressBar(gtx layout.Context, theme *AppTheme, progress float64) layout.D
 		progress = 1
 	}
 	w := gtx.Constraints.Max.X
-	h := gtx.Dp(unit.Dp(6))
-	fillRect(gtx, image.Pt(w, h), theme.SurfaceAlt)
+	h := gtx.Dp(unit.Dp(8))
+	radius := h / 2
+	fillRoundedRect(gtx, image.Pt(w, h), radius, theme.SurfaceAlt)
 	fillW := int(float64(w) * progress)
 	if fillW > 0 {
-		fillRect(gtx, image.Pt(fillW, h), theme.Accent)
+		fillRoundedRect(gtx, image.Pt(fillW, h), radius, theme.Link)
 	}
 	return layout.Dimensions{Size: image.Pt(w, h)}
+}
+
+func emptyState(gtx layout.Context, th *material.Theme, theme *AppTheme, message string) layout.Dimensions {
+	return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{
+				Top: unit.Dp(24), Bottom: unit.Dp(24),
+			}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return mutedLabel(gtx, th, theme, message)
+			})
+		})
+	})
 }

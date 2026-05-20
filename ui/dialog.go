@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"image/color"
-
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
@@ -12,10 +10,10 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 	theme := u.theme
 	d := u.dialog
 
-	fillRect(gtx, gtx.Constraints.Max, color.NRGBA{R: 0, G: 0, B: 0, A: 0x99})
+	fillRect(gtx, gtx.Constraints.Max, theme.Overlay)
 
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(420))
+		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(440))
 		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {

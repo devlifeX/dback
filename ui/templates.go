@@ -25,19 +25,14 @@ func (u *UI) layoutTemplates(gtx layout.Context, th *material.Theme) layout.Dime
 	templates := u.core.Templates()
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return sectionTitle(gtx, th, theme, "SQL Templates")
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return primaryButton(gtx, th, theme, &u.addTemplateBtn, "+ Template", func() {
-						u.openTemplateEditor(models.SQLTemplate{
-							ID:   fmt.Sprintf("%d", time.Now().UnixNano()),
-							Name: "New Template",
-						})
+			return pageHeader(gtx, th, theme, "SQL Templates", func(gtx layout.Context) layout.Dimensions {
+				return primaryButton(gtx, th, theme, &u.addTemplateBtn, "+ Template", func() {
+					u.openTemplateEditor(models.SQLTemplate{
+						ID:   fmt.Sprintf("%d", time.Now().UnixNano()),
+						Name: "New Template",
 					})
-				}),
-			)
+				})
+			})
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -62,7 +57,12 @@ func (u *UI) layoutTemplates(gtx layout.Context, th *material.Theme) layout.Dime
 											return lbl.Layout(gtx)
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											return mutedLabel(gtx, th, theme, t.Description)
+											if t.Description == "" {
+												return layout.Dimensions{}
+											}
+											return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												return mutedLabel(gtx, th, theme, t.Description)
+											})
 										}),
 									)
 								}),
@@ -78,7 +78,7 @@ func (u *UI) layoutTemplates(gtx layout.Context, th *material.Theme) layout.Dime
 				}
 				if len(templates) == 0 {
 					rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, "No templates yet.")
+						return emptyState(gtx, th, theme, "No templates yet.")
 					}))
 				}
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
@@ -100,7 +100,7 @@ func (u *UI) layoutTemplateEditor(gtx layout.Context, th *material.Theme) layout
 	theme := u.theme
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return secondaryButton(gtx, th, theme, &u.backBtn, "← Back", func() {
 						u.view = ViewList
@@ -115,14 +115,20 @@ func (u *UI) layoutTemplateEditor(gtx layout.Context, th *material.Theme) layout
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return labeledField(gtx, th, theme, "Name", func(gtx layout.Context) layout.Dimensions {
-				return editorField(gtx, th, theme, &u.templateName, "Template name")
-			})
-		}),
-		layout.Rigid(vgap(theme)),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return labeledField(gtx, th, theme, "Description", func(gtx layout.Context) layout.Dimensions {
-				return editorField(gtx, th, theme, &u.templateDesc, "Optional description")
+			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return labeledField(gtx, th, theme, "Name", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &u.templateName, "Template name")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return labeledField(gtx, th, theme, "Description", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &u.templateDesc, "Optional description")
+						})
+					}),
+				)
 			})
 		}),
 		layout.Rigid(vgap(theme)),

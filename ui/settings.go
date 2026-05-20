@@ -13,7 +13,7 @@ func (u *UI) layoutSettings(gtx layout.Context, th *material.Theme) layout.Dimen
 	return scrollArea(gtx, th, nil, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return sectionTitle(gtx, th, theme, "Settings")
+				return pageHeader(gtx, th, theme, "Settings", nil)
 			}),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

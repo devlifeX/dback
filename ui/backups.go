@@ -10,6 +10,7 @@ import (
 	"dback/models"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -40,24 +41,23 @@ func (u *UI) layoutBackups(gtx layout.Context, th *material.Theme) layout.Dimens
 func (u *UI) layoutBackupsMain(gtx layout.Context, th *material.Theme, theme *AppTheme) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return sectionTitle(gtx, th, theme, "Backups")
+			return pageHeader(gtx, th, theme, "Backups", nil)
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return tabBar(gtx, th, theme,
+				func(gtx layout.Context) layout.Dimensions {
 					return tabButton(gtx, th, theme, &u.tabBackupFiles, "Backup Files", u.backupTab == 0, func() {
 						u.backupTab = 0
 						u.invalidate()
 					})
-				}),
-				layout.Rigid(hgap(theme)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				},
+				func(gtx layout.Context) layout.Dimensions {
 					return tabButton(gtx, th, theme, &u.tabBackupJobs, "Jobs", u.backupTab == 1, func() {
 						u.backupTab = 1
 						u.invalidate()
 					})
-				}),
+				},
 			)
 		}),
 		layout.Rigid(vgap(theme)),
@@ -381,29 +381,42 @@ func tableHeader(gtx layout.Context, th *material.Theme, theme *AppTheme, cols [
 	var children []layout.FlexChild
 	for _, c := range cols {
 		c := c
+		if c == "" {
+			continue
+		}
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			lbl := material.Body2(th, c)
-			lbl.Color = theme.Text
+			lbl := material.Caption(th, c)
+			lbl.Color = theme.TextMuted
 			return lbl.Layout(gtx)
 		}))
 	}
-	return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+	return layout.Inset{
+		Top: unit.Dp(4), Bottom: unit.Dp(12),
+		Left: unit.Dp(4), Right: unit.Dp(4),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 	})
 }
 
 func tableRow(gtx layout.Context, th *material.Theme, theme *AppTheme, selected bool, cols []string, action string, actionBtn *widget.Clickable, onClick func()) layout.Dimensions {
 	bg := theme.Surface
+	borderCol := theme.Border
 	if selected {
-		bg = theme.SurfaceAlt
+		bg = theme.AccentSoft
+		borderCol = theme.Link
 	}
-	return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
-		fillRect(gtx, gtx.Constraints.Min, bg)
+	macro := op.Record(gtx.Ops)
+	dims := layout.Inset{
+		Top: unit.Dp(12), Bottom: unit.Dp(12),
+		Left: unit.Dp(16), Right: unit.Dp(16),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		var children []layout.FlexChild
 		for _, c := range cols {
 			c := c
 			children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return mutedLabel(gtx, th, theme, c)
+				lbl := material.Body2(th, c)
+				lbl.Color = theme.Text
+				return lbl.Layout(gtx)
 			}))
 		}
 		if action != "" && actionBtn != nil {
@@ -413,4 +426,9 @@ func tableRow(gtx layout.Context, th *material.Theme, theme *AppTheme, selected 
 		}
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 	})
+	call := macro.Stop()
+	radius := gtx.Dp(theme.RadiusSm)
+	borderedRoundedRect(gtx, dims.Size, radius, bg, borderCol, gtx.Dp(unit.Dp(1)))
+	call.Add(gtx.Ops)
+	return dims
 }

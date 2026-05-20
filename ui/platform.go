@@ -12,6 +12,7 @@ import (
 type Platform interface {
 	AppDataDir() string
 	OpenFolder(path string) error
+	OpenURL(url string) error
 	IsMobile() bool
 }
 
@@ -39,6 +40,22 @@ func (DesktopPlatform) OpenFolder(path string) error {
 		cmd = exec.Command("explorer", path)
 	default:
 		cmd = exec.Command("xdg-open", path)
+	}
+	return cmd.Start()
+}
+
+func (DesktopPlatform) OpenURL(url string) error {
+	if strings.TrimSpace(url) == "" {
+		return nil
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
 	}
 	return cmd.Start()
 }

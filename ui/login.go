@@ -27,23 +27,29 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 	}
 
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(420))
+		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(440))
 		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return u.layoutLogo(gtx, th, 48)
+					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return u.layoutLogo(gtx, th, 56)
+					})
+				}),
+				layout.Rigid(spacer(theme, unit.Dp(20))),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						lbl := material.H5(th, title)
+						lbl.Color = theme.Text
+						return lbl.Layout(gtx)
+					})
 				}),
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					lbl := material.H5(th, title)
-					lbl.Color = theme.Text
-					return lbl.Layout(gtx)
+					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return mutedLabel(gtx, th, theme, message)
+					})
 				}),
-				layout.Rigid(vgap(theme)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return mutedLabel(gtx, th, theme, message)
-				}),
-				layout.Rigid(vgap(theme)),
+				layout.Rigid(spacer(theme, unit.Dp(24))),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					consumeEditorSubmit(gtx, &u.loginPassword, submitLogin)
 					return labeledField(gtx, th, theme, "Master key", func(gtx layout.Context) layout.Dimensions {
@@ -67,7 +73,7 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 					}
 					return mutedLabel(gtx, th, theme, u.loginError)
 				}),
-				layout.Rigid(vgap(theme)),
+				layout.Rigid(spacer(theme, unit.Dp(8))),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return primaryButton(gtx, th, theme, &u.loginBtn, buttonLabel, submitLogin)
 				}),

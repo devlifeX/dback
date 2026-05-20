@@ -52,20 +52,19 @@ func (u *UI) layoutProfileEditor(gtx layout.Context, th *material.Theme) layout.
 			if !showQuery {
 				return u.hostForm.layout(gtx, th, theme, u)
 			}
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return tabBar(gtx, th, theme,
+				func(gtx layout.Context) layout.Dimensions {
 					return tabButton(gtx, th, theme, &u.tabConnection, "Connection", u.profileTab == 0, func() {
 						u.profileTab = 0
 						u.invalidate()
 					})
-				}),
-				layout.Rigid(hgap(theme)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				},
+				func(gtx layout.Context) layout.Dimensions {
 					return tabButton(gtx, th, theme, &u.tabQuery, "Queries", u.profileTab == 1, func() {
 						u.profileTab = 1
 						u.invalidate()
 					})
-				}),
+				},
 			)
 		}),
 		layout.Rigid(vgap(theme)),

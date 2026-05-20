@@ -5,6 +5,7 @@ import (
 	"image"
 	_ "image/png"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ type UI struct {
 	core     *coreapp.App
 	theme    *AppTheme
 	logo     image.Image
+	version  string
 
 	window   *app.Window
 	explorer *explorer.Explorer
@@ -94,6 +96,7 @@ type UI struct {
 	dialogOKBtn         widget.Clickable
 	dialogCancelBtn     widget.Clickable
 	deleteTemplateBtn   widget.Clickable
+	aboutProjectBtn     widget.Clickable
 
 	profileCards     map[string]profileCardWidgets
 	groupChips       map[string]*widget.Clickable
@@ -126,17 +129,21 @@ type profileCardWidgets struct {
 	delete    *widget.Clickable
 }
 
-func New(logoPNG []byte) *UI {
+func New(logoPNG []byte, version string) *UI {
 	var logo image.Image
 	if len(logoPNG) > 0 {
 		if img, _, err := image.Decode(bytes.NewReader(logoPNG)); err == nil {
 			logo = img
 		}
 	}
+	if strings.TrimSpace(version) == "" {
+		version = "dev"
+	}
 	return &UI{
 		platform:         DesktopPlatform{},
 		theme:            NewAppTheme(),
 		logo:             logo,
+		version:          version,
 		section:          SectionHosts,
 		view:             ViewList,
 		profileCards:     make(map[string]profileCardWidgets),
@@ -161,7 +168,7 @@ func (u *UI) Run() {
 
 	u.window = new(app.Window)
 	u.window.Option(
-		app.Title("DBack"),
+		app.Title("DBack - DB Sync Manager"),
 		app.Size(unit.Dp(1200), unit.Dp(800)),
 		app.MinSize(unit.Dp(900), unit.Dp(600)),
 	)
@@ -214,8 +221,8 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 func (u *UI) layoutDesktop(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Max.X = gtx.Dp(220)
-			gtx.Constraints.Min.X = gtx.Dp(220)
+			gtx.Constraints.Max.X = gtx.Dp(248)
+			gtx.Constraints.Min.X = gtx.Dp(248)
 			return u.layoutSidebar(gtx, th)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -240,6 +247,7 @@ func (u *UI) layoutContent(gtx layout.Context, th *material.Theme) layout.Dimens
 		Top: u.theme.Padding, Bottom: u.theme.Padding,
 		Left: u.theme.Padding, Right: u.theme.Padding,
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
 		switch u.section {
 		case SectionHosts:
 			return u.layoutHosts(gtx, th)

@@ -12,7 +12,6 @@ import (
 	"dback/models"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
@@ -37,16 +36,11 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return sectionTitle(gtx, th, theme, "Hosts")
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return primaryButton(gtx, th, theme, &u.addHostBtn, "+ Host", func() {
-						u.openProfileEditor(defaultProfile())
-					})
-				}),
-			)
+			return pageHeader(gtx, th, theme, "Hosts", func(gtx layout.Context) layout.Dimensions {
+				return primaryButton(gtx, th, theme, &u.addHostBtn, "+ Host", func() {
+					u.openProfileEditor(defaultProfile())
+				})
+			})
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -57,15 +51,15 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 			return scrollArea(gtx, th, &hostsList, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, "Groups")
+						return sectionLabel(gtx, th, theme, "Groups")
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return u.layoutGroupCards(gtx, th, theme, allProfiles)
 					}),
-					layout.Rigid(spacer(theme, unit.Dp(20))),
+					layout.Rigid(spacer(theme, theme.SectionGap)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, "Hosts")
+						return sectionLabel(gtx, th, theme, "Hosts")
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -131,9 +125,7 @@ func (u *UI) layoutGroupCards(gtx layout.Context, th *material.Theme, theme *App
 
 func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *AppTheme, profiles []models.Profile) layout.Dimensions {
 	if len(profiles) == 0 {
-		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
-			return mutedLabel(gtx, th, theme, "No hosts match your search.")
-		})
+		return emptyState(gtx, th, theme, "No hosts match your search.")
 	}
 	var rows []layout.FlexChild
 	for _, p := range profiles {
@@ -158,16 +150,24 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Body1(th, p.Name)
-						lbl.Color = theme.Text
-						return lbl.Layout(gtx)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, normalizeGroup(p.Group))
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Body1(th, p.Name)
+								lbl.Color = theme.Text
+								return lbl.Layout(gtx)
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return badge(gtx, th, theme, normalizeGroup(p.Group))
+							}),
+						)
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return mutedLabel(gtx, th, theme, subtitle)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return divider(gtx, theme)
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
