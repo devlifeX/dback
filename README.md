@@ -115,10 +115,13 @@ Each host can override the backup destination folder.
 
 ## Security
 
-- On first launch (or when upgrading from legacy plaintext storage), DBack prompts for a **master key**.
+- On first launch (or when upgrading from legacy plaintext storage), DBack prompts for a **master key** (minimum 8 characters; confirmation required when creating a new vault).
 - All internal app data (`profiles`, `templates`, `history`, `logs`) is stored in a single encrypted vault at `~/.config/dback/app_data.vault.json`.
-- Legacy plaintext files are archived as `*.legacy` after successful migration.
-- Export App Data files remain optional plain or encrypted bundles for transfer between machines.
+- Legacy plaintext files are **removed** after successful migration into the vault; no `.legacy` copies are kept.
+- **App Data Transfer** exports are encrypted by default and require an export password. History and activity log metadata may still contain sensitive host names and paths.
+- SSH connections use **TOFU host key verification** via `~/.config/dback/ssh_known_hosts`. Unknown host keys are saved on first connect; mismatches are rejected.
+- Remote database commands validate and shell-escape profile fields (`DBUser`, `DBHost`, `DBPort`, `ContainerID`) to reduce command injection risk.
+- Password fields in the host editor are masked. UI error messages are sanitized unless debug mode is enabled (`--debug` or `DBACK_DEBUG=1`).
 
 ## Usage
 
@@ -137,9 +140,8 @@ Each host can override the backup destination folder.
 
 ### App data export/import
 1. Open **Settings**
-2. Optionally enable **Include saved passwords and keys (encrypted)**
-3. **Export App Data** / **Import App Data**
-4. When including secrets, enter a master password for encryption/decryption
+2. **Export App Data** — enter an export password to encrypt hosts, templates, history, and logs
+3. **Import App Data** — enter the export password for encrypted bundles (legacy plain bundles without secrets are still accepted)
 
 ## Why is it fast?
 

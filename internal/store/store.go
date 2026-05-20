@@ -170,6 +170,9 @@ func (s *Store) ImportProfilesBundle(path string, includeSecrets bool, passphras
 }
 
 func (s *Store) ExportProfiles(path string, profiles []models.Profile, includeSecrets bool, passphrase string) error {
+	if includeSecrets && passphrase == "" {
+		return ErrIncludeSecretsNoPassphrase
+	}
 	data := flattenProfiles(profiles)
 	if includeSecrets && passphrase != "" {
 		bundle, err := secrets.EncryptBundle(data, passphrase)
@@ -281,6 +284,9 @@ func (s *Store) decodeAppBundle(bundle models.AppBundle, includeSecrets bool, pa
 }
 
 func (s *Store) ExportAppData(path string, data AppImportData, includeSecrets bool, passphrase string) error {
+	if includeSecrets && passphrase == "" {
+		return ErrIncludeSecretsNoPassphrase
+	}
 	payload := AppImportData{
 		Profiles:  flattenProfiles(data.Profiles),
 		Templates: append([]models.SQLTemplate(nil), data.Templates...),

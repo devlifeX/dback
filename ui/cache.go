@@ -70,7 +70,7 @@ func unlockErrorMessage(err error) string {
 	case errors.Is(err, store.ErrVaultNotFound):
 		return "No vault found. Create a master key first."
 	default:
-		return err.Error()
+		return sanitizeError(err)
 	}
 }
 
@@ -79,6 +79,19 @@ func (u *UI) tryUnlock(passphrase string) {
 		return
 	}
 	passphrase = strings.TrimSpace(passphrase)
+	if !u.core.HasVault() && !u.core.HasLegacyPlaintext() {
+		confirm := strings.TrimSpace(editorText(&u.loginConfirmPassword))
+		if len(passphrase) < 8 {
+			u.loginError = "Master key must be at least 8 characters."
+			u.invalidate()
+			return
+		}
+		if passphrase != confirm {
+			u.loginError = "Master keys do not match."
+			u.invalidate()
+			return
+		}
+	}
 	var err error
 	if u.core.HasVault() || u.core.HasLegacyPlaintext() {
 		err = u.core.Unlock(passphrase)
@@ -93,6 +106,7 @@ func (u *UI) tryUnlock(passphrase string) {
 	u.unlocked = true
 	u.loginError = ""
 	u.loginPassword.SetText("")
+	u.loginConfirmPassword.SetText("")
 	u.invalidateBackupCache()
 	u.invalidate()
 }

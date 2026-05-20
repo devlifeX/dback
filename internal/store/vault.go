@@ -16,12 +16,16 @@ import (
 const vaultFileName = "app_data.vault.json"
 
 var (
-	ErrVaultLocked       = errors.New("vault is locked")
-	ErrVaultExists       = errors.New("vault already exists")
-	ErrVaultNotFound     = errors.New("vault not found")
-	ErrWrongMasterKey    = errors.New("wrong master key")
-	ErrMasterKeyRequired = errors.New("master key is required")
+	ErrVaultLocked                = errors.New("vault is locked")
+	ErrVaultExists                = errors.New("vault already exists")
+	ErrVaultNotFound              = errors.New("vault not found")
+	ErrWrongMasterKey             = errors.New("wrong master key")
+	ErrMasterKeyRequired          = errors.New("master key is required")
+	ErrIncludeSecretsNoPassphrase = errors.New("passphrase required when including secrets")
+	ErrLegacyPlaintextWithVault   = errors.New("legacy plaintext files found alongside encrypted vault")
 )
+
+const minMasterKeyLen = 8
 
 func (s *Store) VaultPath() string {
 	return filepath.Join(s.baseDir, vaultFileName)
@@ -67,8 +71,8 @@ func (s *Store) requireUnlocked() error {
 
 // CreateVault initializes a new encrypted vault with seed data.
 func (s *Store) CreateVault(passphrase string) error {
-	if passphrase == "" {
-		return ErrMasterKeyRequired
+	if err := validateMasterKey(passphrase); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -107,6 +111,11 @@ func (s *Store) Unlock(passphrase string) error {
 	}
 
 	if _, err := os.Stat(s.VaultPath()); err == nil {
+		if s.hasLegacyPlaintextLocked() {
+			if err := s.removeLegacyPlaintextLocked(); err != nil {
+				return fmt.Errorf("%w: %v", ErrLegacyPlaintextWithVault, err)
+			}
+		}
 		payload, key, err := s.readVaultFileLocked(passphrase)
 		if err != nil {
 			return err
@@ -115,6 +124,7 @@ func (s *Store) Unlock(passphrase string) error {
 		s.applyPayloadLocked(payload)
 		s.unlocked = true
 		s.bumpRevisionLocked()
+		_ = s.removeLegacyPlaintextLocked()
 		return nil
 	}
 
@@ -126,7 +136,7 @@ func (s *Store) Unlock(passphrase string) error {
 		if err := s.writeVaultLocked(passphrase, payload); err != nil {
 			return err
 		}
-		if err := s.archiveLegacyFilesLocked(); err != nil {
+		if err := s.removeLegacyPlaintextLocked(); err != nil {
 			return err
 		}
 		s.applyPayloadLocked(payload)
@@ -329,15 +339,41 @@ func (s *Store) loadLegacyLogs() ([]models.LogEntry, error) {
 	return []models.LogEntry{}, nil
 }
 
-func (s *Store) archiveLegacyFilesLocked() error {
+func (s *Store) removeLegacyPlaintextLocked() error {
 	paths := []string{s.ProfilesPath(), s.TemplatesPath(), s.HistoryPath(), s.LogsPath()}
 	for _, p := range paths {
-		if _, err := os.Stat(p); err != nil {
-			continue
-		}
-		if err := os.Rename(p, p+".legacy"); err != nil {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		legacy := p + ".legacy"
+		if err := os.Remove(legacy); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) Lock() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.dataKey {
+		s.dataKey[i] = 0
+	}
+	s.dataKey = nil
+	s.vaultSalt = ""
+	s.unlocked = false
+	s.profiles = nil
+	s.templates = nil
+	s.history = nil
+	s.logs = nil
+}
+
+func validateMasterKey(passphrase string) error {
+	if passphrase == "" {
+		return ErrMasterKeyRequired
+	}
+	if len(passphrase) < minMasterKeyLen {
+		return fmt.Errorf("master key must be at least %d characters", minMasterKeyLen)
 	}
 	return nil
 }

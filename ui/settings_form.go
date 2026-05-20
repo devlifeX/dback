@@ -45,9 +45,15 @@ type SettingsForm struct {
 	defaultDestination string
 	scrollList         widget.List
 
-	selectKeyBtn     widget.Clickable
-	selectJumpKeyBtn widget.Clickable
-	selectFolderBtn  widget.Clickable
+	selectKeyBtn        widget.Clickable
+	selectJumpKeyBtn    widget.Clickable
+	selectFolderBtn     widget.Clickable
+	sshPasswordVisible  bool
+	jumpPasswordVisible bool
+	dbPasswordVisible   bool
+	sshPasswordToggle   widget.Clickable
+	jumpPasswordToggle  widget.Clickable
+	dbPasswordToggle    widget.Clickable
 }
 
 func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
@@ -162,7 +168,7 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 							return layout.Dimensions{}
 						}
 						return labeledField(gtx, th, theme, "SSH Password", func(gtx layout.Context) layout.Dimensions {
-							return editorField(gtx, th, theme, &f.SSHPassword, "")
+							return passwordField(gtx, th, theme, &f.SSHPassword, "", &f.sshPasswordVisible, &f.sshPasswordToggle)
 						})
 					}),
 					layout.Rigid(vgap(theme)),
@@ -230,7 +236,7 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 								return layout.Dimensions{}
 							}
 							return labeledField(gtx, th, theme, "Jump Password", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.JumpPassword, "")
+								return passwordField(gtx, th, theme, &f.JumpPassword, "", &f.jumpPasswordVisible, &f.jumpPasswordToggle)
 							})
 						}),
 						layout.Rigid(vgap(theme)),
@@ -318,7 +324,7 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return labeledField(gtx, th, theme, "DB Password", func(gtx layout.Context) layout.Dimensions {
-							return editorField(gtx, th, theme, &f.DBPassword, "")
+							return passwordField(gtx, th, theme, &f.DBPassword, "", &f.dbPasswordVisible, &f.dbPasswordToggle)
 						})
 					}),
 					layout.Rigid(vgap(theme)),

@@ -359,11 +359,42 @@ func editorField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *wid
 	})
 }
 
-func passwordField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {
+func passwordField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string, visible *bool, toggle *widget.Clickable) layout.Dimensions {
 	e.SingleLine = true
 	e.Submit = true
-	e.Mask = '*'
-	return editorField(gtx, th, theme, e, hint)
+	if visible == nil || !*visible {
+		e.Mask = '*'
+	} else {
+		e.Mask = 0
+	}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return editorField(gtx, th, theme, e, hint)
+		}),
+		layout.Rigid(hgap(theme)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if toggle == nil {
+				return layout.Dimensions{}
+			}
+			label := "Show"
+			if visible != nil && *visible {
+				label = "Hide"
+			}
+			return secondaryButton(gtx, th, theme, toggle, label, func() {
+				if visible != nil {
+					*visible = !*visible
+				}
+			})
+		}),
+	)
+}
+
+func consumeEditorSubmit(gtx layout.Context, e *widget.Editor, onSubmit func()) {
+	if ev, ok := e.Update(gtx); ok {
+		if _, ok := ev.(widget.SubmitEvent); ok && onSubmit != nil {
+			onSubmit()
+		}
+	}
 }
 
 func editorMultiline(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {

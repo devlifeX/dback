@@ -53,10 +53,10 @@ func maskMySQLPasswordArgs(cmd string) string {
 }
 
 func mysqlClientExec(p models.Profile, database, extraArgs string) string {
-	authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, shellEscape(p.DBPassword))
+	authArgs := fmt.Sprintf("-u %s -p%s", shellEscape(p.DBUser), shellEscape(p.DBPassword))
 	hostArgs := ""
 	if !p.IsDocker {
-		hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
 	dbArg := ""
 	if database != "" {
@@ -73,10 +73,10 @@ func mysqlClientExec(p models.Profile, database, extraArgs string) string {
 }
 
 func mysqlDumpExec(p models.Profile) string {
-	authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, shellEscape(p.DBPassword))
+	authArgs := fmt.Sprintf("-u %s -p%s", shellEscape(p.DBUser), shellEscape(p.DBPassword))
 	hostArgs := ""
 	if !p.IsDocker {
-		hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
 	return fmt.Sprintf(
 		"if command -v mariadb-dump >/dev/null 2>&1; then mariadb-dump %s %s %s; elif command -v mysqldump >/dev/null 2>&1; then mysqldump %s %s %s; else echo 'no dump tool' >&2; exit 127; fi",
@@ -138,7 +138,11 @@ func BuildExportCommand(p models.Profile) string {
 	dump := mysqlDumpExec(p)
 	inner := fmt.Sprintf("%s | { %s; }", dump, compressCmd())
 	if p.IsDocker {
-		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(shellWithPipefail(inner)))
+		cmd, err := dockerExecCommand(p.ContainerID, inner)
+		if err != nil {
+			return ""
+		}
+		return cmd
 	}
 	return shellWithPipefail(inner)
 }
@@ -148,8 +152,10 @@ func BuildExportToFileCommand(p models.Profile, remotePath string) string {
 	dump := mysqlDumpExec(p)
 	inner := fmt.Sprintf("%s | { %s; } > %s", dump, compressCmd(), shellEscape(remotePath))
 	if p.IsDocker {
-		// Dump inside container, write to host path via docker exec stdout redirected on host
-		containerDump := fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(shellWithPipefail(fmt.Sprintf("%s | { %s; }", dump, compressCmd()))))
+		containerDump, err := dockerExecCommand(p.ContainerID, fmt.Sprintf("%s | { %s; }", dump, compressCmd()))
+		if err != nil {
+			return ""
+		}
 		return shellWithPipefail(fmt.Sprintf("%s > %s", containerDump, shellEscape(remotePath)))
 	}
 	return shellWithPipefail(inner)
@@ -175,7 +181,11 @@ func BuildImportPrepareCommand(p models.Profile) string {
 	)
 	inner := fmt.Sprintf("set -e; %s", mysqlClientExec(p, "", "-e "+shellEscape(sql)))
 	if p.IsDocker {
-		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(inner))
+		cmd, err := dockerExecCommand(p.ContainerID, inner)
+		if err != nil {
+			return ""
+		}
+		return cmd
 	}
 	return fmt.Sprintf("sh -c %s", shellEscape(inner))
 }
@@ -190,7 +200,11 @@ func BuildImportStreamCommand(p models.Profile, compression string) string {
 	pipe := fmt.Sprintf("{ %s; %s; } | %s", sessionSetup, importDecompressStream(compression), client)
 	cmd := shellWithPipefail(pipe)
 	if p.IsDocker {
-		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(cmd))
+		dockerCmd, err := dockerExecCommand(p.ContainerID, cmd)
+		if err != nil {
+			return ""
+		}
+		return dockerCmd
 	}
 	return cmd
 }
@@ -207,10 +221,13 @@ func BuildImportFromFileCommand(p models.Profile, remotePath, compression string
 		sessionSetup, importDecompressStream(compression), shellEscape(remotePath), client,
 	)
 	if p.IsDocker {
-		hostPipe := fmt.Sprintf("%s | docker exec -i %s sh -c %s",
+		containerClient, err := dockerExecCommand(p.ContainerID, shellWithPipefail(fmt.Sprintf("{ %s; cat; } | %s", sessionSetup, mysqlClientExec(p, p.TargetDBName, ""))))
+		if err != nil {
+			return ""
+		}
+		hostPipe := fmt.Sprintf("%s | %s",
 			importDecompressStream(compression)+" "+shellEscape(remotePath),
-			p.ContainerID,
-			shellEscape(shellWithPipefail(fmt.Sprintf("{ %s; cat; } | %s", sessionSetup, mysqlClientExec(p, p.TargetDBName, "")))),
+			containerClient,
 		)
 		return shellWithPipefail(hostPipe)
 	}
@@ -226,14 +243,17 @@ func BuildQueryCommand(p models.Profile, query string, connectDB bool) (string, 
 	if !mysqlOrMariaDB(p) {
 		return "", errors.New("query only supported for MySQL/MariaDB")
 	}
+	if err := ValidateProfileForRemoteOps(p); err != nil {
+		return "", err
+	}
 
 	b64 := base64.StdEncoding.EncodeToString([]byte(query))
 	b64Esc := shellEscape(b64)
 
-	authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, shellEscape(p.DBPassword))
+	authArgs := fmt.Sprintf("-u %s -p%s", shellEscape(p.DBUser), shellEscape(p.DBPassword))
 	hostArgs := ""
 	if !p.IsDocker {
-		hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
 	batchFlags := "--batch --raw"
 	var clientInner string
@@ -252,7 +272,11 @@ func BuildQueryCommand(p models.Profile, query string, connectDB bool) (string, 
 	pipe := fmt.Sprintf("echo %s | base64 -d | %s", b64Esc, clientInner)
 
 	if p.IsDocker {
-		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(pipe)), nil
+		cmd, err := dockerExecCommand(p.ContainerID, pipe)
+		if err != nil {
+			return "", err
+		}
+		return cmd, nil
 	}
 	return fmt.Sprintf("sh -c %s", shellEscape(pipe)), nil
 }
@@ -363,4 +387,58 @@ func BuildDownloadChunkCommand(path string, offset int64) string {
 	}
 	return fmt.Sprintf("dd if=%s bs=1M skip=%d 2>/dev/null || tail -c +%d %s",
 		shellEscape(path), offset/1024/1024, offset+1, shellEscape(path))
+}
+
+// BuildDatabaseSizeCommand returns a remote command that estimates uncompressed DB size in bytes.
+func BuildDatabaseSizeCommand(p models.Profile) (string, error) {
+	if !mysqlOrMariaDB(p) {
+		return "", errors.New("database size estimate only supported for MySQL/MariaDB")
+	}
+	if err := ValidateProfileForRemoteOps(p); err != nil {
+		return "", err
+	}
+	dbName := strings.ReplaceAll(strings.TrimSpace(p.TargetDBName), "'", "''")
+	if dbName == "" {
+		return "", errors.New("target database name is required")
+	}
+	query := fmt.Sprintf(
+		"SELECT COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables WHERE table_schema = '%s'",
+		dbName,
+	)
+	return BuildQueryCommand(p, query, false)
+}
+
+// ParseDatabaseSizeBytes extracts the first integer byte count from mysql batch output.
+func ParseDatabaseSizeBytes(out string) int64 {
+	result := ParseMySQLBatchOutput(strings.TrimSpace(out))
+	if len(result.Rows) > 0 && len(result.Rows[0]) > 0 {
+		var size int64
+		if _, err := fmt.Sscanf(strings.TrimSpace(result.Rows[0][0]), "%d", &size); err == nil && size > 0 {
+			return size
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "COALESCE") {
+			continue
+		}
+		var size int64
+		if _, err := fmt.Sscanf(line, "%d", &size); err == nil && size > 0 {
+			return size
+		}
+	}
+	return 0
+}
+
+// EstimateCompressedBackupSize converts raw DB bytes to an expected compressed dump size.
+func EstimateCompressedBackupSize(rawBytes int64) int64 {
+	if rawBytes <= 0 {
+		return 0
+	}
+	// Typical mysqldump + gzip/zstd output is well below raw table size.
+	estimated := rawBytes / 3
+	if estimated < 1024 {
+		return 0
+	}
+	return estimated
 }

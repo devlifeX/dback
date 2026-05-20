@@ -77,6 +77,8 @@ func TestBuildQueryCommand_NoDatabase(t *testing.T) {
 		DBType:       models.DBTypeMySQL,
 		DBUser:       "root",
 		DBPassword:   "pass",
+		DBHost:       "127.0.0.1",
+		DBPort:       "3306",
 		TargetDBName: "mydb",
 	}
 	cmd, err := BuildQueryCommand(p, "DROP DATABASE mydb;", false)
@@ -162,6 +164,42 @@ func TestMaskCommand(t *testing.T) {
 		if !strings.Contains(masked, "-p'***'") {
 			t.Fatalf("expected masked password marker: %s", masked)
 		}
+	}
+}
+
+func TestParseDatabaseSizeBytes(t *testing.T) {
+	if got := ParseDatabaseSizeBytes("1048576"); got != 1048576 {
+		t.Fatalf("expected plain integer parse, got %d", got)
+	}
+	if got := ParseDatabaseSizeBytes("COALESCE(SUM(data_length + index_length), 0)\n3145728"); got != 3145728 {
+		t.Fatalf("expected batch table output parse, got %d", got)
+	}
+}
+
+func TestEstimateCompressedBackupSize(t *testing.T) {
+	if got := EstimateCompressedBackupSize(0); got != 0 {
+		t.Fatalf("expected zero for empty input")
+	}
+	if got := EstimateCompressedBackupSize(1024 * 1024); got != (1024*1024)/3 {
+		t.Fatalf("unexpected compressed estimate: %d", got)
+	}
+}
+
+func TestBuildDatabaseSizeCommand(t *testing.T) {
+	p := models.Profile{
+		DBType:       models.DBTypeMySQL,
+		DBUser:       "root",
+		DBPassword:   "secret",
+		DBHost:       "127.0.0.1",
+		DBPort:       "3306",
+		TargetDBName: "mydb",
+	}
+	cmd, err := BuildDatabaseSizeCommand(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cmd, "base64") {
+		t.Fatalf("expected base64-wrapped size query command, got: %s", cmd)
 	}
 }
 

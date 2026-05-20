@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"dback/models"
 
@@ -13,6 +14,17 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
+
+func (u *UI) openBackupFolder(filePath string) {
+	if strings.TrimSpace(filePath) == "" {
+		u.showInfo("Backup Files", "No backup file path available.")
+		return
+	}
+	dir := filepath.Dir(filePath)
+	if err := u.platform.OpenFolder(dir); err != nil {
+		u.showError(fmt.Errorf("open backup folder: %w", err))
+	}
+}
 
 func (u *UI) layoutBackups(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	theme := u.theme
@@ -111,21 +123,37 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 					importBtn := btn
 					selectBtn := rowBtn
 					rec := record
+					folderBtn, okFolder := u.backupFolderBtns[rec.ID]
+					if !okFolder {
+						folderBtn = new(widget.Clickable)
+						u.backupFolderBtns[rec.ID] = folderBtn
+					}
+					openBtn := folderBtn
 					rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if selectBtn.Clicked(gtx) {
 							r := rec
 							u.selectedBackup = &r
 							u.selectedBackupID = rec.ID
 						}
-						return tableRow(gtx, th, theme, selected, []string{
-							rec.ExportDate.Format("2006-01-02 15:04"),
-							rec.ProfileName,
-							rec.DatabaseName,
-							rec.FileSize,
-							filepath.Base(rec.FilePath),
-						}, "Import", importBtn, func() {
-							u.openBackupDetail(rec)
-						})
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								return tableRow(gtx, th, theme, selected, []string{
+									rec.ExportDate.Format("2006-01-02 15:04"),
+									rec.ProfileName,
+									rec.DatabaseName,
+									rec.FileSize,
+									filepath.Base(rec.FilePath),
+								}, "Import", importBtn, func() {
+									u.openBackupDetail(rec)
+								})
+							}),
+							layout.Rigid(hgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return secondaryButton(gtx, th, theme, openBtn, "Folder", func() {
+									u.openBackupFolder(rec.FilePath)
+								})
+							}),
+						)
 					}))
 				}
 				if len(records) == 0 {
@@ -159,7 +187,7 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 							u.showInfo("Backup Files", "Select a backup first.")
 							return
 						}
-						_ = u.platform.OpenFolder(filepath.Dir(u.selectedBackup.FilePath))
+						u.openBackupFolder(u.selectedBackup.FilePath)
 					})
 				}),
 			)
@@ -184,7 +212,7 @@ func (u *UI) layoutJobsTable(gtx layout.Context, th *material.Theme, theme *AppT
 			}
 			status := job.Status
 			if job.Err != "" {
-				status += " - " + job.Err
+				status += " - " + truncateError(job.Err, maxErrorMessageLen)
 			}
 			action := "Cancel"
 			if job.Done {
@@ -302,7 +330,7 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 				layout.Rigid(hgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return secondaryButton(gtx, th, theme, &u.openBackupFolderBtn, "Open Folder", func() {
-						_ = u.platform.OpenFolder(filepath.Dir(record.FilePath))
+						u.openBackupFolder(record.FilePath)
 					})
 				}),
 			)
@@ -331,11 +359,11 @@ func (u *UI) runRestore(record models.ExportRecord) {
 	go func() {
 		defer cancel()
 		err := u.core.Restore(ctx, record, dest, func(message string, current int64, total int64) {
+			progress := float64(0)
 			if total > 0 {
-				u.updateJob(job.ID, message, float64(current)/float64(total), "")
-			} else {
-				u.updateJob(job.ID, message, job.Progress, "")
+				progress = float64(current) / float64(total)
 			}
+			u.updateJob(job.ID, message, progress, "")
 		})
 		if err != nil {
 			if errors.Is(err, context.Canceled) {

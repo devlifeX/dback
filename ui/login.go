@@ -22,6 +22,10 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 		}
 	}
 
+	submitLogin := func() {
+		u.tryUnlock(editorText(&u.loginPassword))
+	}
+
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(420))
 		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
@@ -41,8 +45,19 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 				}),
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					consumeEditorSubmit(gtx, &u.loginPassword, submitLogin)
 					return labeledField(gtx, th, theme, "Master key", func(gtx layout.Context) layout.Dimensions {
-						return passwordField(gtx, th, theme, &u.loginPassword, "")
+						return passwordField(gtx, th, theme, &u.loginPassword, "", &u.loginPasswordVisible, &u.loginPasswordToggle)
+					})
+				}),
+				layout.Rigid(vgap(theme)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if u.core.HasVault() {
+						return layout.Dimensions{}
+					}
+					consumeEditorSubmit(gtx, &u.loginConfirmPassword, submitLogin)
+					return labeledField(gtx, th, theme, "Confirm master key", func(gtx layout.Context) layout.Dimensions {
+						return passwordField(gtx, th, theme, &u.loginConfirmPassword, "", &u.loginConfirmVisible, &u.loginConfirmToggle)
 					})
 				}),
 				layout.Rigid(vgap(theme)),
@@ -54,9 +69,7 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 				}),
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return primaryButton(gtx, th, theme, &u.loginBtn, buttonLabel, func() {
-						u.tryUnlock(editorText(&u.loginPassword))
-					})
+					return primaryButton(gtx, th, theme, &u.loginBtn, buttonLabel, submitLogin)
 				}),
 			)
 		})

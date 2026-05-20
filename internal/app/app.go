@@ -31,6 +31,7 @@ type App struct {
 }
 
 func New(baseDir string) (*App, error) {
+	ssh.SetKnownHostsFile(filepath.Join(baseDir, "ssh_known_hosts"))
 	return &App{store: store.New(baseDir)}, nil
 }
 
@@ -62,6 +63,16 @@ func (a *App) Unlock(passphrase string) error {
 		return err
 	}
 	return a.Reload()
+}
+
+func (a *App) Lock() {
+	a.mu.Lock()
+	a.profiles = nil
+	a.templates = nil
+	a.history = nil
+	a.logs = nil
+	a.mu.Unlock()
+	a.store.Lock()
 }
 
 func (a *App) Reload() error {

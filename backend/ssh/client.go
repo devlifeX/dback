@@ -47,9 +47,13 @@ func NewClient(p models.Profile) (*Client, error) {
 }
 
 func sshConfig(user, password string, authType models.AuthType, keyPath, keyPEM string) (*ssh.ClientConfig, error) {
+	hostKeyCB, err := hostKeyCallback()
+	if err != nil {
+		return nil, err
+	}
 	config := &ssh.ClientConfig{
 		User:            user,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For simplicity; in prod, verify host keys
+		HostKeyCallback: hostKeyCB,
 		Timeout:         dialTimeout,
 	}
 

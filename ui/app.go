@@ -95,18 +95,26 @@ type UI struct {
 	dialogCancelBtn     widget.Clickable
 	deleteTemplateBtn   widget.Clickable
 
-	profileCards  map[string]profileCardWidgets
-	groupChips    map[string]*widget.Clickable
-	templateRows  map[string]*widget.Clickable
-	backupRows    map[string]*widget.Clickable
-	jobCancelBtns map[string]*widget.Clickable
+	profileCards     map[string]profileCardWidgets
+	groupChips       map[string]*widget.Clickable
+	templateRows     map[string]*widget.Clickable
+	backupRows       map[string]*widget.Clickable
+	backupFolderBtns map[string]*widget.Clickable
+	jobCancelBtns    map[string]*widget.Clickable
 
-	unlocked      bool
-	loginPassword widget.Editor
-	loginError    string
-	loginBtn      widget.Clickable
-	templateCache templateOptionCache
-	backupCache   backupViewCache
+	unlocked             bool
+	loginPassword        widget.Editor
+	loginConfirmPassword widget.Editor
+	loginPasswordVisible bool
+	loginConfirmVisible  bool
+	loginPasswordToggle  widget.Clickable
+	loginConfirmToggle   widget.Clickable
+	loginError           string
+	loginBtn             widget.Clickable
+	passphraseVisible    bool
+	passphraseToggle     widget.Clickable
+	templateCache        templateOptionCache
+	backupCache          backupViewCache
 
 	invalidate func()
 }
@@ -126,16 +134,17 @@ func New(logoPNG []byte) *UI {
 		}
 	}
 	return &UI{
-		platform:      DesktopPlatform{},
-		theme:         NewAppTheme(),
-		logo:          logo,
-		section:       SectionHosts,
-		view:          ViewList,
-		profileCards:  make(map[string]profileCardWidgets),
-		groupChips:    make(map[string]*widget.Clickable),
-		templateRows:  make(map[string]*widget.Clickable),
-		backupRows:    make(map[string]*widget.Clickable),
-		jobCancelBtns: make(map[string]*widget.Clickable),
+		platform:         DesktopPlatform{},
+		theme:            NewAppTheme(),
+		logo:             logo,
+		section:          SectionHosts,
+		view:             ViewList,
+		profileCards:     make(map[string]profileCardWidgets),
+		groupChips:       make(map[string]*widget.Clickable),
+		templateRows:     make(map[string]*widget.Clickable),
+		backupRows:       make(map[string]*widget.Clickable),
+		backupFolderBtns: make(map[string]*widget.Clickable),
+		jobCancelBtns:    make(map[string]*widget.Clickable),
 	}
 }
 

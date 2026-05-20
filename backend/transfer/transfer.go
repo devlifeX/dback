@@ -50,6 +50,9 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 	if err := ctx.Err(); err != nil {
 		return BackupResult{}, err
 	}
+	if err := db.ValidateProfileForRemoteOps(p); err != nil {
+		return BackupResult{}, err
+	}
 	client, err := ssh.NewClient(p)
 	if err != nil {
 		return BackupResult{}, err
@@ -63,8 +66,14 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 	}
 	logReq(req, "preflight", "", 0, preflight.Summary(pf), "Succeeded", "")
 
-	fileName := fmt.Sprintf("%s_%s_%s.sql.gz", safeName(p.Name), safeName(p.TargetDBName), time.Now().Format("02_01_2006_15_04_05"))
-	fullPath := filepath.Join(req.Destination, fileName)
+	estimatedTotal := estimateBackupTotal(client, p, req.Progress)
+
+	hostDir := filepath.Join(req.Destination, safeName(p.Name))
+	if err := os.MkdirAll(hostDir, 0755); err != nil {
+		return BackupResult{}, fmt.Errorf("create host backup folder: %w", err)
+	}
+	fileName := fmt.Sprintf("%s_%s.sql.gz", safeName(p.TargetDBName), time.Now().Format("02_01_2006_15_04_05"))
+	fullPath := filepath.Join(hostDir, fileName)
 
 	exportCmd := db.BuildExportCommand(p)
 	logReq(req, "command", string(StrategyStreaming), 0, db.MaskCommand(exportCmd), "Built", "")
@@ -80,9 +89,9 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 		var err error
 		switch strategy {
 		case StrategyStreaming:
-			size, err = backupStream(ctx, client, p, fullPath, req.Progress)
+			size, err = backupStream(ctx, client, p, fullPath, estimatedTotal, req.Progress)
 		case StrategyTmpFile:
-			size, err = backupTmpFile(ctx, client, p, pf.SelectedTmpDir, fullPath, req.OperationID, req.Progress)
+			size, err = backupTmpFile(ctx, client, p, pf.SelectedTmpDir, fullPath, req.OperationID, estimatedTotal, req.Progress)
 		}
 		if err == nil {
 			if validateErr := validateLocalFile(fullPath, size, ""); validateErr != nil {
@@ -111,7 +120,7 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 	return BackupResult{}, lastErr
 }
 
-func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, fullPath string, progress ProgressFunc) (int64, error) {
+func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, fullPath string, estimatedTotal int64, progress ProgressFunc) (int64, error) {
 	cmd := db.BuildExportCommand(p)
 	stdout, stderr, session, err := client.RunCommandStream(cmd)
 	if err != nil {
@@ -123,6 +132,9 @@ func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, ful
 	var stderrBuf strings.Builder
 	go func() { _, _ = io.Copy(&stderrBuf, stderr) }()
 
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return 0, err
+	}
 	out, err := os.Create(fullPath)
 	if err != nil {
 		return 0, err
@@ -131,9 +143,14 @@ func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, ful
 
 	written, err := io.Copy(out, &ssh.ProgressReader{
 		Reader: stdout,
+		Total:  estimatedTotal,
 		Callback: func(current int64, total int64) {
 			if progress != nil {
-				progress(fmt.Sprintf("Streaming backup %.2f MB", float64(current)/1024/1024), current, total)
+				if total > 0 {
+					progress(fmt.Sprintf("Streaming backup %.1f%%", percent(current, total)), current, total)
+				} else {
+					progress(fmt.Sprintf("Streaming backup %.2f MB", float64(current)/1024/1024), current, 0)
+				}
 			}
 		},
 	})
@@ -156,7 +173,7 @@ func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, ful
 	return written, nil
 }
 
-func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tmpDir, localPath, operationID string, progress ProgressFunc) (int64, error) {
+func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tmpDir, localPath, operationID string, estimatedTotal int64, progress ProgressFunc) (int64, error) {
 	remotePath := tmpDir + "/dump.sql.gz"
 	mkdir := shellMkdir(tmpDir)
 	if _, err := client.RunCommand(mkdir); err != nil {
@@ -165,9 +182,16 @@ func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tm
 
 	if meta, ok := loadMeta(localPath); ok && meta.RemotePath == remotePath {
 		if progress != nil {
-			progress("Resuming tmp-file download", meta.Offset, meta.Size)
+			total := meta.Size
+			if total <= 0 {
+				total = estimatedTotal
+			}
+			progress("Resuming tmp-file download", meta.Offset, total)
 		}
 	} else {
+		if progress != nil {
+			progress("Creating remote dump...", 0, estimatedTotal)
+		}
 		exportCmd := db.BuildExportToFileCommand(p, remotePath)
 		if out, err := client.RunCommand(exportCmd); err != nil {
 			return 0, fmt.Errorf("remote dump: %w: %s", err, strings.TrimSpace(out))
@@ -197,6 +221,10 @@ func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tm
 	offset := localResumeOffset(localPath, meta, remoteSize)
 	meta.Offset = offset
 	_ = saveMeta(meta)
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		return 0, err
+	}
 
 	downloadCmd := db.BuildDownloadChunkCommand(remotePath, offset)
 	stdout, stderr, session, err := client.RunCommandStream(downloadCmd)
@@ -262,6 +290,9 @@ type RestoreRequest struct {
 // RestoreSSH restores with streaming first, tmp-file fallback.
 func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 	p := req.Profile
+	if err := db.ValidateProfileForRemoteOps(p); err != nil {
+		return err
+	}
 	in, err := os.Open(req.LocalPath)
 	if err != nil {
 		return err
@@ -290,6 +321,10 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 	}
 	logRestore(req, "preflight", "", 0, preflight.Summary(pf), "Succeeded", "")
 
+	if req.Progress != nil {
+		req.Progress("Preparing restore...", 0, req.FileSize)
+	}
+
 	compression, err := detectCompression(in)
 	if err != nil {
 		return err
@@ -307,6 +342,9 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 		logRestore(req, "restore", string(strategy), attempt+1, "Starting restore attempt", "Started", "")
 
 		if prep := db.BuildImportPrepareCommand(p); prep != "" {
+			if req.Progress != nil {
+				req.Progress("Recreating target database...", 0, req.FileSize)
+			}
 			if out, prepErr := client.RunCommand(prep); prepErr != nil {
 				lastErr = fmt.Errorf("prepare database: %w: %s", prepErr, strings.TrimSpace(out))
 				logRestore(req, "prepare", string(strategy), attempt+1, lastErr.Error(), "Failed", lastErr.Error())
@@ -316,6 +354,10 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 				continue
 			}
 			logRestore(req, "prepare", string(strategy), attempt+1, "DROP/CREATE completed", "Succeeded", "")
+		}
+
+		if req.Progress != nil {
+			req.Progress("Starting data transfer...", 0, req.FileSize)
 		}
 
 		var restoreErr error
@@ -451,6 +493,9 @@ func restoreTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, t
 	}
 
 	importCmd := db.BuildImportFromFileCommand(p, remotePath, compression)
+	if progress != nil {
+		progress("Importing from remote file...", total, total)
+	}
 	if out, err := client.RunCommand(importCmd); err != nil {
 		return fmt.Errorf("import from tmp: %w: %s", err, strings.TrimSpace(out))
 	}
@@ -500,6 +545,26 @@ func cancelOnContext(ctx context.Context, session *cryptossh.Session, client *ss
 	<-ctx.Done()
 	_ = session.Close()
 	_ = client.Close()
+}
+
+func estimateBackupTotal(client *ssh.Client, p models.Profile, progress ProgressFunc) int64 {
+	if progress != nil {
+		progress("Estimating database size...", 0, 0)
+	}
+	cmd, err := db.BuildDatabaseSizeCommand(p)
+	if err != nil {
+		return 0
+	}
+	out, err := client.RunCommand(cmd)
+	if err != nil {
+		return 0
+	}
+	raw := db.ParseDatabaseSizeBytes(out)
+	estimated := db.EstimateCompressedBackupSize(raw)
+	if progress != nil && estimated > 0 {
+		progress(fmt.Sprintf("Estimated backup size: %.1f MB", float64(estimated)/1024/1024), 0, estimated)
+	}
+	return estimated
 }
 
 func logReq(req BackupRequest, phase, strategy string, attempt int, details, status, errStr string) {

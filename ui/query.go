@@ -15,6 +15,11 @@ import (
 	"gioui.org/widget/material"
 )
 
+const (
+	maxQueryResultRows = 100
+	maxQueryResultCols = 20
+)
+
 type QuerySection struct {
 	Title            string
 	HelperText       string
@@ -155,7 +160,7 @@ func (q *QuerySection) layoutSection(gtx layout.Context, th *material.Theme, the
 						u.invalidate()
 						u.closeDialog()
 						if err != nil {
-							q.setResults(result)
+							q.clearResults()
 							u.showError(err)
 							return
 						}
@@ -171,13 +176,45 @@ func (q *QuerySection) layoutSection(gtx layout.Context, th *material.Theme, the
 	})
 }
 
+func (q *QuerySection) clearResults() {
+	q.ResultCols = nil
+	q.ResultRows = nil
+}
+
 func (q *QuerySection) setResults(result db.QueryResult) {
-	q.ResultCols = result.Columns
-	q.ResultRows = result.Rows
+	q.ResultCols = limitColumns(result.Columns, maxQueryResultCols)
+	q.ResultRows = limitRows(result.Rows, maxQueryResultRows, len(q.ResultCols))
 	if len(q.ResultCols) == 0 {
 		q.ResultCols = []string{"Result"}
-		q.ResultRows = [][]string{{result.Message}}
+		msg := result.Message
+		if msg == "" && len(result.Rows) > 0 {
+			msg = strings.Join(result.Rows[0], " ")
+		}
+		q.ResultRows = [][]string{{truncateError(msg, maxErrorMessageLen)}}
 	}
+}
+
+func limitColumns(cols []string, max int) []string {
+	if len(cols) <= max {
+		return cols
+	}
+	out := append([]string(nil), cols[:max]...)
+	out = append(out, fmt.Sprintf("… (%d more columns)", len(cols)-max))
+	return out
+}
+
+func limitRows(rows [][]string, maxRows, colCount int) [][]string {
+	if len(rows) <= maxRows {
+		return rows
+	}
+	out := append([][]string(nil), rows[:maxRows]...)
+	if colCount <= 0 {
+		colCount = 1
+	}
+	note := make([]string, colCount)
+	note[0] = fmt.Sprintf("… showing first %d rows (%d total)", maxRows, len(rows))
+	out = append(out, note)
+	return out
 }
 
 func (q *QuerySection) layoutResults(gtx layout.Context, th *material.Theme, theme *AppTheme) layout.Dimensions {

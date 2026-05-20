@@ -35,7 +35,14 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 						return layout.Dimensions{}
 					}
 					return labeledField(gtx, th, theme, "Master password", func(gtx layout.Context) layout.Dimensions {
-						return passwordField(gtx, th, theme, &u.passphraseEditor, "")
+						consumeEditorSubmit(gtx, &u.passphraseEditor, func() {
+							if d.OnOK != nil {
+								d.OnOK()
+							}
+							u.passphraseEditor.SetText("")
+							u.closeDialog()
+						})
+						return passwordField(gtx, th, theme, &u.passphraseEditor, "", &u.passphraseVisible, &u.passphraseToggle)
 					})
 				}),
 				layout.Rigid(vgap(theme)),
@@ -98,7 +105,7 @@ func (u *UI) showError(err error) {
 	u.showDialog(DialogState{
 		Kind:    DialogError,
 		Title:   "Error",
-		Message: err.Error(),
+		Message: sanitizeError(err),
 	})
 }
 

@@ -38,7 +38,9 @@ func (u *UI) updateJob(id, status string, progress float64, errText string) {
 		if job.ID == id {
 			job.Status = status
 			job.Progress = progress
-			job.Err = errText
+			if errText != "" {
+				job.Err = truncateError(errText, maxErrorMessageLen)
+			}
 			break
 		}
 	}
@@ -54,7 +56,7 @@ func (u *UI) finishJob(id, status string, err error) {
 			job.Status = status
 			job.Progress = 1
 			if err != nil {
-				job.Err = err.Error()
+				job.Err = sanitizeError(err)
 				job.Progress = 0
 			}
 			break

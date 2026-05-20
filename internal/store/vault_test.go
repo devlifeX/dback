@@ -116,10 +116,10 @@ func TestLegacyPlaintextMigration(t *testing.T) {
 		t.Fatalf("migration failed: %#v", profiles)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "profiles.json")); !os.IsNotExist(err) {
-		t.Fatal("legacy profiles.json should be archived")
+		t.Fatal("legacy profiles.json should be removed after migration")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "profiles.json.legacy")); err != nil {
-		t.Fatal("expected profiles.json.legacy archive")
+	if _, err := os.Stat(filepath.Join(dir, "profiles.json.legacy")); !os.IsNotExist(err) {
+		t.Fatal("legacy profiles.json.legacy must not remain")
 	}
 }
 

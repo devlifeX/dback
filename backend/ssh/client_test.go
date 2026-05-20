@@ -53,6 +53,7 @@ func TestIsRetryableError(t *testing.T) {
 }
 
 func TestSSHConfigPasswordAuth(t *testing.T) {
+	SetKnownHostsFile(filepath.Join(t.TempDir(), "known_hosts"))
 	cfg, err := sshConfig("user", "pass", models.AuthTypePassword, "", "")
 	if err != nil {
 		t.Fatal(err)

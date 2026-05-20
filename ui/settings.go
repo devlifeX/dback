@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"gioui.org/layout"
 	"gioui.org/widget/material"
 )
@@ -24,11 +26,7 @@ func (u *UI) layoutSettings(gtx layout.Context, th *material.Theme) layout.Dimen
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return mutedLabel(gtx, th, theme, "Export or import hosts, templates, backup history, and activity logs. Backup .sql.gz files are not included. Encrypted export requires a master password.")
-						}),
-						layout.Rigid(vgap(theme)),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return checkboxField(gtx, th, theme, &u.includeSecrets, "Include saved passwords and keys (encrypted)")
+							return mutedLabel(gtx, th, theme, "Export or import hosts, templates, backup history, and activity logs. Backup .sql.gz files are not included. Exports are encrypted by default; history and log metadata may still contain sensitive host names and paths.")
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -36,26 +34,17 @@ func (u *UI) layoutSettings(gtx layout.Context, th *material.Theme) layout.Dimen
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return secondaryButton(gtx, th, theme, &u.exportAppDataBtn, "Export App Data", func() {
 										u.pickSaveFile("dback-app-data.json", func(path string) {
-											include := u.includeSecrets.Value
-											if include {
-												u.showPasswordPrompt("Export app data", "Enter master password for encrypted export", func(pass string) {
-													if pass == "" {
-														u.showError(errPassphraseRequired)
-														return
-													}
-													if err := u.core.ExportAppData(path, true, pass); err != nil {
-														u.showError(err)
-														return
-													}
-													u.showInfo("Export complete", path)
-												})
-												return
-											}
-											if err := u.core.ExportAppData(path, false, ""); err != nil {
-												u.showError(err)
-												return
-											}
-											u.showInfo("Export complete", path)
+											u.showPasswordPrompt("Export app data", "Enter an export password to encrypt hosts, templates, history, and logs", func(pass string) {
+												if pass == "" {
+													u.showError(errPassphraseRequired)
+													return
+												}
+												if err := u.core.ExportAppData(path, true, pass); err != nil {
+													u.showError(err)
+													return
+												}
+												u.showInfo("Export complete", path)
+											})
 										})
 									})
 								}),
@@ -63,18 +52,10 @@ func (u *UI) layoutSettings(gtx layout.Context, th *material.Theme) layout.Dimen
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return secondaryButton(gtx, th, theme, &u.importAppDataBtn, "Import App Data", func() {
 										u.pickOpenFile(func(path string, _ []byte) {
-											include := u.includeSecrets.Value
-											if include {
-												u.showPasswordPrompt("Import app data", "Enter master password to decrypt", func(pass string) {
-													if pass == "" {
-														u.showError(errPassphraseRequired)
-														return
-													}
-													u.importAppDataFromPath(path, true, pass)
-												})
-												return
-											}
-											u.importAppDataFromPath(path, false, "")
+											u.showPasswordPrompt("Import app data", "Enter export password if the bundle is encrypted (leave blank for legacy plain bundles without secrets)", func(pass string) {
+												includeSecrets := strings.TrimSpace(pass) != ""
+												u.importAppDataFromPath(path, includeSecrets, pass)
+											})
 										})
 									})
 								}),
@@ -87,7 +68,7 @@ func (u *UI) layoutSettings(gtx layout.Context, th *material.Theme) layout.Dimen
 	})
 }
 
-var errPassphraseRequired = errString("master password is required")
+var errPassphraseRequired = errString("export password is required")
 
 type errString string
 

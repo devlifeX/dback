@@ -258,14 +258,9 @@ func (u *UI) runBackup(p models.Profile) {
 	go func() {
 		defer cancel()
 		record, err := u.core.Backup(ctx, p, func(message string, current int64, total int64) {
-			progress := job.Progress
+			progress := float64(0)
 			if total > 0 {
 				progress = float64(current) / float64(total)
-			} else {
-				progress += 0.03
-				if progress > 0.95 {
-					progress = 0.1
-				}
 			}
 			u.updateJob(job.ID, message, progress, "")
 		})
