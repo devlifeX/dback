@@ -7,9 +7,6 @@ import (
 
 	"dback/internal/debug"
 	"dback/ui"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
 )
 
 //go:embed logo.png
@@ -21,9 +18,6 @@ func main() {
 		debug.Enable()
 		log.SetOutput(os.Stderr)
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-		if os.Getenv("FYNE_LOG") == "" {
-			_ = os.Setenv("FYNE_LOG", "info")
-		}
 		log.Println("dback debug mode enabled (stderr activity logging)")
 	}
 	os.Args = append([]string{os.Args[0]}, stripDebugFlag(args)...)
@@ -35,12 +29,7 @@ func main() {
 		}
 	}()
 
-	a := app.NewWithID("com.dbsync.manager")
-	logo := fyne.NewStaticResource("logo.png", logoBytes)
-	a.SetIcon(logo)
-
-	userInterface := ui.NewUI(a, logo)
-	userInterface.Run()
+	ui.New(logoBytes).Run()
 }
 
 func debugEnabledFromArgs(args []string) bool {

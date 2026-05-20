@@ -7,12 +7,8 @@ APP_ID="com.dbsync.manager"
 DIST_DIR="dist"
 ICON_PATH="logo.png"
 APP_VERSION="${APP_VERSION:-1.0.0}"
-ANDROID_API_LEVEL="35"
-ANDROID_BUILD_TOOLS="35.0.0"
-ANDROID_NDK_VERSION="26.3.11579264"
-ANDROID_SDK_DIR="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/.android-sdk}}"
 
-export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin:$ANDROID_SDK_DIR/cmdline-tools/latest/bin:$ANDROID_SDK_DIR/platform-tools"
+export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
 
 ensure_dist_dir() {
     mkdir -p "$DIST_DIR"
@@ -68,11 +64,46 @@ ensure_linux_deps() {
     local missing=()
 
     command -v gcc >/dev/null 2>&1 || missing+=(build-essential)
+    command -v pkg-config >/dev/null 2>&1 || missing+=(pkg-config)
+    [ -f "/usr/include/vulkan/vulkan.h" ] || missing+=(libvulkan-dev)
     [ -f "/usr/include/X11/Xlib.h" ] || missing+=(xorg-dev)
-    [ -f "/usr/include/GL/gl.h" ] || missing+=(libgl1-mesa-dev)
+
+    local gio_pkg_modules=(
+        egl wayland-egl wayland-client wayland-cursor
+        x11 xkbcommon xkbcommon-x11 x11-xcb xcursor xfixes
+    )
+    if command -v pkg-config >/dev/null 2>&1; then
+        for pkg in "${gio_pkg_modules[@]}"; do
+            if ! pkg-config --exists "$pkg" 2>/dev/null; then
+                case "$pkg" in
+                    xkbcommon-x11) missing+=(libxkbcommon-x11-dev) ;;
+                    x11-xcb) missing+=(libx11-xcb-dev) ;;
+                    wayland-*) missing+=(libwayland-dev) ;;
+                    xkbcommon) missing+=(libxkbcommon-dev) ;;
+                    egl|wayland-egl) missing+=(libegl-dev) ;;
+                    xcursor) missing+=(libxcursor-dev) ;;
+                    xfixes) missing+=(libxfixes-dev) ;;
+                    x11) missing+=(xorg-dev) ;;
+                esac
+            fi
+        done
+    fi
 
     if [ ${#missing[@]} -gt 0 ]; then
-        install_apt_packages "${missing[@]}" || return 1
+        local unique_missing=()
+        for pkg in "${missing[@]}"; do
+            local seen=false
+            for existing in "${unique_missing[@]}"; do
+                if [ "$existing" = "$pkg" ]; then
+                    seen=true
+                    break
+                fi
+            done
+            if [ "$seen" = false ]; then
+                unique_missing+=("$pkg")
+            fi
+        done
+        install_apt_packages "${unique_missing[@]}" || return 1
     fi
 }
 
@@ -100,50 +131,6 @@ ensure_macos_deps() {
     return 1
 }
 
-ensure_android_sdk() {
-    install_apt_packages openjdk-17-jdk unzip wget ca-certificates || return 1
-    ensure_go_tool fyne fyne.io/tools/cmd/fyne@latest || return 1
-
-    mkdir -p "$ANDROID_SDK_DIR/cmdline-tools"
-
-    if [ ! -x "$ANDROID_SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
-        echo "Installing Android command-line tools into $ANDROID_SDK_DIR..."
-        local tmp_dir
-        tmp_dir="$(mktemp -d)"
-        local zip_file="$tmp_dir/commandlinetools.zip"
-
-        wget -q -O "$zip_file" "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" || {
-            rm -rf "$tmp_dir"
-            print_error "Failed to download Android command-line tools."
-            return 1
-        }
-
-        unzip -q "$zip_file" -d "$tmp_dir"
-        rm -rf "$ANDROID_SDK_DIR/cmdline-tools/latest"
-        mkdir -p "$ANDROID_SDK_DIR/cmdline-tools/latest"
-        mv "$tmp_dir/cmdline-tools/"* "$ANDROID_SDK_DIR/cmdline-tools/latest/"
-        rm -rf "$tmp_dir"
-    fi
-
-    export ANDROID_HOME="$ANDROID_SDK_DIR"
-    export ANDROID_SDK_ROOT="$ANDROID_SDK_DIR"
-    export PATH="$PATH:$ANDROID_SDK_DIR/cmdline-tools/latest/bin:$ANDROID_SDK_DIR/platform-tools"
-
-    echo "Accepting Android SDK licenses..."
-    yes | sdkmanager --licenses >/dev/null || true
-
-    echo "Installing Android SDK packages..."
-    sdkmanager \
-        "platform-tools" \
-        "platforms;android-$ANDROID_API_LEVEL" \
-        "build-tools;$ANDROID_BUILD_TOOLS" \
-        "ndk;$ANDROID_NDK_VERSION" || return 1
-
-    export ANDROID_NDK_HOME="$ANDROID_SDK_DIR/ndk/$ANDROID_NDK_VERSION"
-    export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
-    print_success "Android SDK ready: $ANDROID_SDK_DIR"
-}
-
 build_linux() {
     echo ""
     echo "Building for Linux..."
@@ -151,7 +138,7 @@ build_linux() {
     ensure_icon || return 1
     ensure_linux_deps || return 1
 
-    if CGO_ENABLED=1 go build -o "$DIST_DIR/${APP_NAME}-linux" main.go; then
+    if CGO_ENABLED=1 go build -o "$DIST_DIR/${APP_NAME}-linux" .; then
         print_success "Linux build: ./$DIST_DIR/${APP_NAME}-linux"
         return 0
     fi
@@ -167,7 +154,7 @@ build_windows() {
     ensure_icon || return 1
     ensure_windows_deps || return 1
 
-    if CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -o "$DIST_DIR/${APP_NAME}-windows.exe" main.go; then
+    if CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -o "$DIST_DIR/${APP_NAME}-windows.exe" .; then
         print_success "Windows build: ./$DIST_DIR/${APP_NAME}-windows.exe"
         return 0
     fi
@@ -184,7 +171,7 @@ build_macos() {
     ensure_macos_deps || return 1
 
     echo "Using Zig for macOS cross-compilation..."
-    if CC="zig cc -target x86_64-macos" CXX="zig c++ -target x86_64-macos" CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o "$DIST_DIR/${APP_NAME}-macos" main.go; then
+    if CC="zig cc -target x86_64-macos" CXX="zig c++ -target x86_64-macos" CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o "$DIST_DIR/${APP_NAME}-macos" .; then
         print_success "macOS build: ./$DIST_DIR/${APP_NAME}-macos"
         return 0
     fi
@@ -195,23 +182,8 @@ build_macos() {
 
 build_android() {
     echo ""
-    echo "Building for Android..."
-    ensure_dist_dir
-    ensure_icon || return 1
-    ensure_android_sdk || return 1
-
-    if fyne package \
-        --target android \
-        --app-id "$APP_ID" \
-        --app-version "$APP_VERSION" \
-        --name "$APP_NAME" \
-        --icon "$ICON_PATH"; then
-        mv "${APP_NAME}.apk" "$DIST_DIR/${APP_NAME}-android.apk" 2>/dev/null || true
-        print_success "Android build: ./$DIST_DIR/${APP_NAME}-android.apk"
-        return 0
-    fi
-
-    print_error "Android build failed. Check Android SDK/NDK and Fyne mobile build requirements."
+    echo "Android builds are not yet available with the Gio UI."
+    echo "Desktop targets are supported today; Android packaging will be added in a future release."
     return 1
 }
 
@@ -220,7 +192,6 @@ build_all() {
     build_linux || failed=1
     build_windows || failed=1
     build_macos || failed=1
-    build_android || failed=1
     return "$failed"
 }
 
@@ -229,8 +200,8 @@ show_menu() {
     echo "  1) Linux"
     echo "  2) Windows"
     echo "  3) macOS"
-    echo "  4) Android"
-    echo "  5) All"
+    echo "  4) Android (not yet supported with Gio)"
+    echo "  5) All desktop targets"
     echo "  q) Quit"
 }
 

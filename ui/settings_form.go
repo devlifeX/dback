@@ -1,0 +1,454 @@
+package ui
+
+import (
+	"strings"
+
+	"dback/backend/wordpress"
+	"dback/models"
+
+	"gioui.org/layout"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
+)
+
+var (
+	connTypeValues = []string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeJumpHost), string(models.ConnectionTypeWordPress)}
+	authTypeValues = []string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}
+	dbTypeValues   = []string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL), string(models.DBTypeCouchDB)}
+)
+
+// SettingsForm holds editable transfer settings widgets.
+type SettingsForm struct {
+	ConnectionType widget.Enum
+	Host           widget.Editor
+	Port           widget.Editor
+	SSHUser        widget.Editor
+	SSHPassword    widget.Editor
+	AuthType       widget.Enum
+	KeyPath        widget.Editor
+	AuthKeyPEM     string
+	JumpHost       widget.Editor
+	JumpPort       widget.Editor
+	JumpUser       widget.Editor
+	JumpPassword   widget.Editor
+	JumpAuthType   widget.Enum
+	JumpKeyPath    widget.Editor
+	JumpAuthKeyPEM string
+	WPURL          widget.Editor
+	WPKey          widget.Editor
+	DBHost         widget.Editor
+	DBPort         widget.Editor
+	DBUser         widget.Editor
+	DBPassword     widget.Editor
+	DBType         widget.Enum
+	IsDocker       widget.Bool
+	ContainerID    widget.Editor
+	TargetDB       widget.Editor
+	Destination    widget.Editor
+
+	defaultDestination string
+	onChanged          func()
+	scrollList         widget.List
+
+	selectKeyBtn     widget.Clickable
+	selectJumpKeyBtn widget.Clickable
+	selectFolderBtn  widget.Clickable
+	generatePluginBtn widget.Clickable
+}
+
+func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
+	s := p
+	f := &SettingsForm{defaultDestination: defaultDest}
+	f.ConnectionType.Value = defaultString(string(s.ConnectionType), string(models.ConnectionTypeSSH))
+	setEditorText(&f.Host, s.Host)
+	setEditorText(&f.Port, defaultString(s.Port, "22"))
+	setEditorText(&f.SSHUser, s.SSHUser)
+	setEditorText(&f.SSHPassword, s.SSHPassword)
+	f.AuthType.Value = defaultString(string(s.AuthType), string(models.AuthTypePassword))
+	setEditorText(&f.KeyPath, s.AuthKeyPath)
+	f.AuthKeyPEM = s.AuthKeyPEM
+	setEditorText(&f.JumpHost, s.JumpHost)
+	setEditorText(&f.JumpPort, defaultString(s.JumpPort, "22"))
+	setEditorText(&f.JumpUser, s.JumpUser)
+	setEditorText(&f.JumpPassword, s.JumpPassword)
+	f.JumpAuthType.Value = defaultString(string(s.JumpAuthType), string(models.AuthTypePassword))
+	setEditorText(&f.JumpKeyPath, s.JumpAuthKeyPath)
+	f.JumpAuthKeyPEM = s.JumpAuthKeyPEM
+	setEditorText(&f.WPURL, s.WPUrl)
+	setEditorText(&f.WPKey, s.WPKey)
+	setEditorText(&f.DBHost, defaultString(s.DBHost, "127.0.0.1"))
+	setEditorText(&f.DBPort, defaultString(s.DBPort, "3306"))
+	setEditorText(&f.DBUser, s.DBUser)
+	setEditorText(&f.DBPassword, s.DBPassword)
+	f.DBType.Value = defaultString(string(s.DBType), string(models.DBTypeMySQL))
+	f.IsDocker.Value = s.IsDocker
+	setEditorText(&f.ContainerID, s.ContainerID)
+	setEditorText(&f.TargetDB, s.TargetDBName)
+	dest := s.Destination
+	if strings.TrimSpace(dest) == "" && defaultDest != "" {
+		dest = defaultDest
+	}
+	setEditorText(&f.Destination, dest)
+	return f
+}
+
+func setEditorText(e *widget.Editor, text string) {
+	e.SetText(text)
+}
+
+func editorText(e *widget.Editor) string {
+	return e.Text()
+}
+
+func (f *SettingsForm) supportsSQLQuery() bool {
+	if f.ConnectionType.Value == string(models.ConnectionTypeWordPress) {
+		return false
+	}
+	db := f.DBType.Value
+	return db == string(models.DBTypeMySQL) || db == string(models.DBTypeMariaDB)
+}
+
+func (f *SettingsForm) settings() models.TransferSettings {
+	return models.TransferSettings{
+		ConnectionType:  models.ConnectionType(f.ConnectionType.Value),
+		Host:            strings.TrimSpace(editorText(&f.Host)),
+		Port:            strings.TrimSpace(editorText(&f.Port)),
+		SSHUser:         strings.TrimSpace(editorText(&f.SSHUser)),
+		SSHPassword:     editorText(&f.SSHPassword),
+		AuthType:        models.AuthType(f.AuthType.Value),
+		AuthKeyPath:     strings.TrimSpace(editorText(&f.KeyPath)),
+		AuthKeyPEM:      f.AuthKeyPEM,
+		JumpHost:        strings.TrimSpace(editorText(&f.JumpHost)),
+		JumpPort:        strings.TrimSpace(editorText(&f.JumpPort)),
+		JumpUser:        strings.TrimSpace(editorText(&f.JumpUser)),
+		JumpPassword:    editorText(&f.JumpPassword),
+		JumpAuthType:    models.AuthType(f.JumpAuthType.Value),
+		JumpAuthKeyPath: strings.TrimSpace(editorText(&f.JumpKeyPath)),
+		JumpAuthKeyPEM:  f.JumpAuthKeyPEM,
+		WPUrl:           strings.TrimSpace(editorText(&f.WPURL)),
+		WPKey:           editorText(&f.WPKey),
+		DBHost:          strings.TrimSpace(editorText(&f.DBHost)),
+		DBPort:          strings.TrimSpace(editorText(&f.DBPort)),
+		DBUser:          strings.TrimSpace(editorText(&f.DBUser)),
+		DBPassword:      editorText(&f.DBPassword),
+		DBType:          models.DBType(f.DBType.Value),
+		IsDocker:        f.IsDocker.Value,
+		ContainerID:     strings.TrimSpace(editorText(&f.ContainerID)),
+		TargetDBName:    strings.TrimSpace(editorText(&f.TargetDB)),
+		Destination:     strings.TrimSpace(editorText(&f.Destination)),
+	}
+}
+
+func (f *SettingsForm) apply(settings models.TransferSettings) {
+	f.ConnectionType.Value = defaultString(string(settings.ConnectionType), string(models.ConnectionTypeSSH))
+	setEditorText(&f.Host, settings.Host)
+	setEditorText(&f.Port, defaultString(settings.Port, "22"))
+	setEditorText(&f.SSHUser, settings.SSHUser)
+	setEditorText(&f.SSHPassword, settings.SSHPassword)
+	f.AuthType.Value = defaultString(string(settings.AuthType), string(models.AuthTypePassword))
+	setEditorText(&f.KeyPath, settings.AuthKeyPath)
+	f.AuthKeyPEM = settings.AuthKeyPEM
+	setEditorText(&f.JumpHost, settings.JumpHost)
+	setEditorText(&f.JumpPort, defaultString(settings.JumpPort, "22"))
+	setEditorText(&f.JumpUser, settings.JumpUser)
+	setEditorText(&f.JumpPassword, settings.JumpPassword)
+	f.JumpAuthType.Value = defaultString(string(settings.JumpAuthType), string(models.AuthTypePassword))
+	setEditorText(&f.JumpKeyPath, settings.JumpAuthKeyPath)
+	f.JumpAuthKeyPEM = settings.JumpAuthKeyPEM
+	setEditorText(&f.WPURL, settings.WPUrl)
+	setEditorText(&f.WPKey, settings.WPKey)
+	setEditorText(&f.DBHost, defaultString(settings.DBHost, "127.0.0.1"))
+	setEditorText(&f.DBPort, defaultString(settings.DBPort, "3306"))
+	setEditorText(&f.DBUser, settings.DBUser)
+	setEditorText(&f.DBPassword, settings.DBPassword)
+	f.DBType.Value = defaultString(string(settings.DBType), string(models.DBTypeMySQL))
+	f.IsDocker.Value = settings.IsDocker
+	setEditorText(&f.ContainerID, settings.ContainerID)
+	setEditorText(&f.TargetDB, settings.TargetDBName)
+	setEditorText(&f.Destination, settings.Destination)
+}
+
+func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *AppTheme, u *UI) layout.Dimensions {
+	isWP := f.ConnectionType.Value == string(models.ConnectionTypeWordPress)
+	isJump := f.ConnectionType.Value == string(models.ConnectionTypeJumpHost)
+	useKey := f.AuthType.Value == string(models.AuthTypeKeyFile)
+	useJumpKey := f.JumpAuthType.Value == string(models.AuthTypeKeyFile)
+
+	return scrollArea(gtx, th, &f.scrollList, func(gtx layout.Context) layout.Dimensions {
+		var sections []layout.FlexChild
+
+		sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Subtitle1(th, "Connection")
+						lbl.Color = theme.Text
+						return lbl.Layout(gtx)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return enumField(gtx, th, theme, &f.ConnectionType, "Type", connTypeValues)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isWP {
+							return layout.Dimensions{}
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "Target SSH Host", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.Host, "host.example.com")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "Port", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.Port, "22")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "SSH User", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.SSHUser, "root")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if useKey {
+									return layout.Dimensions{}
+								}
+								return labeledField(gtx, th, theme, "SSH Password", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.SSHPassword, "")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return enumField(gtx, th, theme, &f.AuthType, "Auth Type", authTypeValues)
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if !useKey {
+									return layout.Dimensions{}
+								}
+								return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+										return labeledField(gtx, th, theme, "Key Path", func(gtx layout.Context) layout.Dimensions {
+											return editorField(gtx, th, theme, &f.KeyPath, "")
+										})
+									}),
+									layout.Rigid(hgap(theme)),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return secondaryButton(gtx, th, theme, &f.selectKeyBtn, "Select Key", func() {
+											u.pickOpenFile(func(path string, data []byte) {
+												f.AuthKeyPEM = string(data)
+												setEditorText(&f.KeyPath, path)
+												u.invalidate()
+											})
+										})
+									}),
+								)
+							}),
+						)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isWP || !isJump {
+							return layout.Dimensions{}
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Subtitle2(th, "Jump Host")
+								lbl.Color = theme.Text
+								return lbl.Layout(gtx)
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "Jump Host", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.JumpHost, "")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "Jump Port", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.JumpPort, "22")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "Jump User", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.JumpUser, "")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if useJumpKey {
+									return layout.Dimensions{}
+								}
+								return labeledField(gtx, th, theme, "Jump Password", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.JumpPassword, "")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return enumField(gtx, th, theme, &f.JumpAuthType, "Jump Auth Type", authTypeValues)
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if !useJumpKey {
+									return layout.Dimensions{}
+								}
+								return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+										return labeledField(gtx, th, theme, "Jump Key Path", func(gtx layout.Context) layout.Dimensions {
+											return editorField(gtx, th, theme, &f.JumpKeyPath, "")
+										})
+									}),
+									layout.Rigid(hgap(theme)),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return secondaryButton(gtx, th, theme, &f.selectJumpKeyBtn, "Select Jump Key", func() {
+											u.pickOpenFile(func(path string, data []byte) {
+												f.JumpAuthKeyPEM = string(data)
+												setEditorText(&f.JumpKeyPath, path)
+												u.invalidate()
+											})
+										})
+									}),
+								)
+							}),
+						)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !isWP {
+							return layout.Dimensions{}
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "WordPress URL", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.WPURL, "https://example.com")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "WordPress API Key", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.WPKey, "")
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return secondaryButton(gtx, th, theme, &f.generatePluginBtn, "Generate WordPress Plugin", func() {
+									u.pickFolder(func(path string) {
+										key, pluginPath, err := wordpress.GeneratePlugin("plugin_template/dback-sync.php", path)
+										if err != nil {
+											u.showError(err)
+											return
+										}
+										setEditorText(&f.WPKey, key)
+										u.showInfo("Plugin Generated", pluginPath)
+									})
+								})
+							}),
+						)
+					}),
+				)
+			})
+		}))
+
+		if !isWP {
+			sections = append(sections, layout.Rigid(vgap(theme)))
+			sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Subtitle1(th, "Database")
+							lbl.Color = theme.Text
+							return lbl.Layout(gtx)
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return checkboxField(gtx, th, theme, &f.IsDocker, "Docker container")
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return labeledField(gtx, th, theme, "Container", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.ContainerID, "")
+							})
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return enumField(gtx, th, theme, &f.DBType, "DB Type", dbTypeValues)
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return labeledField(gtx, th, theme, "DB Host", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.DBHost, "127.0.0.1")
+							})
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return labeledField(gtx, th, theme, "DB Port", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.DBPort, "3306")
+							})
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return labeledField(gtx, th, theme, "DB User", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.DBUser, "")
+							})
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return labeledField(gtx, th, theme, "DB Password", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.DBPassword, "")
+							})
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return labeledField(gtx, th, theme, "Database", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.TargetDB, "")
+							})
+						}),
+					)
+				})
+			}))
+		}
+
+		sections = append(sections, layout.Rigid(vgap(theme)))
+		sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Subtitle1(th, "Files")
+						lbl.Color = theme.Text
+						return lbl.Layout(gtx)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "Destination Folder", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.Destination, f.defaultDestination)
+								})
+							}),
+							layout.Rigid(hgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return secondaryButton(gtx, th, theme, &f.selectFolderBtn, "Browse", func() {
+									u.pickFolder(func(path string) {
+										if isDocumentURIPath(path) {
+											setEditorText(&f.Destination, f.defaultDestination)
+										} else {
+											setEditorText(&f.Destination, path)
+										}
+										u.invalidate()
+									})
+								})
+							}),
+						)
+					}),
+				)
+			})
+		}))
+
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, sections...)
+	})
+}

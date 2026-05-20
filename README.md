@@ -4,7 +4,7 @@
 
 ![DB Sync Manager Screenshot](desgin/app.png)
 
-A cross-platform desktop and mobile-ready GUI application built with Go and Fyne v2 for managing database backups and restores. DBack can connect to remote Linux servers via SSH, WordPress sites via a generated plugin, or databases running inside Docker containers, then stream backups directly to local files and restore them to another profile.
+A cross-platform desktop GUI application built with Go and [Gio](https://gioui.org) for managing database backups and restores. DBack can connect to remote Linux servers via SSH, WordPress sites via a generated plugin, or databases running inside Docker containers, then stream backups directly to local files and restore them to another profile.
 
 **Repository:** [https://github.com/devlifeX/dback/](https://github.com/devlifeX/dback/)
 
@@ -33,7 +33,8 @@ A cross-platform desktop and mobile-ready GUI application built with Go and Fyne
 *   **Filename Formatting:** Exports are named with the profile, database name, and timestamp for easy organization.
 
 ### 📱 UI and Mobile
-*   **Responsive Layout:** Desktop uses a sidebar and multi-column forms; mobile uses bottom navigation and single-column forms.
+*   **Modern Desktop UI:** Dark-themed Gio layout with sidebar navigation, cards, and tabbed profile editing.
+*   **Mobile-Ready Architecture:** UI state, navigation, and platform services are structured so Android support can be added later without another full rewrite.
 *   **Conditional Fields:** SSH and WordPress fields are shown only when relevant.
 *   **About Screen:** Includes project and author information inside the app.
 
@@ -65,7 +66,14 @@ DBACK_DEBUG=1 ./run.sh
 ./dist/dback-linux --debug
 ```
 
-*Note: You may need to install `gcc`, `libgl1-mesa-dev`, and `xorg-dev` if prompted.*
+*Note: You may need to install Gio build dependencies if prompted. On Debian/Ubuntu:*
+
+```bash
+sudo apt-get update && sudo apt-get install -y \
+  build-essential pkg-config libvulkan-dev xorg-dev libwayland-dev \
+  libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev \
+  libxfixes-dev libegl-dev
+```
 
 ### Build Binaries
 Run the interactive build script and choose a target:
@@ -80,18 +88,16 @@ You can also build a target directly:
 ./build.sh linux
 ./build.sh windows
 ./build.sh macos
-./build.sh android
 ./build.sh all
 ```
 
-Artifacts are written to `dist/`, including:
+Artifacts are written to `dist/`:
 
 *   `dist/dback-linux`
 *   `dist/dback-windows.exe`
 *   `dist/dback-macos`
-*   `dist/dback-android.apk`
 
-The build script tries to install missing prerequisites automatically on apt-based Linux systems. Android builds install the Fyne CLI and Android command-line tools into `~/.android-sdk` when needed.
+Android builds are intentionally deferred until Gio mobile packaging is added.
 
 ## Build Requirements
 
@@ -99,12 +105,12 @@ To build the application from source, you need **Go 1.21+** and the following pl
 
 | Platform | Requirements |
 | :--- | :--- |
-| **Linux** | `gcc`, `libgl1-mesa-dev`, `xorg-dev` |
+| **Linux** | `gcc`, `pkg-config`, `libvulkan-dev`, `xorg-dev`, `libwayland-dev`, `libxkbcommon-dev`, `libxkbcommon-x11-dev`, `libx11-xcb-dev`, `libxcursor-dev`, `libxfixes-dev`, `libegl-dev` |
 | **Windows** | `gcc` (MinGW-w64 or TDM-GCC) |
 | **macOS** | Xcode Command Line Tools (`xcode-select --install`) |
 | **Cross-Compile (Linux -> Windows)** | `mingw-w64` (`gcc-mingw-w64`) |
 | **Cross-Compile (Linux -> macOS)** | `zig` or `osxcross` |
-| **Android** | Fyne CLI, Android SDK, Android NDK, JDK 17 |
+| **Android** | Planned for a future Gio mobile release |
 
 ### Docker Alternative
 If you have issues with system dependencies, you can run the app in a container:
@@ -132,5 +138,8 @@ Created by **dariush vesal**.
 
 ## FAQ
 
-### Why does this app require X11/GL libraries?
-This application is built using **Fyne**, a high-performance GUI toolkit for Go. Fyne uses **OpenGL** to render its graphics (GPU acceleration). On Linux, interfacing with OpenGL and creating windows requires the **X11** and **OpenGL** development headers.
+### Why does this app require Vulkan/X11 libraries on Linux?
+DBack uses **Gio**, a GPU-accelerated GUI toolkit for Go. On Linux, Gio renders through Vulkan and creates windows through X11/Wayland, which requires the corresponding development headers at build time.
+
+### Will Android be supported?
+The UI is structured for future Android support, but desktop is the current target. Android packaging will be added in a later release using Gio mobile tooling.
