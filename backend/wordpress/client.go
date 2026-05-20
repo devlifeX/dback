@@ -211,6 +211,9 @@ func (c *Client) ImportContext(ctx context.Context, sourcePath string, progressC
 		return fmt.Errorf("failed to stat source file: %w", err)
 	}
 	totalSize := fileInfo.Size()
+	if totalSize < 128 {
+		return fmt.Errorf("import file too small (%d bytes)", totalSize)
+	}
 
 	pr := &ProgressReader{
 		Reader: file,

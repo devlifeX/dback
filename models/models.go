@@ -22,33 +22,29 @@ const (
 	ConnectionTypeWordPress ConnectionType = "WordPress"
 )
 
-// DBType defines the database type (MySQL/MariaDB)
+// DBType defines the database type (MySQL/MariaDB only)
 type DBType string
 
 const (
-	DBTypeMySQL      DBType = "MySQL"
-	DBTypeMariaDB    DBType = "MariaDB"
-	DBTypePostgreSQL DBType = "PostgreSQL"
-	DBTypeCouchDB    DBType = "CouchDB"
+	DBTypeMySQL   DBType = "MySQL"
+	DBTypeMariaDB DBType = "MariaDB"
 )
 
-// Profile represents a saved connection profile
+// Profile represents an independent Host with unified connection settings.
 type Profile struct {
 	ID             string         `json:"id"`
 	Name           string         `json:"name"`
 	Group          string         `json:"group,omitempty"`
 	Host           string         `json:"host"`
 	Port           string         `json:"port"`
-	ConnectionType ConnectionType `json:"connection_type"` // SSH or WordPress
+	ConnectionType ConnectionType `json:"connection_type"`
 
-	// SSH Fields
 	SSHUser     string   `json:"ssh_user"`
 	SSHPassword string   `json:"ssh_password"`
 	AuthType    AuthType `json:"auth_type"`
 	AuthKeyPath string   `json:"auth_key_path"`
 	AuthKeyPEM  string   `json:"auth_key_pem,omitempty"`
 
-	// Jump Host Fields (optional SSH bastion)
 	JumpHost        string   `json:"jump_host,omitempty"`
 	JumpPort        string   `json:"jump_port,omitempty"`
 	JumpUser        string   `json:"jump_user,omitempty"`
@@ -57,37 +53,105 @@ type Profile struct {
 	JumpAuthKeyPath string   `json:"jump_auth_key_path,omitempty"`
 	JumpAuthKeyPEM  string   `json:"jump_auth_key_pem,omitempty"`
 
-	// WordPress Fields
-	WPUrl      string `json:"wp_url"`      // e.g. https://example.com
-	WPKey      string `json:"wp_key"`      // The API key shared with plugin
-	PluginPath string `json:"plugin_path"` // Path to save generated plugin
+	WPUrl      string `json:"wp_url"`
+	WPKey      string `json:"wp_key"`
+	PluginPath string `json:"plugin_path,omitempty"`
 
-	DBHost       string `json:"db_host"`
-	DBPort       string `json:"db_port"`
-	DBUser       string `json:"db_user"`
-	DBPassword   string `json:"db_password"` // In a real app, should be encrypted
-	DBType       DBType `json:"db_type"`
-	IsDocker     bool   `json:"is_docker"`
-	ContainerID  string `json:"container_id"`
-	TargetDBName        string `json:"target_db_name"`
-	Destination         string `json:"destination"` // Local folder path
-	PreImportQuery      string `json:"pre_import_query,omitempty"`
-	RunQueryBeforeImport bool  `json:"run_query_before_import,omitempty"`
-	PostImportQuery     string `json:"post_import_query,omitempty"`
-	RunQueryAfterImport bool   `json:"run_query_after_import,omitempty"`
+	DBHost      string `json:"db_host"`
+	DBPort      string `json:"db_port"`
+	DBUser      string `json:"db_user"`
+	DBPassword  string `json:"db_password"`
+	DBType      DBType `json:"db_type"`
+	IsDocker    bool   `json:"is_docker"`
+	ContainerID string `json:"container_id"`
 
+	TargetDBName         string `json:"target_db_name"`
+	Destination          string `json:"destination"`
+	PreImportQuery       string `json:"pre_import_query,omitempty"`
+	RunQueryBeforeImport bool   `json:"run_query_before_import,omitempty"`
+	PostImportQuery      string `json:"post_import_query,omitempty"`
+	RunQueryAfterImport  bool   `json:"run_query_after_import,omitempty"`
+
+	// Legacy fields — read-only for migration; not written on save.
 	ExportSettings *TransferSettings `json:"export_settings,omitempty"`
 	ImportSettings *TransferSettings `json:"import_settings,omitempty"`
 }
 
-// LogEntry represents a single activity log
+// TransferSettings legacy nested settings (migration only).
+type TransferSettings struct {
+	ConnectionType       ConnectionType `json:"connection_type"`
+	Host                 string         `json:"host"`
+	Port                 string         `json:"port"`
+	SSHUser              string         `json:"ssh_user"`
+	SSHPassword          string         `json:"ssh_password,omitempty"`
+	AuthType             AuthType       `json:"auth_type"`
+	AuthKeyPath          string         `json:"auth_key_path,omitempty"`
+	AuthKeyPEM           string         `json:"auth_key_pem,omitempty"`
+	JumpHost             string         `json:"jump_host,omitempty"`
+	JumpPort             string         `json:"jump_port,omitempty"`
+	JumpUser             string         `json:"jump_user,omitempty"`
+	JumpPassword         string         `json:"jump_password,omitempty"`
+	JumpAuthType         AuthType       `json:"jump_auth_type,omitempty"`
+	JumpAuthKeyPath      string         `json:"jump_auth_key_path,omitempty"`
+	JumpAuthKeyPEM       string         `json:"jump_auth_key_pem,omitempty"`
+	WPUrl                string         `json:"wp_url,omitempty"`
+	WPKey                string         `json:"wp_key,omitempty"`
+	DBHost               string         `json:"db_host"`
+	DBPort               string         `json:"db_port"`
+	DBUser               string         `json:"db_user"`
+	DBPassword           string         `json:"db_password,omitempty"`
+	DBType               DBType         `json:"db_type"`
+	IsDocker             bool           `json:"is_docker"`
+	ContainerID          string         `json:"container_id,omitempty"`
+	TargetDBName         string         `json:"target_db_name"`
+	Destination          string         `json:"destination,omitempty"`
+	PreImportQuery       string         `json:"pre_import_query,omitempty"`
+	RunQueryBeforeImport bool           `json:"run_query_before_import,omitempty"`
+	PostImportQuery      string         `json:"post_import_query,omitempty"`
+	RunQueryAfterImport  bool           `json:"run_query_after_import,omitempty"`
+
+	legacyPostExportQuery     string `json:"post_export_query,omitempty"`
+	legacyRunQueryAfterExport bool   `json:"run_query_after_export,omitempty"`
+}
+
+func (s *TransferSettings) MigrateQueryFields() {
+	if s == nil {
+		return
+	}
+	if s.PostImportQuery == "" && s.legacyPostExportQuery != "" {
+		s.PostImportQuery = s.legacyPostExportQuery
+	}
+	if !s.RunQueryAfterImport && s.legacyRunQueryAfterExport {
+		s.RunQueryAfterImport = true
+	}
+}
+
+// SQLTemplate is a reusable SQL snippet with placeholder support.
+type SQLTemplate struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Body        string    `json:"body"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type TemplateBundle struct {
+	Version   int           `json:"version"`
+	Templates []SQLTemplate `json:"templates"`
+}
+
+// LogEntry represents a single activity log with structured trace fields.
 type LogEntry struct {
 	ID          string    `json:"id"`
 	OperationID string    `json:"operation_id,omitempty"`
 	ProfileID   string    `json:"profile_id"`
 	ProfileName string    `json:"profile_name"`
 	Timestamp   time.Time `json:"timestamp"`
-	Action      string    `json:"action"` // e.g., "Export", "Import"
+	Action      string    `json:"action"`
+	Phase       string    `json:"phase,omitempty"`
+	Strategy    string    `json:"strategy,omitempty"`
+	Attempt     int       `json:"attempt,omitempty"`
 	Level       string    `json:"level,omitempty"`
 	Details     string    `json:"details"`
 	FilePath    string    `json:"file_path"`
@@ -96,13 +160,11 @@ type LogEntry struct {
 	Error       string    `json:"error,omitempty"`
 }
 
-// AppConfig holds application-wide configuration (like saved profiles)
 type AppConfig struct {
 	Version  int       `json:"version,omitempty"`
 	Profiles []Profile `json:"profiles"`
 }
 
-// ExportRecord represents a successful export entry for the history
 type ExportRecord struct {
 	ID             string         `json:"id"`
 	OperationID    string         `json:"operation_id,omitempty"`
@@ -116,60 +178,14 @@ type ExportRecord struct {
 	ConnectionType ConnectionType `json:"connection_type,omitempty"`
 }
 
-// TransferSettings keeps export and import settings independent for each profile.
-type TransferSettings struct {
-	ConnectionType  ConnectionType `json:"connection_type"`
-	Host            string         `json:"host"`
-	Port            string         `json:"port"`
-	SSHUser         string         `json:"ssh_user"`
-	SSHPassword     string         `json:"ssh_password,omitempty"`
-	AuthType        AuthType       `json:"auth_type"`
-	AuthKeyPath     string         `json:"auth_key_path,omitempty"`
-	AuthKeyPEM      string         `json:"auth_key_pem,omitempty"`
-	JumpHost        string         `json:"jump_host,omitempty"`
-	JumpPort        string         `json:"jump_port,omitempty"`
-	JumpUser        string         `json:"jump_user,omitempty"`
-	JumpPassword    string         `json:"jump_password,omitempty"`
-	JumpAuthType    AuthType       `json:"jump_auth_type,omitempty"`
-	JumpAuthKeyPath string         `json:"jump_auth_key_path,omitempty"`
-	JumpAuthKeyPEM  string         `json:"jump_auth_key_pem,omitempty"`
-	WPUrl           string         `json:"wp_url,omitempty"`
-	WPKey           string         `json:"wp_key,omitempty"`
-	DBHost          string         `json:"db_host"`
-	DBPort          string         `json:"db_port"`
-	DBUser          string         `json:"db_user"`
-	DBPassword      string         `json:"db_password,omitempty"`
-	DBType          DBType         `json:"db_type"`
-	IsDocker        bool           `json:"is_docker"`
-	ContainerID     string         `json:"container_id,omitempty"`
-	TargetDBName        string `json:"target_db_name"`
-	Destination         string `json:"destination,omitempty"`
-	PreImportQuery       string `json:"pre_import_query,omitempty"`
-	RunQueryBeforeImport bool   `json:"run_query_before_import,omitempty"`
-	PostImportQuery      string `json:"post_import_query,omitempty"`
-	RunQueryAfterImport  bool   `json:"run_query_after_import,omitempty"`
-
-	// Legacy JSON fields (migrated in store.migrateProfiles).
-	legacyPostExportQuery     string `json:"post_export_query,omitempty"`
-	legacyRunQueryAfterExport bool   `json:"run_query_after_export,omitempty"`
-}
-
-// MigrateQueryFields copies legacy post-export query fields into post-import fields.
-func (s *TransferSettings) MigrateQueryFields() {
-	if s == nil {
-		return
-	}
-	if s.PostImportQuery == "" && s.legacyPostExportQuery != "" {
-		s.PostImportQuery = s.legacyPostExportQuery
-	}
-	if !s.RunQueryAfterImport && s.legacyRunQueryAfterExport {
-		s.RunQueryAfterImport = true
-	}
-}
-
 type ProfileBundle struct {
-	Version  int       `json:"version"`
-	Profiles []Profile `json:"profiles"`
+	Version   int       `json:"version"`
+	Encrypted bool      `json:"encrypted,omitempty"`
+	Salt      string    `json:"salt,omitempty"`
+	Nonce     string    `json:"nonce,omitempty"`
+	Profiles  []Profile `json:"profiles,omitempty"`
+	// EncryptedPayload holds AES-GCM ciphertext when Encrypted is true.
+	EncryptedPayload string `json:"encrypted_payload,omitempty"`
 }
 
 type BackupHistory struct {
@@ -182,15 +198,43 @@ type ActivityLog struct {
 	Entries []LogEntry `json:"entries"`
 }
 
-func (p Profile) EffectiveExport() Profile {
-	return p.withSettings(p.ExportSettings)
+func SettingsFromProfile(p Profile) TransferSettings {
+	return TransferSettings{
+		ConnectionType:       p.ConnectionType,
+		Host:                 p.Host,
+		Port:                 p.Port,
+		SSHUser:              p.SSHUser,
+		SSHPassword:          p.SSHPassword,
+		AuthType:             p.AuthType,
+		AuthKeyPath:          p.AuthKeyPath,
+		AuthKeyPEM:           p.AuthKeyPEM,
+		JumpHost:             p.JumpHost,
+		JumpPort:             p.JumpPort,
+		JumpUser:             p.JumpUser,
+		JumpPassword:         p.JumpPassword,
+		JumpAuthType:         p.JumpAuthType,
+		JumpAuthKeyPath:      p.JumpAuthKeyPath,
+		JumpAuthKeyPEM:       p.JumpAuthKeyPEM,
+		WPUrl:                p.WPUrl,
+		WPKey:                p.WPKey,
+		DBHost:               p.DBHost,
+		DBPort:               p.DBPort,
+		DBUser:               p.DBUser,
+		DBPassword:           p.DBPassword,
+		DBType:               p.DBType,
+		IsDocker:             p.IsDocker,
+		ContainerID:          p.ContainerID,
+		TargetDBName:         p.TargetDBName,
+		Destination:          p.Destination,
+		PreImportQuery:       p.PreImportQuery,
+		RunQueryBeforeImport: p.RunQueryBeforeImport,
+		PostImportQuery:      p.PostImportQuery,
+		RunQueryAfterImport:  p.RunQueryAfterImport,
+	}
 }
 
-func (p Profile) EffectiveImport() Profile {
-	if p.ImportSettings != nil {
-		return p.withSettings(p.ImportSettings)
-	}
-	return p.withSettings(p.ExportSettings)
+func (p Profile) ApplySettings(s *TransferSettings) Profile {
+	return p.withSettings(s)
 }
 
 func (p Profile) withSettings(s *TransferSettings) Profile {
@@ -218,7 +262,7 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 	p.DBPort = s.DBPort
 	p.DBUser = s.DBUser
 	p.DBPassword = s.DBPassword
-	p.DBType = s.DBType
+	p.DBType = normalizeDBType(s.DBType)
 	p.IsDocker = s.IsDocker
 	p.ContainerID = s.ContainerID
 	p.TargetDBName = s.TargetDBName
@@ -230,47 +274,55 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 	return p
 }
 
-func SettingsFromProfile(p Profile) TransferSettings {
-	return TransferSettings{
-		ConnectionType:  p.ConnectionType,
-		Host:            p.Host,
-		Port:            p.Port,
-		SSHUser:         p.SSHUser,
-		SSHPassword:     p.SSHPassword,
-		AuthType:        p.AuthType,
-		AuthKeyPath:     p.AuthKeyPath,
-		AuthKeyPEM:      p.AuthKeyPEM,
-		JumpHost:        p.JumpHost,
-		JumpPort:        p.JumpPort,
-		JumpUser:        p.JumpUser,
-		JumpPassword:    p.JumpPassword,
-		JumpAuthType:    p.JumpAuthType,
-		JumpAuthKeyPath: p.JumpAuthKeyPath,
-		JumpAuthKeyPEM:  p.JumpAuthKeyPEM,
-		WPUrl:           p.WPUrl,
-		WPKey:           p.WPKey,
-		DBHost:          p.DBHost,
-		DBPort:          p.DBPort,
-		DBUser:          p.DBUser,
-		DBPassword:      p.DBPassword,
-		DBType:          p.DBType,
-		IsDocker:        p.IsDocker,
-		ContainerID:     p.ContainerID,
-		TargetDBName:        p.TargetDBName,
-		Destination:         p.Destination,
-		PreImportQuery:       p.PreImportQuery,
-		RunQueryBeforeImport: p.RunQueryBeforeImport,
-		PostImportQuery:      p.PostImportQuery,
-		RunQueryAfterImport:  p.RunQueryAfterImport,
+func normalizeDBType(t DBType) DBType {
+	switch t {
+	case DBTypeMariaDB:
+		return DBTypeMariaDB
+	default:
+		return DBTypeMySQL
 	}
 }
 
-// SubstituteQueryDBName replaces {databasename} in query text.
-func SubstituteQueryDBName(query, dbName string) string {
-	if dbName == "" {
+// QueryVars holds placeholder values for SQL template substitution.
+type QueryVars struct {
+	DatabaseName string
+	Host         string
+	Profile      string
+	DBUser       string
+}
+
+func SubstituteQuery(query string, vars QueryVars) string {
+	if query == "" {
 		return query
 	}
-	return strings.ReplaceAll(query, "{databasename}", dbName)
+	repl := strings.NewReplacer(
+		"{databasename}", vars.DatabaseName,
+		"{host}", vars.Host,
+		"{profile}", vars.Profile,
+		"{dbuser}", vars.DBUser,
+	)
+	return repl.Replace(query)
+}
+
+func SubstituteQueryDBName(query, dbName string) string {
+	return SubstituteQuery(query, QueryVars{DatabaseName: dbName})
+}
+
+func (p Profile) QueryVars() QueryVars {
+	return QueryVars{
+		DatabaseName: p.TargetDBName,
+		Host:         p.Host,
+		Profile:      p.Name,
+		DBUser:       p.DBUser,
+	}
+}
+
+func (p Profile) SupportsSQLQuery() bool {
+	return mysqlOrMariaDB(p) && p.ConnectionType != ConnectionTypeWordPress
+}
+
+func mysqlOrMariaDB(p Profile) bool {
+	return p.DBType == DBTypeMySQL || p.DBType == DBTypeMariaDB
 }
 
 func (s TransferSettings) SupportsSQLQuery() bool {
@@ -278,6 +330,29 @@ func (s TransferSettings) SupportsSQLQuery() bool {
 }
 
 func (p Profile) SupportsImportSQLQuery() bool {
-	s := p.EffectiveImport()
-	return (s.DBType == DBTypeMySQL || s.DBType == DBTypeMariaDB) && s.ConnectionType != ConnectionTypeWordPress
+	return p.SupportsSQLQuery()
+}
+
+func SettingsEqual(a, b *TransferSettings) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	aa := *a
+	bb := *b
+	aa.SSHPassword = ""
+	aa.DBPassword = ""
+	aa.WPKey = ""
+	aa.AuthKeyPEM = ""
+	aa.JumpPassword = ""
+	aa.JumpAuthKeyPEM = ""
+	bb.SSHPassword = ""
+	bb.DBPassword = ""
+	bb.WPKey = ""
+	bb.AuthKeyPEM = ""
+	bb.JumpPassword = ""
+	bb.JumpAuthKeyPEM = ""
+	return aa == bb
 }

@@ -22,7 +22,7 @@ func (u *UI) layoutSidebar(gtx layout.Context, th *material.Theme) layout.Dimens
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return u.layoutLogo(gtx, th, 48)
+				return u.layoutLogo(gtx, th, 32)
 			}),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -34,6 +34,8 @@ func (u *UI) layoutSidebar(gtx layout.Context, th *material.Theme) layout.Dimens
 			layout.Rigid(u.navItem(th, theme, &u.navHosts, SectionHosts, "Hosts")),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(u.navItem(th, theme, &u.navBackups, SectionBackups, "Backups")),
+			layout.Rigid(vgap(theme)),
+			layout.Rigid(u.navItem(th, theme, &u.navTemplates, SectionTemplates, "Templates")),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(u.navItem(th, theme, &u.navSettings, SectionSettings, "Settings")),
 			layout.Rigid(vgap(theme)),
@@ -48,8 +50,8 @@ func (u *UI) layoutBottomNav(gtx layout.Context, th *material.Theme) layout.Dime
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Flexed(1, u.navItem(th, theme, &u.navHosts, SectionHosts, "Hosts")),
 		layout.Flexed(1, u.navItem(th, theme, &u.navBackups, SectionBackups, "Backups")),
+		layout.Flexed(1, u.navItem(th, theme, &u.navTemplates, SectionTemplates, "Templates")),
 		layout.Flexed(1, u.navItem(th, theme, &u.navSettings, SectionSettings, "Settings")),
-		layout.Flexed(1, u.navItem(th, theme, &u.navAbout, SectionAbout, "About")),
 	)
 }
 
@@ -106,10 +108,17 @@ func (u *UI) layoutLogo(gtx layout.Context, th *material.Theme, size int) layout
 	}
 	imgOp := paint.NewImageOp(u.logo)
 	sz := gtx.Dp(unit.Dp(size))
+	bounds := u.logo.Bounds()
+	scaleX := float32(sz) / float32(bounds.Dx())
+	scaleY := float32(sz) / float32(bounds.Dy())
+	scale := scaleX
+	if scaleY < scaleX {
+		scale = scaleY
+	}
 	img := widget.Image{
 		Src:   imgOp,
 		Fit:   widget.Contain,
-		Scale: float32(sz) / float32(u.logo.Bounds().Dx()),
+		Scale: scale,
 	}
 	return layout.Center.Layout(gtx, img.Layout)
 }

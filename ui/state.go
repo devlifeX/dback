@@ -5,6 +5,7 @@ type Section int
 const (
 	SectionHosts Section = iota
 	SectionBackups
+	SectionTemplates
 	SectionSettings
 	SectionAbout
 )
@@ -15,6 +16,8 @@ func (s Section) String() string {
 		return "Hosts"
 	case SectionBackups:
 		return "Backups"
+	case SectionTemplates:
+		return "Templates"
 	case SectionSettings:
 		return "Settings"
 	case SectionAbout:
@@ -29,6 +32,7 @@ type View int
 const (
 	ViewList View = iota
 	ViewProfileEditor
+	ViewTemplateEditor
 	ViewBackupDetail
 )
 
@@ -40,13 +44,14 @@ const (
 	DialogError
 	DialogInfo
 	DialogLoading
+	DialogPassword
 )
 
 type DialogState struct {
-	Kind    DialogKind
-	Title   string
-	Message string
-	OnOK    func()
+	Kind     DialogKind
+	Title    string
+	Message  string
+	OnOK     func()
 	OnCancel func()
 }
 

@@ -31,19 +31,29 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 				}),
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if d.Kind != DialogPassword {
+						return layout.Dimensions{}
+					}
+					return labeledField(gtx, th, theme, "Master password", func(gtx layout.Context) layout.Dimensions {
+						return passwordField(gtx, th, theme, &u.passphraseEditor, "")
+					})
+				}),
+				layout.Rigid(vgap(theme)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if d.Kind == DialogLoading {
 						return progressBar(gtx, theme, -1)
 					}
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if d.Kind != DialogConfirm {
+							if d.Kind != DialogConfirm && d.Kind != DialogPassword {
 								return layout.Dimensions{}
 							}
 							return secondaryButton(gtx, th, theme, &u.dialogCancelBtn, "Cancel", func() {
 								if d.OnCancel != nil {
 									d.OnCancel()
 								}
+								u.passphraseEditor.SetText("")
 								u.closeDialog()
 							})
 						}),
@@ -53,10 +63,14 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 							if d.Kind == DialogConfirm {
 								label = "Confirm"
 							}
+							if d.Kind == DialogPassword {
+								label = "Continue"
+							}
 							return primaryButton(gtx, th, theme, &u.dialogOKBtn, label, func() {
 								if d.OnOK != nil {
 									d.OnOK()
 								}
+								u.passphraseEditor.SetText("")
 								u.closeDialog()
 							})
 						}),
@@ -101,5 +115,18 @@ func (u *UI) showLoading(title, message string) {
 		Kind:    DialogLoading,
 		Title:   title,
 		Message: message,
+	})
+}
+
+func (u *UI) showPasswordPrompt(title, message string, onOK func(passphrase string)) {
+	u.passphraseEditor.SetText("")
+	u.showDialog(DialogState{
+		Kind:    DialogPassword,
+		Title:   title,
+		Message: message,
+		OnOK: func() {
+			onOK(editorText(&u.passphraseEditor))
+		},
+		OnCancel: func() {},
 	})
 }

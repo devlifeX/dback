@@ -9,3 +9,4 @@ dback-windows.exe
 export_history.json
 *.json
 *.log
+.cursor/plans*

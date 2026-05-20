@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,21 +12,23 @@ import (
 
 	"dback/backend/db"
 	"dback/backend/ssh"
+	"dback/backend/transfer"
 	"dback/backend/wordpress"
 	"dback/internal/debug"
 	"dback/internal/store"
 	"dback/models"
 )
 
-type ProgressFunc func(message string, current int64, total int64)
+type ProgressFunc = transfer.ProgressFunc
 
 type App struct {
 	store *store.Store
 
-	mu       sync.Mutex
-	profiles []models.Profile
-	history  []models.ExportRecord
-	logs     []models.LogEntry
+	mu        sync.Mutex
+	profiles  []models.Profile
+	templates []models.SQLTemplate
+	history   []models.ExportRecord
+	logs      []models.LogEntry
 }
 
 func New(baseDir string) (*App, error) {
@@ -43,6 +44,10 @@ func (a *App) Reload() error {
 	if err != nil {
 		return err
 	}
+	templates, err := a.store.LoadTemplates()
+	if err != nil {
+		return err
+	}
 	history, err := a.store.LoadHistory()
 	if err != nil {
 		return err
@@ -54,6 +59,7 @@ func (a *App) Reload() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.profiles = profiles
+	a.templates = templates
 	a.history = history
 	a.logs = logs
 	return nil
@@ -63,6 +69,12 @@ func (a *App) Profiles() []models.Profile {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return append([]models.Profile(nil), a.profiles...)
+}
+
+func (a *App) Templates() []models.SQLTemplate {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]models.SQLTemplate(nil), a.templates...)
 }
 
 func (a *App) History() []models.ExportRecord {
@@ -84,14 +96,8 @@ func (a *App) SaveProfile(profile models.Profile) error {
 	if profile.Group == "" {
 		profile.Group = "Default"
 	}
-	if profile.ExportSettings == nil {
-		settings := models.SettingsFromProfile(profile)
-		profile.ExportSettings = &settings
-	}
-	if profile.ImportSettings == nil {
-		settings := models.SettingsFromProfile(profile)
-		profile.ImportSettings = &settings
-	}
+	profile.ExportSettings = nil
+	profile.ImportSettings = nil
 
 	a.mu.Lock()
 	found := false
@@ -124,50 +130,125 @@ func (a *App) DeleteProfile(id string) error {
 	return a.store.SaveProfiles(profiles)
 }
 
-func (a *App) ExportProfiles(path string, includeSecrets bool) error {
-	return a.store.ExportProfiles(path, a.Profiles(), includeSecrets)
+func (a *App) SaveTemplate(t models.SQLTemplate) error {
+	if t.ID == "" {
+		t.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	now := time.Now()
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt = now
+	}
+	t.UpdatedAt = now
+
+	a.mu.Lock()
+	found := false
+	for i := range a.templates {
+		if a.templates[i].ID == t.ID {
+			t.CreatedAt = a.templates[i].CreatedAt
+			a.templates[i] = t
+			found = true
+			break
+		}
+	}
+	if !found {
+		a.templates = append(a.templates, t)
+	}
+	templates := append([]models.SQLTemplate(nil), a.templates...)
+	a.mu.Unlock()
+	return a.store.SaveTemplates(templates)
 }
 
-func (a *App) ImportProfiles(path string, includeSecrets bool) error {
-	profiles, err := a.store.ImportProfiles(path, includeSecrets)
+func (a *App) DeleteTemplate(id string) error {
+	a.mu.Lock()
+	for i := range a.templates {
+		if a.templates[i].ID == id {
+			a.templates = append(a.templates[:i], a.templates[i+1:]...)
+			break
+		}
+	}
+	templates := append([]models.SQLTemplate(nil), a.templates...)
+	a.mu.Unlock()
+	return a.store.SaveTemplates(templates)
+}
+
+func (a *App) ExportProfiles(path string, includeSecrets bool, passphrase string) error {
+	return a.store.ExportProfiles(path, a.Profiles(), includeSecrets, passphrase)
+}
+
+func (a *App) PreviewImportProfiles(path string, includeSecrets bool, passphrase string) ([]models.Profile, []store.ProfileConflict, error) {
+	imported, err := a.store.ImportProfilesBundle(path, includeSecrets, passphrase)
+	if err != nil {
+		return nil, nil, err
+	}
+	conflicts := store.DetectProfileConflicts(a.Profiles(), imported)
+	return imported, conflicts, nil
+}
+
+func (a *App) ImportProfiles(path string, includeSecrets bool, passphrase string) error {
+	imported, err := a.store.ImportProfilesBundle(path, includeSecrets, passphrase)
 	if err != nil {
 		return err
 	}
 	a.mu.Lock()
-	a.profiles = profiles
+	a.profiles = store.MergeProfiles(a.profiles, imported)
+	profiles := append([]models.Profile(nil), a.profiles...)
 	a.mu.Unlock()
 	return a.store.SaveProfiles(profiles)
 }
 
 func (a *App) Backup(ctx context.Context, profile models.Profile, progress ProgressFunc) (models.ExportRecord, error) {
 	operationID := newID()
-	source := profile.EffectiveExport()
-	if source.Destination == "" {
-		source.Destination = "."
+	started := time.Now()
+	dest := profile.Destination
+	if dest == "" {
+		dest = defaultBackupDir()
 	}
-	if err := os.MkdirAll(source.Destination, 0755); err != nil {
+	if err := os.MkdirAll(dest, 0755); err != nil {
 		return models.ExportRecord{}, err
 	}
 
-	a.log(operationID, &profile, "Export", "Starting backup", "", "", "Info", "Started", "")
-	if progress != nil {
-		progress("Starting backup", 0, 0)
+	logger := a.newOpLogger(operationID, &profile)
+	a.logPhase(operationID, &profile, "Export", "start", "", 0, "Starting backup", "Info", "Started", "")
+
+	if profile.ConnectionType == models.ConnectionTypeWordPress {
+		if err := a.preflightWordPress(profile); err != nil {
+			a.logPhase(operationID, &profile, "Export", "preflight", "", 0, err.Error(), "Error", "Failed", err.Error())
+			return models.ExportRecord{}, err
+		}
+		a.logPhase(operationID, &profile, "Export", "preflight", "", 0, "WordPress connectivity OK", "Info", "Succeeded", "")
 	}
 
 	var fullPath string
 	var size int64
 	var err error
-	if source.ConnectionType == models.ConnectionTypeWordPress {
-		fullPath, size, err = a.backupWordPress(ctx, source, progress)
-	} else {
-		fullPath, size, err = a.backupSSH(ctx, source, progress)
+
+	switch profile.ConnectionType {
+	case models.ConnectionTypeWordPress:
+		fullPath, size, err = a.backupWordPress(ctx, profile, dest, progress)
+	default:
+		result, backupErr := transfer.BackupSSH(ctx, transfer.BackupRequest{
+			Profile:     profile,
+			OperationID: operationID,
+			Destination: dest,
+			Logger:      logger,
+			Progress:    progress,
+		})
+		fullPath, size, err = result.Path, result.Size, backupErr
 	}
+
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			a.log(operationID, &profile, "Export", "Backup canceled", "", "", "Info", "Canceled", "")
+			a.logPhase(operationID, &profile, "Export", "cancel", "", 0, "Backup canceled", "Info", "Canceled", "")
 			return models.ExportRecord{}, err
 		}
-		a.log(operationID, &profile, "Export", "Backup failed", "", "", "Error", "Failed", err.Error())
+		a.logPhase(operationID, &profile, "Export", "failure", "", 0, "Backup failed", "Error", "Failed", err.Error())
+		return models.ExportRecord{}, err
+	}
+
+	if size < 128 {
+		_ = os.Remove(fullPath)
+		err = fmt.Errorf("backup file too small (%d bytes)", size)
+		a.logPhase(operationID, &profile, "Export", "validation", "", 0, err.Error(), "Error", "Failed", err.Error())
 		return models.ExportRecord{}, err
 	}
 
@@ -176,12 +257,12 @@ func (a *App) Backup(ctx context.Context, profile models.Profile, progress Progr
 		OperationID:    operationID,
 		ProfileID:      profile.ID,
 		ProfileName:    profile.Name,
-		DatabaseName:   source.TargetDBName,
+		DatabaseName:   profile.TargetDBName,
 		ExportDate:     time.Now(),
 		FilePath:       fullPath,
 		FileSize:       formatSize(size),
 		FileSizeBytes:  size,
-		ConnectionType: source.ConnectionType,
+		ConnectionType: profile.ConnectionType,
 	}
 	a.mu.Lock()
 	a.history = append(a.history, record)
@@ -190,7 +271,7 @@ func (a *App) Backup(ctx context.Context, profile models.Profile, progress Progr
 	if err := a.store.SaveHistory(history); err != nil {
 		return record, err
 	}
-	a.log(operationID, &profile, "Export", "Backup completed", fullPath, formatSize(size), "Info", "Succeeded", "")
+	a.logPhaseWithFile(operationID, profile, "Export", "complete", "", 0, fmt.Sprintf("Backup completed in %s", time.Since(started).Round(time.Millisecond)), "Info", "Succeeded", "", fullPath, size)
 	if progress != nil {
 		progress("Backup completed", size, size)
 	}
@@ -201,17 +282,17 @@ func (a *App) RunImportQuery(ctx context.Context, profile models.Profile, query 
 	if err := ctx.Err(); err != nil {
 		return db.QueryResult{}, err
 	}
-	if !profile.SupportsImportSQLQuery() {
-		return db.QueryResult{}, fmt.Errorf("SQL query is only supported for SSH/Jump Host profiles with MySQL or MariaDB import settings")
+	if !profile.SupportsSQLQuery() {
+		return db.QueryResult{}, fmt.Errorf("SQL query requires SSH/Jump Host with MySQL or MariaDB")
 	}
-	p := profile.EffectiveImport()
-	cmd, err := db.BuildQueryCommand(p, query, connectDB)
+	cmd, err := db.BuildQueryCommand(profile, query, connectDB)
 	if err != nil {
 		return db.QueryResult{}, err
 	}
-	client, err := ssh.NewClient(p)
+	debug.Log("Debug", "Query", "Started", db.MaskCommand(cmd), profile.Name, "", "")
+
+	client, err := ssh.NewClient(profile)
 	if err != nil {
-		debug.Errorf("query SSH connect failed: %v", err)
 		return db.QueryResult{}, err
 	}
 	defer client.Close()
@@ -245,94 +326,90 @@ func (a *App) RunImportQuery(ctx context.Context, profile models.Profile, query 
 
 func (a *App) Restore(ctx context.Context, record models.ExportRecord, destination models.Profile, progress ProgressFunc) error {
 	operationID := newID()
-	target := destination.EffectiveImport()
-	if _, err := os.Stat(record.FilePath); err != nil {
+	started := time.Now()
+	if info, err := os.Stat(record.FilePath); err != nil {
 		return err
+	} else if info.Size() < 128 {
+		return fmt.Errorf("backup file too small (%d bytes)", info.Size())
 	}
-	a.log(operationID, &destination, "Import", "Starting restore from history", record.FilePath, record.FileSize, "Info", "Started", "")
-	if progress != nil {
-		progress("Starting restore", 0, record.FileSizeBytes)
+	logger := a.newOpLogger(operationID, &destination)
+	a.logPhaseWithFile(operationID, destination, "Import", "start", "", 0, "Starting restore", "Info", "Started", "", record.FilePath, record.FileSizeBytes)
+
+	if destination.ConnectionType == models.ConnectionTypeWordPress {
+		if err := a.preflightWordPressRestore(destination); err != nil {
+			a.logPhase(operationID, &destination, "Import", "preflight", "", 0, err.Error(), "Error", "Failed", err.Error())
+			return err
+		}
+		a.logPhase(operationID, &destination, "Import", "preflight", "", 0, "WordPress import preflight OK", "Info", "Succeeded", "")
 	}
 
-	if destination.ImportSettings != nil {
-		is := destination.ImportSettings
-		if is.RunQueryBeforeImport && strings.TrimSpace(is.PreImportQuery) != "" && destination.SupportsImportSQLQuery() {
-			dbName := destination.EffectiveExport().TargetDBName
-			query := models.SubstituteQueryDBName(is.PreImportQuery, dbName)
-			if progress != nil {
-				progress("Running pre-import query", 0, record.FileSizeBytes)
-			}
-			if result, err := a.RunImportQuery(ctx, destination, query, false); err != nil {
-				a.log(operationID, &destination, "Pre-import query", err.Error(), "", "", "Warning", "Failed", err.Error())
-			} else {
-				details := formatQueryResultSummary(result)
-				a.log(operationID, &destination, "Pre-import query", details, "", "", "Info", "Succeeded", "")
-			}
+	if destination.RunQueryBeforeImport && strings.TrimSpace(destination.PreImportQuery) != "" && destination.SupportsSQLQuery() {
+		query := models.SubstituteQuery(destination.PreImportQuery, destination.QueryVars())
+		if progress != nil {
+			progress("Running pre-import query", 0, record.FileSizeBytes)
+		}
+		if result, err := a.RunImportQuery(ctx, destination, query, false); err != nil {
+			a.logPhase(operationID, &destination, "Pre-import query", "query", "", 0, err.Error(), "Warning", "Failed", err.Error())
+		} else {
+			a.logPhase(operationID, &destination, "Pre-import query", "query", "", 0, formatQueryResultSummary(result), "Info", "Succeeded", "")
 		}
 	}
 
 	var err error
-	if target.ConnectionType == models.ConnectionTypeWordPress {
-		err = a.restoreWordPress(ctx, record.FilePath, target, progress)
-	} else {
-		err = a.restoreSSH(ctx, record.FilePath, target, progress)
+	switch destination.ConnectionType {
+	case models.ConnectionTypeWordPress:
+		err = a.restoreWordPress(ctx, record.FilePath, destination, progress)
+	default:
+		err = transfer.RestoreSSH(ctx, transfer.RestoreRequest{
+			Profile:     destination,
+			OperationID: operationID,
+			LocalPath:   record.FilePath,
+			FileSize:    record.FileSizeBytes,
+			Logger:      logger,
+			Progress:    progress,
+		})
 	}
+
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			a.log(operationID, &destination, "Import", "Restore canceled", record.FilePath, record.FileSize, "Info", "Canceled", "")
+			a.logPhase(operationID, &destination, "Import", "cancel", "", 0, "Restore canceled", "Info", "Canceled", "")
 			return err
 		}
-		a.log(operationID, &destination, "Import", "Restore failed", record.FilePath, record.FileSize, "Error", "Failed", err.Error())
+		a.logPhase(operationID, &destination, "Import", "failure", "", 0, "Restore failed", "Error", "Failed", err.Error())
 		return err
 	}
-	a.log(operationID, &destination, "Import", "Restore completed", record.FilePath, record.FileSize, "Info", "Succeeded", "")
+
+	a.logPhaseWithFile(operationID, destination, "Import", "complete", "", 0, fmt.Sprintf("Restore completed in %s", time.Since(started).Round(time.Millisecond)), "Info", "Succeeded", "", record.FilePath, record.FileSizeBytes)
 	if progress != nil {
 		progress("Restore completed", record.FileSizeBytes, record.FileSizeBytes)
 	}
-	if destination.ImportSettings != nil {
-		is := destination.ImportSettings
-		if is.RunQueryAfterImport && strings.TrimSpace(is.PostImportQuery) != "" && destination.SupportsImportSQLQuery() {
-			query := models.SubstituteQueryDBName(is.PostImportQuery, destination.EffectiveExport().TargetDBName)
-			if result, err := a.RunImportQuery(ctx, destination, query, true); err != nil {
-				a.log(operationID, &destination, "Post-import query", err.Error(), "", "", "Warning", "Failed", err.Error())
-			} else {
-				details := formatQueryResultSummary(result)
-				a.log(operationID, &destination, "Post-import query", details, "", "", "Info", "Succeeded", "")
-			}
+
+	if destination.RunQueryAfterImport && strings.TrimSpace(destination.PostImportQuery) != "" && destination.SupportsSQLQuery() {
+		query := models.SubstituteQuery(destination.PostImportQuery, destination.QueryVars())
+		if result, err := a.RunImportQuery(ctx, destination, query, true); err != nil {
+			a.logPhase(operationID, &destination, "Post-import query", "query", "", 0, err.Error(), "Warning", "Failed", err.Error())
+		} else {
+			a.logPhase(operationID, &destination, "Post-import query", "query", "", 0, formatQueryResultSummary(result), "Info", "Succeeded", "")
 		}
 	}
 	return nil
 }
 
-func formatQueryResultSummary(result db.QueryResult) string {
-	if result.Message != "" && len(result.Rows) == 0 {
-		return result.Message
-	}
-	if len(result.Rows) == 0 {
-		return "Query executed successfully"
-	}
-	return fmt.Sprintf("%d row(s) returned", len(result.Rows))
-}
-
-func (a *App) TestConnection(profile models.Profile, useImport bool) error {
-	p := profile.EffectiveExport()
-	if useImport {
-		p = profile.EffectiveImport()
-	}
-	if p.ConnectionType == models.ConnectionTypeWordPress {
-		_, err := wordpress.NewClient(p.WPUrl, p.WPKey).Ping()
+func (a *App) TestConnection(profile models.Profile) error {
+	if profile.ConnectionType == models.ConnectionTypeWordPress {
+		_, err := wordpress.NewClient(profile.WPUrl, profile.WPKey).Ping()
 		return err
 	}
-	client, err := ssh.NewClient(p)
+	client, err := ssh.NewClient(profile)
 	if err != nil {
 		return err
 	}
 	return client.Close()
 }
 
-func (a *App) backupWordPress(ctx context.Context, p models.Profile, progress ProgressFunc) (string, int64, error) {
+func (a *App) backupWordPress(ctx context.Context, p models.Profile, dest string, progress ProgressFunc) (string, int64, error) {
 	fileName := fmt.Sprintf("%s_%s.sql.gz", safeName(p.Name), time.Now().Format("02_01_2006_15_04_05"))
-	fullPath := filepath.Join(p.Destination, fileName)
+	fullPath := filepath.Join(dest, fileName)
 	err := wordpress.NewClient(p.WPUrl, p.WPKey).ExportContext(ctx, fullPath, func(curr int64) {
 		if progress != nil {
 			progress(fmt.Sprintf("Downloading %.2f MB", float64(curr)/1024/1024), curr, 0)
@@ -343,7 +420,6 @@ func (a *App) backupWordPress(ctx context.Context, p models.Profile, progress Pr
 			_ = os.Remove(fullPath)
 			return "", 0, ctx.Err()
 		}
-		debug.Errorf("wordpress backup failed for %s: %v", p.Name, err)
 		return "", 0, err
 	}
 	info, err := os.Stat(fullPath)
@@ -351,69 +427,6 @@ func (a *App) backupWordPress(ctx context.Context, p models.Profile, progress Pr
 		return fullPath, 0, err
 	}
 	return fullPath, info.Size(), nil
-}
-
-func (a *App) backupSSH(ctx context.Context, p models.Profile, progress ProgressFunc) (string, int64, error) {
-	if err := ctx.Err(); err != nil {
-		return "", 0, err
-	}
-	client, err := ssh.NewClient(p)
-	if err != nil {
-		debug.Errorf("backup SSH connect failed for %s: %v", p.Name, err)
-		return "", 0, err
-	}
-	defer client.Close()
-
-	cmd := db.BuildExportCommand(p)
-	stdout, stderr, session, err := client.RunCommandStream(cmd)
-	if err != nil {
-		return "", 0, err
-	}
-	defer session.Close()
-	go func() {
-		<-ctx.Done()
-		_ = session.Close()
-		_ = client.Close()
-	}()
-
-	var stderrBuf strings.Builder
-	go func() {
-		_, _ = io.Copy(&stderrBuf, stderr)
-	}()
-
-	fileName := fmt.Sprintf("%s_%s_%s.sql.gz", safeName(p.Name), safeName(p.TargetDBName), time.Now().Format("02_01_2006_15_04_05"))
-	fullPath := filepath.Join(p.Destination, fileName)
-	out, err := os.Create(fullPath)
-	if err != nil {
-		return "", 0, err
-	}
-	defer out.Close()
-
-	written, err := io.Copy(out, &ssh.ProgressReader{
-		Reader: stdout,
-		Callback: func(current int64, total int64) {
-			if progress != nil {
-				progress(fmt.Sprintf("Downloading %.2f MB", float64(current)/1024/1024), current, total)
-			}
-		},
-	})
-	if ctx.Err() != nil {
-		_ = os.Remove(fullPath)
-		return "", 0, ctx.Err()
-	}
-	if err != nil {
-		_ = os.Remove(fullPath)
-		return "", 0, err
-	}
-	if err := session.Wait(); err != nil {
-		_ = os.Remove(fullPath)
-		if ctx.Err() != nil {
-			return "", 0, ctx.Err()
-		}
-		debug.Errorf("backup SSH session failed for %s: %v stderr=%s", p.Name, err, stderrBuf.String())
-		return "", 0, fmt.Errorf("%w: %s", err, stderrBuf.String())
-	}
-	return fullPath, written, nil
 }
 
 func (a *App) restoreWordPress(ctx context.Context, path string, p models.Profile, progress ProgressFunc) error {
@@ -429,136 +442,46 @@ func (a *App) restoreWordPress(ctx context.Context, path string, p models.Profil
 	if err != nil && ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if err != nil {
-		debug.Errorf("wordpress restore failed for %s: %v", p.Name, err)
-	}
 	return err
 }
 
-func (a *App) restoreSSH(ctx context.Context, path string, p models.Profile, progress ProgressFunc) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	in, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	info, _ := in.Stat()
-	total := int64(0)
-	if info != nil {
-		total = info.Size()
-	}
-
-	client, err := ssh.NewClient(p)
-	if err != nil {
-		debug.Errorf("restore SSH connect failed for %s: %v", p.Name, err)
-		return err
-	}
-	defer client.Close()
-
-	importCmd := db.BuildImportCommand(p)
-	if db.ImportUsesStreaming(p) {
-		if prep := db.BuildImportPrepareCommand(p); prep != "" {
-			if out, prepErr := client.RunCommand(prep); prepErr != nil {
-				debug.Errorf("restore SSH prepare failed for %s: %v out=%s", p.Name, prepErr, out)
-				return fmt.Errorf("%w: %s", prepErr, strings.TrimSpace(out))
-			}
-		}
-		compression, detectErr := detectImportCompression(in)
-		if detectErr != nil {
-			return detectErr
-		}
-		importCmd = db.BuildImportStreamCommand(p, compression)
-	}
-	stdin, stderr, session, err := client.RunCommandPipeInput(importCmd)
-	if err != nil {
-		return err
-	}
-	defer session.Close()
-	go func() {
-		<-ctx.Done()
-		_ = session.Close()
-		_ = client.Close()
-	}()
-
-	var stderrBuf strings.Builder
-	go func() {
-		_, _ = io.Copy(&stderrBuf, stderr)
-	}()
-
-	_, err = io.Copy(stdin, &ssh.ProgressReader{
-		Reader: in,
-		Total:  total,
-		Callback: func(current int64, total int64) {
-			if progress != nil {
-				progress(fmt.Sprintf("Uploading %.1f%%", percent(current, total)), current, total)
-			}
-		},
-	})
-	if ctx.Err() != nil {
-		_ = stdin.Close()
-		return ctx.Err()
-	}
-	if closeErr := stdin.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return restoreSSHError(err, &stderrBuf, "upload")
-	}
-	if err := session.Wait(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		debug.Errorf("restore SSH session failed for %s: %v stderr=%s", p.Name, err, stderrBuf.String())
-		return restoreSSHError(err, &stderrBuf, "restore")
-	}
-	return nil
+type opLogger struct {
+	app         *App
+	operationID string
+	profile     *models.Profile
 }
 
-func restoreSSHError(err error, stderr *strings.Builder, phase string) error {
-	msg := strings.TrimSpace(stderr.String())
-	if msg != "" {
-		return fmt.Errorf("%s failed: %w: %s", phase, err, msg)
-	}
-	if errors.Is(err, io.EOF) {
-		return fmt.Errorf("%s failed: connection closed unexpectedly (EOF); try again or check remote disk, memory, and SSH timeouts", phase)
-	}
-	return fmt.Errorf("%s failed: %w", phase, err)
+func (a *App) newOpLogger(operationID string, profile *models.Profile) *opLogger {
+	return &opLogger{app: a, operationID: operationID, profile: profile}
 }
 
-func detectImportCompression(file *os.File) (string, error) {
-	var magic [4]byte
-	n, err := io.ReadFull(file, magic[:])
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return "", fmt.Errorf("detect import compression: %w", err)
-	}
-	if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
-		return "", fmt.Errorf("rewind import file: %w", seekErr)
-	}
-	if n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b {
-		return "gzip", nil
-	}
-	if n >= 4 && magic == [4]byte{0x28, 0xb5, 0x2f, 0xfd} {
-		return "zstd", nil
-	}
-	return "", nil
+func (l *opLogger) Phase(action, phase, strategy string, attempt int, details, status, errStr string) {
+	l.app.logPhase(l.operationID, l.profile, action, phase, strategy, attempt, details, "Info", status, errStr)
 }
 
-func (a *App) log(operationID string, profile *models.Profile, action, details, filePath, fileSize, level, status, errStr string) {
+func (a *App) logPhase(operationID string, profile *models.Profile, action, phase, strategy string, attempt int, details, level, status, errStr string) {
+	a.logPhaseWithFile(operationID, profileValue(profile), action, phase, strategy, attempt, details, level, status, errStr, "", 0)
+}
+
+func (a *App) logPhaseWithFile(operationID string, profile models.Profile, action, phase, strategy string, attempt int, details, level, status, errStr, filePath string, fileSize int64) {
 	entry := models.LogEntry{
 		ID:          newID(),
 		OperationID: operationID,
 		Timestamp:   time.Now(),
 		Action:      action,
+		Phase:       phase,
+		Strategy:    strategy,
+		Attempt:     attempt,
 		Level:       level,
 		Details:     details,
 		FilePath:    filePath,
-		FileSize:    fileSize,
 		Status:      status,
 		Error:       errStr,
 	}
-	if profile != nil {
+	if fileSize > 0 {
+		entry.FileSize = formatSize(fileSize)
+	}
+	if profile.ID != "" {
 		entry.ProfileID = profile.ID
 		entry.ProfileName = profile.Name
 	}
@@ -568,11 +491,63 @@ func (a *App) log(operationID string, profile *models.Profile, action, details, 
 	a.mu.Unlock()
 	_ = a.store.SaveLogs(logs)
 
-	profileName := ""
-	if profile != nil {
-		profileName = profile.Name
+	profileName := profile.Name
+	debug.Log(level, action+"."+phase, status, details, profileName, operationID, errStr)
+}
+
+func profileValue(p *models.Profile) models.Profile {
+	if p == nil {
+		return models.Profile{}
 	}
-	debug.Log(level, action, status, details, profileName, operationID, errStr)
+	return *p
+}
+
+func (a *App) preflightWordPress(p models.Profile) error {
+	resp, err := wordpress.NewClient(p.WPUrl, p.WPKey).Ping()
+	if err != nil {
+		return err
+	}
+	if !resp.DBConnected {
+		return fmt.Errorf("wordpress database is not connected")
+	}
+	return nil
+}
+
+func (a *App) preflightWordPressRestore(p models.Profile) error {
+	resp, err := wordpress.NewClient(p.WPUrl, p.WPKey).Ping()
+	if err != nil {
+		return err
+	}
+	if !resp.DBConnected {
+		return fmt.Errorf("wordpress database is not connected")
+	}
+	if !resp.CanUseShell {
+		return fmt.Errorf("wordpress host cannot run shell commands required for import")
+	}
+	if !resp.UploadDirWritable {
+		return fmt.Errorf("wordpress upload directory is not writable")
+	}
+	return nil
+}
+
+func formatQueryResultSummary(result db.QueryResult) string {
+	if result.Message != "" && len(result.Rows) == 0 {
+		return result.Message
+	}
+	if len(result.Rows) == 0 {
+		return "Query executed successfully"
+	}
+	return fmt.Sprintf("%d row(s) returned", len(result.Rows))
+}
+
+func defaultBackupDir() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, "dback", "backups")
+	}
+	if dir, err := os.UserConfigDir(); err == nil && dir != "" {
+		return filepath.Join(dir, "dback", "backups")
+	}
+	return "./backups"
 }
 
 func newID() string {

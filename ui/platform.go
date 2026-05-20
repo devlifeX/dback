@@ -61,5 +61,8 @@ func fallbackDataDir() string {
 }
 
 func defaultBackupDir(platform Platform) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, "dback", "backups")
+	}
 	return filepath.Join(platform.AppDataDir(), "backups")
 }

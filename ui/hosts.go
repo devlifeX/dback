@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"dback/models"
 
@@ -139,17 +140,20 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 		cards, ok := u.profileCards[p.ID]
 		if !ok {
 			cards = profileCardWidgets{
-				backup: new(widget.Clickable),
-				edit:   new(widget.Clickable),
-				delete: new(widget.Clickable),
+				backup:    new(widget.Clickable),
+				edit:      new(widget.Clickable),
+				duplicate: new(widget.Clickable),
+				delete:    new(widget.Clickable),
 			}
 			u.profileCards[p.ID] = cards
 		}
 
-		settings := p.EffectiveExport()
-		subtitle := fmt.Sprintf("%s@%s:%s - %s", settings.SSHUser, settings.Host, settings.Port, settings.TargetDBName)
-		if settings.ConnectionType == models.ConnectionTypeWordPress {
-			subtitle = settings.WPUrl + " - WordPress"
+		subtitle := fmt.Sprintf("%s@%s:%s - %s", p.SSHUser, p.Host, p.Port, p.TargetDBName)
+		if p.ConnectionType == models.ConnectionTypeWordPress {
+			subtitle = p.WPUrl + " - WordPress"
+		}
+		if p.IsDocker {
+			subtitle += " (Docker)"
 		}
 
 		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -183,6 +187,12 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 							}),
 							layout.Rigid(hgap(theme)),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return secondaryButton(gtx, th, theme, cards.duplicate, "Duplicate", func() {
+									u.duplicateProfile(p)
+								})
+							}),
+							layout.Rigid(hgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return dangerButton(gtx, th, theme, cards.delete, "Delete", func() {
 									profile := p
 									u.showConfirm("Delete host", "Delete "+profile.Name+"?", func() {
@@ -203,6 +213,43 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 		rows = append(rows, layout.Rigid(vgap(theme)))
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+}
+
+func (u *UI) duplicateProfile(profile models.Profile) {
+	clone := profile
+	clone.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+	clone.Name = nextDuplicateName(profile.Name, u.core.Profiles())
+	clone.ExportSettings = nil
+	clone.ImportSettings = nil
+
+	if err := u.core.SaveProfile(clone); err != nil {
+		u.showError(err)
+		return
+	}
+	u.profileCards[clone.ID] = profileCardWidgets{
+		backup:    new(widget.Clickable),
+		edit:      new(widget.Clickable),
+		duplicate: new(widget.Clickable),
+		delete:    new(widget.Clickable),
+	}
+	u.openHosts()
+}
+
+func nextDuplicateName(name string, profiles []models.Profile) string {
+	base := strings.TrimSpace(name)
+	if base == "" {
+		base = "Host"
+	}
+	exists := map[string]bool{}
+	for _, p := range profiles {
+		exists[p.Name] = true
+	}
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s %d", base, i)
+		if !exists[candidate] {
+			return candidate
+		}
+	}
 }
 
 func (u *UI) runBackup(p models.Profile) {
@@ -229,7 +276,7 @@ func (u *UI) runBackup(p models.Profile) {
 				u.finishJob(job.ID, "Backup canceled", nil)
 				return
 			}
-			u.finishJob(job.ID, "Backup canceled or failed", err)
+			u.finishJob(job.ID, "Backup failed", err)
 			return
 		}
 		u.finishJob(job.ID, "Backup complete: "+filepath.Base(record.FilePath), nil)
@@ -241,16 +288,8 @@ func (u *UI) openProfileEditor(p models.Profile) {
 	setEditorText(&u.profileName, p.Name)
 	setEditorText(&u.profileGroup, p.Group)
 	defaultDest := defaultBackupDir(u.platform)
-	u.exportForm = newSettingsForm(p.EffectiveExport(), defaultDest)
-	u.importForm = newSettingsForm(p.EffectiveImport(), defaultDest)
-	importQuery := models.TransferSettings{}
-	if p.ImportSettings != nil {
-		importQuery.PreImportQuery = p.ImportSettings.PreImportQuery
-		importQuery.RunQueryBeforeImport = p.ImportSettings.RunQueryBeforeImport
-		importQuery.PostImportQuery = p.ImportSettings.PostImportQuery
-		importQuery.RunQueryAfterImport = p.ImportSettings.RunQueryAfterImport
-	}
-	u.queryForm = newQueryForm(importQuery)
+	u.hostForm = newSettingsForm(p, defaultDest)
+	u.queryForm = newQueryForm(p)
 	u.profileTab = 0
 	u.view = ViewProfileEditor
 	u.invalidate()

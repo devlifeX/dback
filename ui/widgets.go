@@ -198,6 +198,13 @@ func editorField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *wid
 	})
 }
 
+func passwordField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {
+	e.SingleLine = true
+	e.Submit = true
+	e.Mask = '*'
+	return editorField(gtx, th, theme, e, hint)
+}
+
 func editorMultiline(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {
 	e.SingleLine = false
 	e.Submit = false
@@ -210,10 +217,18 @@ func checkboxField(gtx layout.Context, th *material.Theme, theme *AppTheme, c *w
 	return ch.Layout(gtx)
 }
 
-func enumField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values []string) layout.Dimensions {
+func labeledEnumField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values, labels []string) layout.Dimensions {
 	e.Update(gtx)
 	if e.Value == "" && len(values) > 0 {
 		e.Value = values[0]
+	}
+	labelByValue := map[string]string{}
+	for i, v := range values {
+		text := v
+		if i < len(labels) {
+			text = labels[i]
+		}
+		labelByValue[v] = text
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -224,17 +239,24 @@ func enumField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widge
 				var children []layout.FlexChild
 				for _, v := range values {
 					v := v
+					display := labelByValue[v]
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						rb := material.RadioButton(th, e, v, v)
+						rb := material.RadioButton(th, e, v, display)
 						rb.Color = theme.Text
 						return rb.Layout(gtx)
 					}))
 					children = append(children, layout.Rigid(hgap(theme)))
 				}
-				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart}.Layout(gtx, children...)
+				return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceStart}.Layout(gtx, children...)
 			})
 		}),
 	)
+}
+
+func enumField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values []string) layout.Dimensions {
+	labels := make([]string, len(values))
+	copy(labels, values)
+	return labeledEnumField(gtx, th, theme, e, label, values, labels)
 }
 
 func spacer(theme *AppTheme, height unit.Dp) layout.Widget {

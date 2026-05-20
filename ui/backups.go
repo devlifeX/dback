@@ -207,7 +207,7 @@ func (u *UI) openBackupDetail(record models.ExportRecord) {
 	u.view = ViewBackupDetail
 	profiles := u.core.Profiles()
 	if len(profiles) > 0 {
-		u.destSelect.Value = profiles[0].Name
+		u.destSelect.Value = profiles[0].ID
 	}
 	u.invalidate()
 }
@@ -221,9 +221,15 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 	}
 
 	profiles := u.core.Profiles()
-	names := make([]string, 0, len(profiles))
+	values := make([]string, 0, len(profiles))
+	labels := make([]string, 0, len(profiles))
 	for _, p := range profiles {
-		names = append(names, p.Name)
+		values = append(values, p.ID)
+		label := p.Name
+		if p.Group != "" {
+			label += " (" + p.Group + ")"
+		}
+		labels = append(labels, label)
 	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -262,7 +268,7 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return enumField(gtx, th, theme, &u.destSelect, "Destination Profile", names)
+			return labeledEnumField(gtx, th, theme, &u.destSelect, "Destination Host", values, labels)
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -287,7 +293,7 @@ func (u *UI) runRestore(record models.ExportRecord) {
 	profiles := u.core.Profiles()
 	var dest models.Profile
 	for _, p := range profiles {
-		if p.Name == u.destSelect.Value {
+		if p.ID == u.destSelect.Value {
 			dest = p
 			break
 		}

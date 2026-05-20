@@ -14,10 +14,9 @@ import (
 var (
 	connTypeValues = []string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeJumpHost), string(models.ConnectionTypeWordPress)}
 	authTypeValues = []string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}
-	dbTypeValues   = []string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB), string(models.DBTypePostgreSQL), string(models.DBTypeCouchDB)}
+	dbTypeValues   = []string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB)}
 )
 
-// SettingsForm holds editable transfer settings widgets.
 type SettingsForm struct {
 	ConnectionType widget.Enum
 	Host           widget.Editor
@@ -47,44 +46,42 @@ type SettingsForm struct {
 	Destination    widget.Editor
 
 	defaultDestination string
-	onChanged          func()
 	scrollList         widget.List
 
-	selectKeyBtn     widget.Clickable
-	selectJumpKeyBtn widget.Clickable
-	selectFolderBtn  widget.Clickable
+	selectKeyBtn      widget.Clickable
+	selectJumpKeyBtn  widget.Clickable
+	selectFolderBtn   widget.Clickable
 	generatePluginBtn widget.Clickable
 }
 
 func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
-	s := p
 	f := &SettingsForm{defaultDestination: defaultDest}
-	f.ConnectionType.Value = defaultString(string(s.ConnectionType), string(models.ConnectionTypeSSH))
-	setEditorText(&f.Host, s.Host)
-	setEditorText(&f.Port, defaultString(s.Port, "22"))
-	setEditorText(&f.SSHUser, s.SSHUser)
-	setEditorText(&f.SSHPassword, s.SSHPassword)
-	f.AuthType.Value = defaultString(string(s.AuthType), string(models.AuthTypePassword))
-	setEditorText(&f.KeyPath, s.AuthKeyPath)
-	f.AuthKeyPEM = s.AuthKeyPEM
-	setEditorText(&f.JumpHost, s.JumpHost)
-	setEditorText(&f.JumpPort, defaultString(s.JumpPort, "22"))
-	setEditorText(&f.JumpUser, s.JumpUser)
-	setEditorText(&f.JumpPassword, s.JumpPassword)
-	f.JumpAuthType.Value = defaultString(string(s.JumpAuthType), string(models.AuthTypePassword))
-	setEditorText(&f.JumpKeyPath, s.JumpAuthKeyPath)
-	f.JumpAuthKeyPEM = s.JumpAuthKeyPEM
-	setEditorText(&f.WPURL, s.WPUrl)
-	setEditorText(&f.WPKey, s.WPKey)
-	setEditorText(&f.DBHost, defaultString(s.DBHost, "127.0.0.1"))
-	setEditorText(&f.DBPort, defaultString(s.DBPort, "3306"))
-	setEditorText(&f.DBUser, s.DBUser)
-	setEditorText(&f.DBPassword, s.DBPassword)
-	f.DBType.Value = defaultString(string(s.DBType), string(models.DBTypeMySQL))
-	f.IsDocker.Value = s.IsDocker
-	setEditorText(&f.ContainerID, s.ContainerID)
-	setEditorText(&f.TargetDB, s.TargetDBName)
-	dest := s.Destination
+	f.ConnectionType.Value = defaultString(string(p.ConnectionType), string(models.ConnectionTypeSSH))
+	setEditorText(&f.Host, p.Host)
+	setEditorText(&f.Port, defaultString(p.Port, "22"))
+	setEditorText(&f.SSHUser, p.SSHUser)
+	setEditorText(&f.SSHPassword, p.SSHPassword)
+	f.AuthType.Value = defaultString(string(p.AuthType), string(models.AuthTypePassword))
+	setEditorText(&f.KeyPath, p.AuthKeyPath)
+	f.AuthKeyPEM = p.AuthKeyPEM
+	setEditorText(&f.JumpHost, p.JumpHost)
+	setEditorText(&f.JumpPort, defaultString(p.JumpPort, "22"))
+	setEditorText(&f.JumpUser, p.JumpUser)
+	setEditorText(&f.JumpPassword, p.JumpPassword)
+	f.JumpAuthType.Value = defaultString(string(p.JumpAuthType), string(models.AuthTypePassword))
+	setEditorText(&f.JumpKeyPath, p.JumpAuthKeyPath)
+	f.JumpAuthKeyPEM = p.JumpAuthKeyPEM
+	setEditorText(&f.WPURL, p.WPUrl)
+	setEditorText(&f.WPKey, p.WPKey)
+	setEditorText(&f.DBHost, defaultString(p.DBHost, "127.0.0.1"))
+	setEditorText(&f.DBPort, defaultString(p.DBPort, "3306"))
+	setEditorText(&f.DBUser, p.DBUser)
+	setEditorText(&f.DBPassword, p.DBPassword)
+	f.DBType.Value = defaultString(string(p.DBType), string(models.DBTypeMySQL))
+	f.IsDocker.Value = p.IsDocker
+	setEditorText(&f.ContainerID, p.ContainerID)
+	setEditorText(&f.TargetDB, p.TargetDBName)
+	dest := p.Destination
 	if strings.TrimSpace(dest) == "" && defaultDest != "" {
 		dest = defaultDest
 	}
@@ -108,8 +105,8 @@ func (f *SettingsForm) supportsSQLQuery() bool {
 	return db == string(models.DBTypeMySQL) || db == string(models.DBTypeMariaDB)
 }
 
-func (f *SettingsForm) settings() models.TransferSettings {
-	return models.TransferSettings{
+func (f *SettingsForm) profile() models.Profile {
+	return models.Profile{
 		ConnectionType:  models.ConnectionType(f.ConnectionType.Value),
 		Host:            strings.TrimSpace(editorText(&f.Host)),
 		Port:            strings.TrimSpace(editorText(&f.Port)),
@@ -139,40 +136,12 @@ func (f *SettingsForm) settings() models.TransferSettings {
 	}
 }
 
-func (f *SettingsForm) apply(settings models.TransferSettings) {
-	f.ConnectionType.Value = defaultString(string(settings.ConnectionType), string(models.ConnectionTypeSSH))
-	setEditorText(&f.Host, settings.Host)
-	setEditorText(&f.Port, defaultString(settings.Port, "22"))
-	setEditorText(&f.SSHUser, settings.SSHUser)
-	setEditorText(&f.SSHPassword, settings.SSHPassword)
-	f.AuthType.Value = defaultString(string(settings.AuthType), string(models.AuthTypePassword))
-	setEditorText(&f.KeyPath, settings.AuthKeyPath)
-	f.AuthKeyPEM = settings.AuthKeyPEM
-	setEditorText(&f.JumpHost, settings.JumpHost)
-	setEditorText(&f.JumpPort, defaultString(settings.JumpPort, "22"))
-	setEditorText(&f.JumpUser, settings.JumpUser)
-	setEditorText(&f.JumpPassword, settings.JumpPassword)
-	f.JumpAuthType.Value = defaultString(string(settings.JumpAuthType), string(models.AuthTypePassword))
-	setEditorText(&f.JumpKeyPath, settings.JumpAuthKeyPath)
-	f.JumpAuthKeyPEM = settings.JumpAuthKeyPEM
-	setEditorText(&f.WPURL, settings.WPUrl)
-	setEditorText(&f.WPKey, settings.WPKey)
-	setEditorText(&f.DBHost, defaultString(settings.DBHost, "127.0.0.1"))
-	setEditorText(&f.DBPort, defaultString(settings.DBPort, "3306"))
-	setEditorText(&f.DBUser, settings.DBUser)
-	setEditorText(&f.DBPassword, settings.DBPassword)
-	f.DBType.Value = defaultString(string(settings.DBType), string(models.DBTypeMySQL))
-	f.IsDocker.Value = settings.IsDocker
-	setEditorText(&f.ContainerID, settings.ContainerID)
-	setEditorText(&f.TargetDB, settings.TargetDBName)
-	setEditorText(&f.Destination, settings.Destination)
-}
-
 func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *AppTheme, u *UI) layout.Dimensions {
 	isWP := f.ConnectionType.Value == string(models.ConnectionTypeWordPress)
 	isJump := f.ConnectionType.Value == string(models.ConnectionTypeJumpHost)
 	useKey := f.AuthType.Value == string(models.AuthTypeKeyFile)
 	useJumpKey := f.JumpAuthType.Value == string(models.AuthTypeKeyFile)
+	isDocker := f.IsDocker.Value
 
 	return scrollArea(gtx, th, &f.scrollList, func(gtx layout.Context) layout.Dimensions {
 		var sections []layout.FlexChild
@@ -370,8 +339,11 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return labeledField(gtx, th, theme, "Container", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.ContainerID, "")
+							if !isDocker {
+								return layout.Dimensions{}
+							}
+							return labeledField(gtx, th, theme, "Container ID", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.ContainerID, "mysql_container")
 							})
 						}),
 						layout.Rigid(vgap(theme)),
@@ -380,12 +352,18 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if isDocker {
+								return layout.Dimensions{}
+							}
 							return labeledField(gtx, th, theme, "DB Host", func(gtx layout.Context) layout.Dimensions {
 								return editorField(gtx, th, theme, &f.DBHost, "127.0.0.1")
 							})
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if isDocker {
+								return layout.Dimensions{}
+							}
 							return labeledField(gtx, th, theme, "DB Port", func(gtx layout.Context) layout.Dimensions {
 								return editorField(gtx, th, theme, &f.DBPort, "3306")
 							})
@@ -418,7 +396,7 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Subtitle1(th, "Files")
+						lbl := material.Subtitle1(th, "Backup Files")
 						lbl.Color = theme.Text
 						return lbl.Layout(gtx)
 					}),

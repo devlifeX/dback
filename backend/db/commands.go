@@ -10,7 +10,6 @@ import (
 )
 
 func shellEscape(s string) string {
-	// Replace ' with '\''
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
@@ -22,13 +21,37 @@ func mysqlOrMariaDB(p models.Profile) bool {
 	return p.DBType == models.DBTypeMySQL || p.DBType == models.DBTypeMariaDB
 }
 
-// ImportUsesStreaming returns true when restore should run prepare + stream (no /tmp buffer).
 func ImportUsesStreaming(p models.Profile) bool {
 	return mysqlOrMariaDB(p)
 }
 
-// mysqlClientExec builds: if mariadb; then mariadb <args>; else mysql <args>; fi
-// extraArgs is appended inside each branch (e.g. -e 'SQL' or empty for stdin import).
+func MaskCommand(cmd string) string {
+	out := maskMySQLPasswordArgs(cmd)
+	out = strings.ReplaceAll(out, "PGPASSWORD=", "PGPASSWORD=***")
+	return out
+}
+
+func maskMySQLPasswordArgs(cmd string) string {
+	var b strings.Builder
+	searchFrom := 0
+	for {
+		rel := strings.Index(cmd[searchFrom:], "-p")
+		if rel < 0 {
+			b.WriteString(cmd[searchFrom:])
+			break
+		}
+		idx := searchFrom + rel
+		b.WriteString(cmd[searchFrom:idx])
+		end := idx + 2
+		for end < len(cmd) && !strings.ContainsRune(" \t\r\n|;)", rune(cmd[end])) {
+			end++
+		}
+		b.WriteString("-p'***'")
+		searchFrom = end
+	}
+	return b.String()
+}
+
 func mysqlClientExec(p models.Profile, database, extraArgs string) string {
 	authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, shellEscape(p.DBPassword))
 	hostArgs := ""
@@ -46,6 +69,19 @@ func mysqlClientExec(p models.Profile, database, extraArgs string) string {
 		"if command -v mariadb >/dev/null 2>&1; then mariadb %s%s%s%s; else mysql %s%s%s%s; fi",
 		hostArgs, authArgs, dbArg, extraArgs,
 		hostArgs, authArgs, dbArg, extraArgs,
+	)
+}
+
+func mysqlDumpExec(p models.Profile) string {
+	authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, shellEscape(p.DBPassword))
+	hostArgs := ""
+	if !p.IsDocker {
+		hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+	}
+	return fmt.Sprintf(
+		"if command -v mariadb-dump >/dev/null 2>&1; then mariadb-dump %s %s %s; elif command -v mysqldump >/dev/null 2>&1; then mysqldump %s %s %s; else echo 'no dump tool' >&2; exit 127; fi",
+		hostArgs, authArgs, shellEscape(p.TargetDBName),
+		hostArgs, authArgs, shellEscape(p.TargetDBName),
 	)
 }
 
@@ -68,128 +104,66 @@ func shellWithPipefail(script string) string {
 	)
 }
 
-// BuildExportCommand constructs the shell command to dump the database.
+func compressCmd() string {
+	return "if command -v zstd >/dev/null 2>&1; then zstd; else gzip; fi"
+}
+
+// BuildNativeExportCommand streams dump from native host tools.
+func BuildNativeExportCommand(p models.Profile) string {
+	return BuildExportCommand(cloneDockerMode(p, false))
+}
+
+// BuildDockerExportCommand streams dump from a docker container.
+func BuildDockerExportCommand(p models.Profile) string {
+	return BuildExportCommand(cloneDockerMode(p, true))
+}
+
+// BuildNativeExportToFileCommand writes compressed dump on native host.
+func BuildNativeExportToFileCommand(p models.Profile, remotePath string) string {
+	return BuildExportToFileCommand(cloneDockerMode(p, false), remotePath)
+}
+
+// BuildDockerExportToFileCommand writes compressed dump from container to host file.
+func BuildDockerExportToFileCommand(p models.Profile, remotePath string) string {
+	return BuildExportToFileCommand(cloneDockerMode(p, true), remotePath)
+}
+
+func cloneDockerMode(p models.Profile, docker bool) models.Profile {
+	p.IsDocker = docker
+	return p
+}
+
+// BuildExportCommand constructs the shell command to dump the database (streaming).
 func BuildExportCommand(p models.Profile) string {
-	var cmd string
-
-	if p.DBType == models.DBTypeCouchDB {
-		// CouchDB Logic - backup the data directory
-		if p.IsDocker {
-			// For Docker, backup /opt/couchdb/data from inside the container
-			cmd = fmt.Sprintf("docker exec %s tar cf - /opt/couchdb/data", p.ContainerID)
-		} else {
-			// For native install, find and backup the data directory
-			cmd = `sh -c 'DATA_DIR=$(grep -r "database_dir" /opt/couchdb/etc/local.ini 2>/dev/null | awk "{print \$3}"); if [ -z "$DATA_DIR" ]; then DATA_DIR="/var/lib/couchdb"; fi; tar cf - "$DATA_DIR"'`
-		}
-	} else if p.DBType == models.DBTypePostgreSQL {
-		// PostgreSQL Logic
-		// Escape inputs
-		pwd := shellEscape(p.DBPassword)
-		user := shellEscape(p.DBUser)
-		dbName := shellEscape(p.TargetDBName)
-
-		// authEnv includes PGPASSWORD='...' which is quoted by shellEscape
-		// Wait, shellEscape returns '...'.
-		// So PGPASSWORD='...' is PGPASSWORD='pass'.
-		// If pass is pass'word, it becomes PGPASSWORD='pass'\''word'. Correct.
-		authEnv := fmt.Sprintf("PGPASSWORD=%s", pwd)
-		args := fmt.Sprintf("-U %s %s", user, dbName)
-
-		if p.IsDocker {
-			cmd = fmt.Sprintf("docker exec -e %s %s pg_dump %s",
-				authEnv, p.ContainerID, args)
-		} else {
-			hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
-			cmd = fmt.Sprintf("%s pg_dump %s %s", authEnv, hostArgs, args)
-		}
-
-	} else {
-		// MySQL/MariaDB Logic
-		// mysql -p'pass'
-		// If pass is 'pass', -p'pass'.
-		// If pass is pass'word, -p'pass'\''word'.
-		// But we need to be careful about -pFLAG format.
-		// -p%s.
-		pwd := shellEscape(p.DBPassword)
-		// shellEscape adds outer quotes.
-		// So -p'pass' becomes -p'pass'.
-		// Wait, shellEscape returns 'pass'.
-		// fmt.Sprintf("-p%s", pwd) -> -p'pass'. Correct.
-
-		authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, pwd)
-		hostArgs := ""
-		if !p.IsDocker {
-			hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
-		}
-
-		if p.IsDocker {
-			cmd = fmt.Sprintf("docker exec -i %s mysqldump %s %s",
-				p.ContainerID, authArgs, p.TargetDBName)
-		} else {
-			cmd = fmt.Sprintf("mysqldump %s %s %s",
-				hostArgs, authArgs, p.TargetDBName)
-		}
+	dump := mysqlDumpExec(p)
+	inner := fmt.Sprintf("%s | { %s; }", dump, compressCmd())
+	if p.IsDocker {
+		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(shellWithPipefail(inner)))
 	}
-
-	// Compression Logic
-	compressCmd := "if command -v zstd >/dev/null 2>&1; then zstd; else gzip; fi"
-
-	// Use set -o pipefail to catch errors.
-	// We wrap in bash to ensure pipefail support, but NOT using -c '...' because of quoting hell.
-	// We try to run: bash -c "set -o pipefail; CMD | COMPRESS"
-	// But CMD has single quotes.
-	// Double quotes "..." allow $ expansion.
-	// We must escape $ and " and \ inside CMD.
-	// This is hard.
-	// Alternative: Use { set -o pipefail; cmd; } | compress?
-	// No, pipefail must be set in the shell executing the pipeline.
-	// If we just send the string `set -o pipefail; cmd | compress` to SSH, it runs in user shell.
-	// If user shell is bash, it works.
-	// If user shell is sh, it might fail.
-	// But wrapping in `bash -c` caused the error.
-	// So we simply send it raw and hope for bash/zsh.
-	return fmt.Sprintf("set -o pipefail; %s | { %s; }", cmd, compressCmd)
+	return shellWithPipefail(inner)
 }
 
-// BuildImportCommand constructs the shell command to restore the database.
+// BuildExportToFileCommand writes compressed dump to remotePath on host.
+func BuildExportToFileCommand(p models.Profile, remotePath string) string {
+	dump := mysqlDumpExec(p)
+	inner := fmt.Sprintf("%s | { %s; } > %s", dump, compressCmd(), shellEscape(remotePath))
+	if p.IsDocker {
+		// Dump inside container, write to host path via docker exec stdout redirected on host
+		containerDump := fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(shellWithPipefail(fmt.Sprintf("%s | { %s; }", dump, compressCmd()))))
+		return shellWithPipefail(fmt.Sprintf("%s > %s", containerDump, shellEscape(remotePath)))
+	}
+	return shellWithPipefail(inner)
+}
+
+// BuildImportCommand constructs restore command (streaming default).
 func BuildImportCommand(p models.Profile) string {
-	var cmd string
-
-	if p.DBType == models.DBTypeCouchDB {
-		// CouchDB Logic
-		if p.IsDocker {
-			// Docker: Untar then restart
-			cmd = fmt.Sprintf(`sh -c 'docker exec -i %s tar xf - -C /; docker restart %s >&2'`, p.ContainerID, p.ContainerID)
-		} else {
-			// Native: Stop, Untar, Start
-			cmd = `sh -c 'sudo systemctl stop couchdb >&2; tar xf - -C /; sudo systemctl start couchdb >&2'`
-		}
-	} else if p.DBType == models.DBTypePostgreSQL {
-		// PostgreSQL Logic - drop and recreate database before import
-		authEnv := fmt.Sprintf("PGPASSWORD='%s'", p.DBPassword)
-		
-		if p.IsDocker {
-			// First drop/create, then pipe stdin to psql for import
-			cmd = fmt.Sprintf("sh -c '%s docker exec %s psql -U %s postgres -c \"DROP DATABASE IF EXISTS %s; CREATE DATABASE %s;\" && docker exec -i -e %s %s psql -U %s %s'",
-				authEnv, p.ContainerID, p.DBUser, p.TargetDBName, p.TargetDBName,
-				authEnv, p.ContainerID, p.DBUser, p.TargetDBName)
-		} else {
-			hostArgs := fmt.Sprintf("-h %s -p %s", p.DBHost, p.DBPort)
-			cmd = fmt.Sprintf("sh -c '%s psql %s -U %s postgres -c \"DROP DATABASE IF EXISTS %s; CREATE DATABASE %s;\" && %s psql %s -U %s %s'",
-				authEnv, hostArgs, p.DBUser, p.TargetDBName, p.TargetDBName,
-				authEnv, hostArgs, p.DBUser, p.TargetDBName)
-		}
-
-	} else if mysqlOrMariaDB(p) {
+	if mysqlOrMariaDB(p) {
 		return BuildImportStreamCommand(p, "")
-	} else {
-		return ""
 	}
-
-	return cmd
+	return ""
 }
 
-// BuildImportPrepareCommand runs DROP/CREATE DATABASE before streaming a MySQL/MariaDB dump.
+// BuildImportPrepareCommand runs DROP/CREATE DATABASE before streaming import.
 func BuildImportPrepareCommand(p models.Profile) string {
 	if !mysqlOrMariaDB(p) {
 		return ""
@@ -206,17 +180,14 @@ func BuildImportPrepareCommand(p models.Profile) string {
 	return fmt.Sprintf("sh -c %s", shellEscape(inner))
 }
 
-// BuildImportStreamCommand streams a dump from stdin into mysql/mariadb (no /tmp buffer).
+// BuildImportStreamCommand streams dump from stdin into mysql/mariadb.
 func BuildImportStreamCommand(p models.Profile, compression string) string {
 	if !mysqlOrMariaDB(p) {
 		return ""
 	}
 	client := mysqlClientExec(p, p.TargetDBName, "")
 	sessionSetup := `printf "SET SESSION sql_mode=''; SET FOREIGN_KEY_CHECKS=0;\n"`
-	pipe := fmt.Sprintf(
-		"{ %s; %s; } | %s",
-		sessionSetup, importDecompressStream(compression), client,
-	)
+	pipe := fmt.Sprintf("{ %s; %s; } | %s", sessionSetup, importDecompressStream(compression), client)
 	cmd := shellWithPipefail(pipe)
 	if p.IsDocker {
 		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(cmd))
@@ -224,14 +195,35 @@ func BuildImportStreamCommand(p models.Profile, compression string) string {
 	return cmd
 }
 
-// BuildQueryCommand constructs a shell command to run SQL via mysql/mariadb CLI.
-// When connectDB is false, SQL runs without selecting a database (for DROP/CREATE DATABASE).
+// BuildImportFromFileCommand imports from remote compressed file on host.
+func BuildImportFromFileCommand(p models.Profile, remotePath, compression string) string {
+	if !mysqlOrMariaDB(p) {
+		return ""
+	}
+	client := mysqlClientExec(p, p.TargetDBName, "")
+	sessionSetup := `printf "SET SESSION sql_mode=''; SET FOREIGN_KEY_CHECKS=0;\n"`
+	pipe := fmt.Sprintf(
+		"{ %s; %s %s; } | %s",
+		sessionSetup, importDecompressStream(compression), shellEscape(remotePath), client,
+	)
+	if p.IsDocker {
+		hostPipe := fmt.Sprintf("%s | docker exec -i %s sh -c %s",
+			importDecompressStream(compression)+" "+shellEscape(remotePath),
+			p.ContainerID,
+			shellEscape(shellWithPipefail(fmt.Sprintf("{ %s; cat; } | %s", sessionSetup, mysqlClientExec(p, p.TargetDBName, "")))),
+		)
+		return shellWithPipefail(hostPipe)
+	}
+	return shellWithPipefail(pipe)
+}
+
+// BuildQueryCommand runs SQL via mysql/mariadb CLI.
 func BuildQueryCommand(p models.Profile, query string, connectDB bool) (string, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return "", errors.New("query is empty")
 	}
-	if p.DBType != models.DBTypeMySQL && p.DBType != models.DBTypeMariaDB {
+	if !mysqlOrMariaDB(p) {
 		return "", errors.New("query only supported for MySQL/MariaDB")
 	}
 
@@ -263,4 +255,112 @@ func BuildQueryCommand(p models.Profile, query string, connectDB bool) (string, 
 		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(pipe)), nil
 	}
 	return fmt.Sprintf("sh -c %s", shellEscape(pipe)), nil
+}
+
+// BuildPreflightScript returns a shell script that gathers server info and disk space.
+func BuildPreflightScript(p models.Profile, requiredBytes int64, candidatePaths []string) string {
+	paths := strings.Join(candidatePaths, " ")
+	requiredKB := requiredBytes / 1024
+	if requiredKB < 512*1024 {
+		requiredKB = 512 * 1024 // 512MB minimum safe threshold
+	}
+	dockerBlock := ""
+	preflightChecks := `if ! uname -s 2>/dev/null | grep -qi linux; then fail=1; msg="$msg not-linux;"; fi
+command -v sh >/dev/null 2>&1 || { fail=1; msg="$msg missing:sh;"; }
+command -v gzip >/dev/null 2>&1 || command -v zstd >/dev/null 2>&1 || { fail=1; msg="$msg missing:compression;"; }`
+	if p.IsDocker {
+		dockerBlock = fmt.Sprintf(`
+echo "===DOCKER==="
+command -v docker >/dev/null 2>&1 && docker --version 2>/dev/null || echo "docker missing"
+docker inspect -f '{{.State.Status}}' %s 2>/dev/null || echo "container not found"
+docker exec %s sh -c 'command -v mysql >/dev/null && mysql --version || command -v mariadb >/dev/null && mariadb --version || echo no mysql client' 2>/dev/null || true
+`, shellEscape(p.ContainerID), shellEscape(p.ContainerID))
+		preflightChecks += fmt.Sprintf(`
+command -v docker >/dev/null 2>&1 || { fail=1; msg="$msg missing:docker;"; }
+docker inspect %s >/dev/null 2>&1 || { fail=1; msg="$msg container-not-found;"; }
+[ "$(docker inspect -f '{{.State.Status}}' %s 2>/dev/null)" = "running" ] || { fail=1; msg="$msg container-not-running;"; }
+docker exec %s sh -c 'command -v mysqldump >/dev/null || command -v mariadb-dump >/dev/null' >/dev/null 2>&1 || { fail=1; msg="$msg missing:container-dump-tool;"; }
+docker exec %s sh -c 'command -v mysql >/dev/null || command -v mariadb >/dev/null' >/dev/null 2>&1 || { fail=1; msg="$msg missing:container-mysql-client;"; }`,
+			shellEscape(p.ContainerID),
+			shellEscape(p.ContainerID),
+			shellEscape(p.ContainerID),
+			shellEscape(p.ContainerID),
+		)
+	} else {
+		preflightChecks += `
+command -v mysqldump >/dev/null 2>&1 || command -v mariadb-dump >/dev/null 2>&1 || { fail=1; msg="$msg missing:dump-tool;"; }
+command -v mysql >/dev/null 2>&1 || command -v mariadb >/dev/null 2>&1 || { fail=1; msg="$msg missing:mysql-client;"; }`
+	}
+	dbCheck := "command -v mysql >/dev/null && mysql --version 2>/dev/null; command -v mariadb >/dev/null && mariadb --version 2>/dev/null; command -v mysqldump >/dev/null && mysqldump --version 2>/dev/null; command -v mariadb-dump >/dev/null && mariadb-dump --version 2>/dev/null"
+	if p.IsDocker {
+		dbCheck = fmt.Sprintf("docker exec %s sh -c 'command -v mysqldump >/dev/null && mysqldump --version; command -v mariadb-dump >/dev/null && mariadb-dump --version' 2>/dev/null || true", shellEscape(p.ContainerID))
+	}
+	return fmt.Sprintf(`set +e
+fail=0
+msg=""
+%s
+echo "===OS==="
+uname -a 2>/dev/null
+(lsb_release -a 2>/dev/null || cat /etc/os-release 2>/dev/null)
+echo "===DB==="
+%s
+echo "===TOOLS==="
+command -v zstd >/dev/null && zstd --version 2>/dev/null | head -1
+command -v gzip >/dev/null && gzip --version 2>/dev/null | head -1
+command -v sha256sum >/dev/null && echo sha256sum ok
+command -v dd >/dev/null && echo dd ok
+%s
+echo "===DISK==="
+for p in %s; do
+  eval target="$p"
+  df -Pk "$target" 2>/dev/null | tail -1 | awk -v requested="$p" '{print $1"|"$4"|"requested}'
+done
+echo "===WRITE==="
+for p in %s; do
+  eval target="$p"
+  mkdir -p "$target" 2>/dev/null && touch "$target/.dback-write-test" 2>/dev/null && rm -f "$target/.dback-write-test" 2>/dev/null && echo "ok|$p"
+done
+echo "===REQUIRED_KB==="
+echo %d
+echo "===RESULT==="
+echo "fail=$fail"
+echo "msg=$msg"
+`, preflightChecks, dbCheck, dockerBlock, paths, paths, requiredKB)
+}
+
+// BuildRemoteTmpDir returns operation-specific tmp dir on remote host.
+func BuildRemoteTmpDir(operationID string) string {
+	return fmt.Sprintf("/tmp/dback/%s", operationID)
+}
+
+// BuildCleanupCommand removes remote tmp directory.
+func BuildCleanupCommand(tmpDir string) string {
+	return fmt.Sprintf("rm -rf %s", shellEscape(tmpDir))
+}
+
+// BuildFileSizeCommand returns remote file size in bytes.
+func BuildFileSizeCommand(path string) string {
+	return fmt.Sprintf("stat -c %%s %s 2>/dev/null || wc -c < %s", shellEscape(path), shellEscape(path))
+}
+
+// BuildChecksumCommand returns sha256 checksum of remote file.
+func BuildChecksumCommand(path string) string {
+	return fmt.Sprintf("sha256sum %s 2>/dev/null | awk '{print $1}'", shellEscape(path))
+}
+
+// BuildUploadCommand writes stdin to remote path, optionally appending.
+func BuildUploadCommand(path string, appendMode bool) string {
+	if appendMode {
+		return fmt.Sprintf("dd of=%s oflag=append conv=notrunc 2>/dev/null || cat >> %s", shellEscape(path), shellEscape(path))
+	}
+	return fmt.Sprintf("cat > %s", shellEscape(path))
+}
+
+// BuildDownloadChunkCommand reads file from offset (best-effort resume).
+func BuildDownloadChunkCommand(path string, offset int64) string {
+	if offset <= 0 {
+		return fmt.Sprintf("cat %s", shellEscape(path))
+	}
+	return fmt.Sprintf("dd if=%s bs=1M skip=%d 2>/dev/null || tail -c +%d %s",
+		shellEscape(path), offset/1024/1024, offset+1, shellEscape(path))
 }

@@ -12,7 +12,7 @@ import (
 
 func (u *UI) layoutProfileEditor(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	theme := u.theme
-	showQuery := u.importForm.supportsSQLQuery()
+	showQuery := u.hostForm.supportsSQLQuery()
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -49,27 +49,20 @@ func (u *UI) layoutProfileEditor(gtx layout.Context, th *material.Theme) layout.
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !showQuery {
+				return u.hostForm.layout(gtx, th, theme, u)
+			}
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return tabButton(gtx, th, theme, &u.tabExport, "Export", u.profileTab == 0, func() {
+					return tabButton(gtx, th, theme, &u.tabConnection, "Connection", u.profileTab == 0, func() {
 						u.profileTab = 0
 						u.invalidate()
 					})
 				}),
 				layout.Rigid(hgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return tabButton(gtx, th, theme, &u.tabImport, "Import", u.profileTab == 1, func() {
+					return tabButton(gtx, th, theme, &u.tabQuery, "Queries", u.profileTab == 1, func() {
 						u.profileTab = 1
-						u.invalidate()
-					})
-				}),
-				layout.Rigid(hgap(theme)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if !showQuery {
-						return layout.Dimensions{}
-					}
-					return tabButton(gtx, th, theme, &u.tabQuery, "Query", u.profileTab == 2, func() {
-						u.profileTab = 2
 						u.invalidate()
 					})
 				}),
@@ -77,47 +70,23 @@ func (u *UI) layoutProfileEditor(gtx layout.Context, th *material.Theme) layout.
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			switch u.profileTab {
-			case 1:
-				return u.importForm.layout(gtx, th, theme, u)
-			case 2:
-				if showQuery {
-					return u.queryForm.layout(gtx, th, theme, u, u.profileFromEditors, strings.TrimSpace(u.exportForm.settings().TargetDBName))
-				}
-				fallthrough
-			default:
-				return u.exportForm.layout(gtx, th, theme, u)
+			if showQuery && u.profileTab == 1 {
+				return u.queryForm.layout(gtx, th, theme, u, u.profileFromEditors, u.core.Templates())
 			}
+			return u.hostForm.layout(gtx, th, theme, u)
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return secondaryButton(gtx, th, theme, &u.copyExpToImp, "Copy Export → Import", func() {
-						u.importForm.apply(u.exportForm.settings())
-					})
-				}),
-				layout.Rigid(hgap(theme)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return secondaryButton(gtx, th, theme, &u.copyImpToExp, "Copy Import → Export", func() {
-						u.exportForm.apply(u.importForm.settings())
-					})
-				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return secondaryButton(gtx, th, theme, &u.testExportBtn, "Test Export", func() {
-						u.testProfileConnection(false)
+					return secondaryButton(gtx, th, theme, &u.testExportBtn, "Test Connection", func() {
+						u.testProfileConnection()
 					})
 				}),
 				layout.Rigid(hgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return secondaryButton(gtx, th, theme, &u.testImportBtn, "Test Import", func() {
-						u.testProfileConnection(true)
-					})
-				}),
-				layout.Rigid(hgap(theme)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return primaryButton(gtx, th, theme, &u.saveProfileBtn, "Save Profile", func() {
+					return primaryButton(gtx, th, theme, &u.saveProfileBtn, "Save Host", func() {
 						u.saveProfile()
 					})
 				}),
@@ -130,17 +99,45 @@ func (u *UI) profileFromEditors() models.Profile {
 	p := u.editingProfile
 	p.Name = strings.TrimSpace(editorText(&u.profileName))
 	p.Group = strings.TrimSpace(editorText(&u.profileGroup))
-	exportSettings := u.exportForm.settings()
-	importSettings := mergeImportQuerySettings(u.importForm.settings(), u.queryForm.settings())
-	p.ExportSettings = ptrSettings(exportSettings)
-	p.ImportSettings = &importSettings
-	return withLegacy(p, importSettings)
+	host := u.hostForm.profile()
+	p.ConnectionType = host.ConnectionType
+	p.Host = host.Host
+	p.Port = host.Port
+	p.SSHUser = host.SSHUser
+	p.SSHPassword = host.SSHPassword
+	p.AuthType = host.AuthType
+	p.AuthKeyPath = host.AuthKeyPath
+	p.AuthKeyPEM = host.AuthKeyPEM
+	p.JumpHost = host.JumpHost
+	p.JumpPort = host.JumpPort
+	p.JumpUser = host.JumpUser
+	p.JumpPassword = host.JumpPassword
+	p.JumpAuthType = host.JumpAuthType
+	p.JumpAuthKeyPath = host.JumpAuthKeyPath
+	p.JumpAuthKeyPEM = host.JumpAuthKeyPEM
+	p.WPUrl = host.WPUrl
+	p.WPKey = host.WPKey
+	p.DBHost = host.DBHost
+	p.DBPort = host.DBPort
+	p.DBUser = host.DBUser
+	p.DBPassword = host.DBPassword
+	p.DBType = host.DBType
+	p.IsDocker = host.IsDocker
+	p.ContainerID = host.ContainerID
+	p.TargetDBName = host.TargetDBName
+	p.Destination = host.Destination
+	qs := u.queryForm.settings()
+	p.PreImportQuery = qs.PreImportQuery
+	p.RunQueryBeforeImport = qs.RunQueryBeforeImport
+	p.PostImportQuery = qs.PostImportQuery
+	p.RunQueryAfterImport = qs.RunQueryAfterImport
+	return p
 }
 
 func (u *UI) saveProfile() {
 	p := u.profileFromEditors()
 	if p.Name == "" {
-		u.showError(fmt.Errorf("profile name is required"))
+		u.showError(fmt.Errorf("host name is required"))
 		return
 	}
 	if err := u.core.SaveProfile(p); err != nil {
@@ -151,17 +148,14 @@ func (u *UI) saveProfile() {
 	u.invalidate()
 }
 
-func (u *UI) testProfileConnection(useImport bool) {
-	base := u.profileFromEditors()
-	if strings.TrimSpace(base.Name) == "" {
-		base.Name = "Unsaved Profile"
-	}
-	if strings.TrimSpace(base.Group) == "" {
-		base.Group = "Default"
+func (u *UI) testProfileConnection() {
+	p := u.profileFromEditors()
+	if strings.TrimSpace(p.Name) == "" {
+		p.Name = "Unsaved Host"
 	}
 	u.showLoading("Testing connection", "Connecting...")
 	go func() {
-		err := u.core.TestConnection(withLegacy(base, u.exportForm.settings()), useImport)
+		err := u.core.TestConnection(p)
 		u.invalidate()
 		u.closeDialog()
 		if err != nil {

@@ -13,7 +13,7 @@ func (u *UI) layoutAbout(gtx layout.Context, th *material.Theme) layout.Dimensio
 		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return u.layoutLogo(gtx, th, 96)
+					return u.layoutLogo(gtx, th, 64)
 				}),
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
