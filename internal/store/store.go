@@ -197,17 +197,23 @@ func stripSecrets(profiles []models.Profile) []models.Profile {
 		profiles[i].JumpPassword = ""
 		profiles[i].DBPassword = ""
 		profiles[i].WPKey = ""
+		profiles[i].AuthKeyPEM = ""
+		profiles[i].JumpAuthKeyPEM = ""
 		if profiles[i].ExportSettings != nil {
 			profiles[i].ExportSettings.SSHPassword = ""
 			profiles[i].ExportSettings.JumpPassword = ""
 			profiles[i].ExportSettings.DBPassword = ""
 			profiles[i].ExportSettings.WPKey = ""
+			profiles[i].ExportSettings.AuthKeyPEM = ""
+			profiles[i].ExportSettings.JumpAuthKeyPEM = ""
 		}
 		if profiles[i].ImportSettings != nil {
 			profiles[i].ImportSettings.SSHPassword = ""
 			profiles[i].ImportSettings.JumpPassword = ""
 			profiles[i].ImportSettings.DBPassword = ""
 			profiles[i].ImportSettings.WPKey = ""
+			profiles[i].ImportSettings.AuthKeyPEM = ""
+			profiles[i].ImportSettings.JumpAuthKeyPEM = ""
 		}
 	}
 	return profiles

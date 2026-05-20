@@ -45,6 +45,7 @@ type Profile struct {
 	SSHPassword string   `json:"ssh_password"`
 	AuthType    AuthType `json:"auth_type"`
 	AuthKeyPath string   `json:"auth_key_path"`
+	AuthKeyPEM  string   `json:"auth_key_pem,omitempty"`
 
 	// Jump Host Fields (optional SSH bastion)
 	JumpHost        string   `json:"jump_host,omitempty"`
@@ -53,6 +54,7 @@ type Profile struct {
 	JumpPassword    string   `json:"jump_password,omitempty"`
 	JumpAuthType    AuthType `json:"jump_auth_type,omitempty"`
 	JumpAuthKeyPath string   `json:"jump_auth_key_path,omitempty"`
+	JumpAuthKeyPEM  string   `json:"jump_auth_key_pem,omitempty"`
 
 	// WordPress Fields
 	WPUrl      string `json:"wp_url"`      // e.g. https://example.com
@@ -118,12 +120,14 @@ type TransferSettings struct {
 	SSHPassword     string         `json:"ssh_password,omitempty"`
 	AuthType        AuthType       `json:"auth_type"`
 	AuthKeyPath     string         `json:"auth_key_path,omitempty"`
+	AuthKeyPEM      string         `json:"auth_key_pem,omitempty"`
 	JumpHost        string         `json:"jump_host,omitempty"`
 	JumpPort        string         `json:"jump_port,omitempty"`
 	JumpUser        string         `json:"jump_user,omitempty"`
 	JumpPassword    string         `json:"jump_password,omitempty"`
 	JumpAuthType    AuthType       `json:"jump_auth_type,omitempty"`
 	JumpAuthKeyPath string         `json:"jump_auth_key_path,omitempty"`
+	JumpAuthKeyPEM  string         `json:"jump_auth_key_pem,omitempty"`
 	WPUrl           string         `json:"wp_url,omitempty"`
 	WPKey           string         `json:"wp_key,omitempty"`
 	DBHost          string         `json:"db_host"`
@@ -174,12 +178,14 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 	p.SSHPassword = s.SSHPassword
 	p.AuthType = s.AuthType
 	p.AuthKeyPath = s.AuthKeyPath
+	p.AuthKeyPEM = s.AuthKeyPEM
 	p.JumpHost = s.JumpHost
 	p.JumpPort = s.JumpPort
 	p.JumpUser = s.JumpUser
 	p.JumpPassword = s.JumpPassword
 	p.JumpAuthType = s.JumpAuthType
 	p.JumpAuthKeyPath = s.JumpAuthKeyPath
+	p.JumpAuthKeyPEM = s.JumpAuthKeyPEM
 	p.WPUrl = s.WPUrl
 	p.WPKey = s.WPKey
 	p.DBHost = s.DBHost
@@ -203,12 +209,14 @@ func SettingsFromProfile(p Profile) TransferSettings {
 		SSHPassword:     p.SSHPassword,
 		AuthType:        p.AuthType,
 		AuthKeyPath:     p.AuthKeyPath,
+		AuthKeyPEM:      p.AuthKeyPEM,
 		JumpHost:        p.JumpHost,
 		JumpPort:        p.JumpPort,
 		JumpUser:        p.JumpUser,
 		JumpPassword:    p.JumpPassword,
 		JumpAuthType:    p.JumpAuthType,
 		JumpAuthKeyPath: p.JumpAuthKeyPath,
+		JumpAuthKeyPEM:  p.JumpAuthKeyPEM,
 		WPUrl:           p.WPUrl,
 		WPKey:           p.WPKey,
 		DBHost:          p.DBHost,

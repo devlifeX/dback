@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -61,8 +62,12 @@ func NewUI(app fyne.App) *UI {
 }
 
 func (u *UI) Run() {
+	baseDir := u.appDataDir()
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		panic(err)
+	}
 	var err error
-	u.core, err = coreapp.New(".")
+	u.core, err = coreapp.New(baseDir)
 	if err != nil {
 		panic(err)
 	}
@@ -234,8 +239,9 @@ func (u *UI) showProfileEditorWith(p models.Profile) {
 	name.SetText(p.Name)
 	group := widget.NewEntry()
 	group.SetText(p.Group)
-	exportEditor := newSettingsEditor(p.EffectiveExport())
-	importEditor := newSettingsEditor(p.EffectiveImport())
+	defaultDest := u.defaultBackupDir()
+	exportEditor := newSettingsEditor(p.EffectiveExport(), defaultDest)
+	importEditor := newSettingsEditor(p.EffectiveImport(), defaultDest)
 
 	save := widget.NewButtonWithIcon("Save Profile", theme.DocumentSaveIcon(), func() {
 		p.Name = strings.TrimSpace(name.Text)
@@ -272,19 +278,52 @@ func (u *UI) showProfileEditorWith(p models.Profile) {
 		container.NewTabItem("Export", exportEditor.form(u.window)),
 		container.NewTabItem("Import", importEditor.form(u.window)),
 	)
-	u.setContent(container.NewBorder(
-		container.NewVBox(widget.NewLabelWithStyle("Host Profile", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewForm(
+
+	var header fyne.CanvasObject
+	if fyne.CurrentDevice().IsMobile() {
+		header = widget.NewForm(
 			widget.NewFormItem("Name", name),
 			widget.NewFormItem("Group", group),
-		)),
-		container.NewVBox(
+		)
+	} else {
+		header = container.NewVBox(
+			widget.NewLabelWithStyle("Host Profile", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewForm(
+				widget.NewFormItem("Name", name),
+				widget.NewFormItem("Group", group),
+			),
+		)
+	}
+
+	var footer fyne.CanvasObject
+	if fyne.CurrentDevice().IsMobile() {
+		moreBtn := widget.NewButtonWithIcon("More", theme.MenuIcon(), nil)
+		menu := fyne.NewMenu("",
+			fyne.NewMenuItem("Copy Export to Import", func() {
+				importEditor.apply(exportEditor.settings())
+			}),
+			fyne.NewMenuItem("Copy Import to Export", func() {
+				exportEditor.apply(importEditor.settings())
+			}),
+			fyne.NewMenuItem("Test export", func() {
+				u.testProfileConnection(p, name.Text, group.Text, exportEditor, importEditor, false)
+			}),
+			fyne.NewMenuItem("Test import", func() {
+				u.testProfileConnection(p, name.Text, group.Text, exportEditor, importEditor, true)
+			}),
+		)
+		moreBtn.OnTapped = func() {
+			widget.ShowPopUpMenuAtRelativePosition(menu, u.window.Canvas(), fyne.NewPos(0, 1), moreBtn)
+		}
+		footer = container.NewVBox(save, moreBtn)
+	} else {
+		footer = container.NewVBox(
 			u.actionBox(copyExportToImport, copyImportToExport),
 			u.actionBox(save, testExport, testImport),
-		),
-		nil,
-		nil,
-		tabs,
-	))
+		)
+	}
+
+	u.setContent(container.NewBorder(header, footer, nil, nil, tabs))
 }
 
 func (u *UI) runBackup(p models.Profile) {
@@ -688,7 +727,11 @@ func (u *UI) showSettings() {
 func (u *UI) showAbout() {
 	githubURL, _ := url.Parse("https://github.com/devlifeX/dback")
 	logo := canvas.NewImageFromFile("logo.png")
-	logo.SetMinSize(fyne.NewSize(96, 96))
+	logoSize := float32(96)
+	if fyne.CurrentDevice().IsMobile() {
+		logoSize = 48
+	}
+	logo.SetMinSize(fyne.NewSize(logoSize, logoSize))
 	logo.FillMode = canvas.ImageFillContain
 
 	u.setContent(container.NewCenter(widget.NewCard("About DBack", "DB Sync Manager", container.NewVBox(
@@ -697,6 +740,19 @@ func (u *UI) showAbout() {
 		widget.NewLabelWithStyle("dariush.vesal@gmail.com", fyne.TextAlignCenter, fyne.TextStyle{}),
 		container.NewCenter(widget.NewHyperlink("https://github.com/devlifeX/dback", githubURL)),
 	))))
+}
+
+func (u *UI) appDataDir() string {
+	if u.app.Storage() != nil {
+		if root := u.app.Storage().RootURI(); root != nil && root.Path() != "" {
+			return root.Path()
+		}
+	}
+	return u.getExecutableDir()
+}
+
+func (u *UI) defaultBackupDir() string {
+	return filepath.Join(u.appDataDir(), "backups")
 }
 
 func (u *UI) getExecutableDir() string {
@@ -726,14 +782,17 @@ type settingsEditor struct {
 	sshUser        *widget.Entry
 	sshPassword    *widget.Entry
 	authType       *widget.Select
-	keyPath        *widget.Entry
-	jumpHost       *widget.Entry
+	keyPath            *widget.Entry
+	authKeyPEM         string
+	jumpHost           *widget.Entry
 	jumpPort       *widget.Entry
 	jumpUser       *widget.Entry
 	jumpPassword   *widget.Entry
 	jumpAuthType   *widget.Select
-	jumpKeyPath    *widget.Entry
-	wpURL          *widget.Entry
+	jumpKeyPath        *widget.Entry
+	jumpAuthKeyPEM     string
+	defaultDestination string
+	wpURL              *widget.Entry
 	wpKey          *widget.Entry
 	dbHost         *widget.Entry
 	dbPort         *widget.Entry
@@ -747,7 +806,7 @@ type settingsEditor struct {
 	refresh        func()
 }
 
-func newSettingsEditor(p models.Profile) *settingsEditor {
+func newSettingsEditor(p models.Profile, defaultDestination string) *settingsEditor {
 	e := &settingsEditor{
 		connectionType: widget.NewSelect([]string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeJumpHost), string(models.ConnectionTypeWordPress)}, nil),
 		host:           widget.NewEntry(),
@@ -772,7 +831,8 @@ func newSettingsEditor(p models.Profile) *settingsEditor {
 		isDocker:       widget.NewCheck("Docker container", nil),
 		containerID:    widget.NewEntry(),
 		targetDB:       widget.NewEntry(),
-		destination:    widget.NewEntry(),
+		destination:        widget.NewEntry(),
+		defaultDestination: defaultDestination,
 	}
 	e.connectionType.SetSelected(defaultString(string(p.ConnectionType), string(models.ConnectionTypeSSH)))
 	e.host.SetText(p.Host)
@@ -781,12 +841,14 @@ func newSettingsEditor(p models.Profile) *settingsEditor {
 	e.sshPassword.SetText(p.SSHPassword)
 	e.authType.SetSelected(defaultString(string(p.AuthType), string(models.AuthTypePassword)))
 	e.keyPath.SetText(p.AuthKeyPath)
+	e.authKeyPEM = p.AuthKeyPEM
 	e.jumpHost.SetText(p.JumpHost)
 	e.jumpPort.SetText(defaultString(p.JumpPort, "22"))
 	e.jumpUser.SetText(p.JumpUser)
 	e.jumpPassword.SetText(p.JumpPassword)
 	e.jumpAuthType.SetSelected(defaultString(string(p.JumpAuthType), string(models.AuthTypePassword)))
 	e.jumpKeyPath.SetText(p.JumpAuthKeyPath)
+	e.jumpAuthKeyPEM = p.JumpAuthKeyPEM
 	e.wpURL.SetText(p.WPUrl)
 	e.wpKey.SetText(p.WPKey)
 	e.dbHost.SetText(defaultString(p.DBHost, "127.0.0.1"))
@@ -797,33 +859,58 @@ func newSettingsEditor(p models.Profile) *settingsEditor {
 	e.isDocker.SetChecked(p.IsDocker)
 	e.containerID.SetText(p.ContainerID)
 	e.targetDB.SetText(p.TargetDBName)
-	e.destination.SetText(p.Destination)
+	dest := p.Destination
+	if fyne.CurrentDevice().IsMobile() && strings.TrimSpace(dest) == "" && defaultDestination != "" {
+		dest = defaultDestination
+	}
+	e.destination.SetText(dest)
 	return e
 }
 
 func (e *settingsEditor) form(w fyne.Window) fyne.CanvasObject {
 	keyBtn := widget.NewButton("Select Key", func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err == nil && reader != nil {
-				e.keyPath.SetText(reader.URI().Path())
-				_ = reader.Close()
+			if err != nil || reader == nil {
+				return
 			}
+			pem, name, readErr := loadKeyFromReader(reader)
+			if readErr != nil {
+				dialog.ShowError(readErr, w)
+				return
+			}
+			e.authKeyPEM = pem
+			e.keyPath.SetText(name)
 		}, w)
 		fd.Show()
 	})
 	jumpKeyBtn := widget.NewButton("Select Jump Key", func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err == nil && reader != nil {
-				e.jumpKeyPath.SetText(reader.URI().Path())
-				_ = reader.Close()
+			if err != nil || reader == nil {
+				return
 			}
+			pem, name, readErr := loadKeyFromReader(reader)
+			if readErr != nil {
+				dialog.ShowError(readErr, w)
+				return
+			}
+			e.jumpAuthKeyPEM = pem
+			e.jumpKeyPath.SetText(name)
 		}, w)
 		fd.Show()
 	})
 	folderBtn := widget.NewButton("Select Destination", func() {
+		if fyne.CurrentDevice().IsMobile() {
+			e.destination.SetText(e.defaultDestination)
+			return
+		}
 		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err == nil && uri != nil {
-				e.destination.SetText(uri.Path())
+				path := uri.Path()
+				if isDocumentURIPath(path) {
+					e.destination.SetText(e.defaultDestination)
+				} else {
+					e.destination.SetText(path)
+				}
 			}
 		}, w)
 		fd.Show()
@@ -959,12 +1046,14 @@ func (e *settingsEditor) settings() models.TransferSettings {
 		SSHPassword:     e.sshPassword.Text,
 		AuthType:        models.AuthType(e.authType.Selected),
 		AuthKeyPath:     strings.TrimSpace(e.keyPath.Text),
+		AuthKeyPEM:      e.authKeyPEM,
 		JumpHost:        strings.TrimSpace(e.jumpHost.Text),
 		JumpPort:        strings.TrimSpace(e.jumpPort.Text),
 		JumpUser:        strings.TrimSpace(e.jumpUser.Text),
 		JumpPassword:    e.jumpPassword.Text,
 		JumpAuthType:    models.AuthType(e.jumpAuthType.Selected),
 		JumpAuthKeyPath: strings.TrimSpace(e.jumpKeyPath.Text),
+		JumpAuthKeyPEM:  e.jumpAuthKeyPEM,
 		WPUrl:           strings.TrimSpace(e.wpURL.Text),
 		WPKey:           e.wpKey.Text,
 		DBHost:          strings.TrimSpace(e.dbHost.Text),
@@ -987,12 +1076,14 @@ func (e *settingsEditor) apply(settings models.TransferSettings) {
 	e.sshPassword.SetText(settings.SSHPassword)
 	e.authType.SetSelected(defaultString(string(settings.AuthType), string(models.AuthTypePassword)))
 	e.keyPath.SetText(settings.AuthKeyPath)
+	e.authKeyPEM = settings.AuthKeyPEM
 	e.jumpHost.SetText(settings.JumpHost)
 	e.jumpPort.SetText(defaultString(settings.JumpPort, "22"))
 	e.jumpUser.SetText(settings.JumpUser)
 	e.jumpPassword.SetText(settings.JumpPassword)
 	e.jumpAuthType.SetSelected(defaultString(string(settings.JumpAuthType), string(models.AuthTypePassword)))
 	e.jumpKeyPath.SetText(settings.JumpAuthKeyPath)
+	e.jumpAuthKeyPEM = settings.JumpAuthKeyPEM
 	e.wpURL.SetText(settings.WPUrl)
 	e.wpKey.SetText(settings.WPKey)
 	e.dbHost.SetText(defaultString(settings.DBHost, "127.0.0.1"))
@@ -1039,12 +1130,14 @@ func withLegacy(p models.Profile, settings models.TransferSettings) models.Profi
 	p.SSHPassword = settings.SSHPassword
 	p.AuthType = settings.AuthType
 	p.AuthKeyPath = settings.AuthKeyPath
+	p.AuthKeyPEM = settings.AuthKeyPEM
 	p.JumpHost = settings.JumpHost
 	p.JumpPort = settings.JumpPort
 	p.JumpUser = settings.JumpUser
 	p.JumpPassword = settings.JumpPassword
 	p.JumpAuthType = settings.JumpAuthType
 	p.JumpAuthKeyPath = settings.JumpAuthKeyPath
+	p.JumpAuthKeyPEM = settings.JumpAuthKeyPEM
 	p.WPUrl = settings.WPUrl
 	p.WPKey = settings.WPKey
 	p.DBHost = settings.DBHost
@@ -1057,6 +1150,23 @@ func withLegacy(p models.Profile, settings models.TransferSettings) models.Profi
 	p.TargetDBName = settings.TargetDBName
 	p.Destination = settings.Destination
 	return p
+}
+
+func loadKeyFromReader(reader fyne.URIReadCloser) (pem, displayName string, err error) {
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", "", err
+	}
+	name := reader.URI().Name()
+	if name == "" {
+		name = "selected key"
+	}
+	return string(data), name, nil
+}
+
+func isDocumentURIPath(path string) bool {
+	return strings.HasPrefix(path, "/document/") || strings.Contains(path, "mf%3A")
 }
 
 func defaultString(value, fallback string) string {

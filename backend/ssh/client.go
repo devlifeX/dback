@@ -3,8 +3,8 @@ package ssh
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
+	"os"
 	"time"
 
 	"dback/models"
@@ -20,7 +20,7 @@ type Client struct {
 
 // NewClient creates a new SSH client based on the profile
 func NewClient(p models.Profile) (*Client, error) {
-	targetConfig, err := sshConfig(p.SSHUser, p.SSHPassword, p.AuthType, p.AuthKeyPath)
+	targetConfig, err := sshConfig(p.SSHUser, p.SSHPassword, p.AuthType, p.AuthKeyPath, p.AuthKeyPEM)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func NewClient(p models.Profile) (*Client, error) {
 	return &Client{conn: client}, nil
 }
 
-func sshConfig(user, password string, authType models.AuthType, keyPath string) (*ssh.ClientConfig, error) {
+func sshConfig(user, password string, authType models.AuthType, keyPath, keyPEM string) (*ssh.ClientConfig, error) {
 	config := &ssh.ClientConfig{
 		User:            user,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For simplicity; in prod, verify host keys
@@ -50,9 +50,9 @@ func sshConfig(user, password string, authType models.AuthType, keyPath string) 
 			ssh.Password(password),
 		}
 	} else {
-		key, err := ioutil.ReadFile(keyPath)
+		key, err := loadPrivateKey(keyPEM, keyPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read private key: %v", err)
+			return nil, err
 		}
 		signer, err := ssh.ParsePrivateKey(key)
 		if err != nil {
@@ -66,6 +66,20 @@ func sshConfig(user, password string, authType models.AuthType, keyPath string) 
 	return config, nil
 }
 
+func loadPrivateKey(keyPEM, keyPath string) ([]byte, error) {
+	if keyPEM != "" {
+		return []byte(keyPEM), nil
+	}
+	if keyPath == "" {
+		return nil, fmt.Errorf("no private key provided")
+	}
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read private key: %v", err)
+	}
+	return key, nil
+}
+
 func newJumpClient(p models.Profile, targetConfig *ssh.ClientConfig, targetAddr string) (*Client, error) {
 	jumpPort := p.JumpPort
 	if jumpPort == "" {
@@ -75,7 +89,7 @@ func newJumpClient(p models.Profile, targetConfig *ssh.ClientConfig, targetAddr 
 	if jumpAuthType == "" {
 		jumpAuthType = models.AuthTypePassword
 	}
-	jumpConfig, err := sshConfig(p.JumpUser, p.JumpPassword, jumpAuthType, p.JumpAuthKeyPath)
+	jumpConfig, err := sshConfig(p.JumpUser, p.JumpPassword, jumpAuthType, p.JumpAuthKeyPath, p.JumpAuthKeyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("jump host auth failed: %w", err)
 	}
