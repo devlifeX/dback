@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"dback/models"
+
+	"gioui.org/widget"
 )
 
 func defaultString(value, fallback string) string {
@@ -14,6 +16,14 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func setEditorText(e *widget.Editor, text string) {
+	e.SetText(text)
+}
+
+func editorText(e *widget.Editor) string {
+	return e.Text()
 }
 
 func defaultProfile() models.Profile {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"dback/models"
 )
@@ -33,7 +34,11 @@ func TestLoadProfilesMigratesLegacyFlatShape(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profiles, err := New(dir).LoadProfiles()
+	s := New(dir)
+	if err := s.Unlock(testMasterKey); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := s.LoadProfiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +98,6 @@ func TestExportProfilesStripsSecretsByDefault(t *testing.T) {
 		Name:        "Production",
 		SSHPassword: "ssh-secret",
 		DBPassword:  "db-secret",
-		WPKey:       "wp-secret",
 	}}
 
 	if err := New(dir).ExportProfiles(path, profiles, false, ""); err != nil {
@@ -104,7 +108,7 @@ func TestExportProfilesStripsSecretsByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := imported[0]
-	if got.SSHPassword != "" || got.DBPassword != "" || got.WPKey != "" {
+	if got.SSHPassword != "" || got.DBPassword != "" {
 		t.Fatalf("secrets were not stripped: %#v", got)
 	}
 }
@@ -134,7 +138,9 @@ func TestExportProfilesEncryptedRoundTrip(t *testing.T) {
 
 func TestLoadTemplatesSeedsDefaults(t *testing.T) {
 	dir := t.TempDir()
-	templates, err := New(dir).LoadTemplates()
+	s := New(dir)
+	unlockStore(t, s)
+	templates, err := s.LoadTemplates()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,5 +176,100 @@ func TestMergeProfilesByIDAndName(t *testing.T) {
 	}
 	if out[0].Host != "new" {
 		t.Fatalf("expected ID merge to update host, got %#v", out[0])
+	}
+}
+
+func TestFlattenProfilesDropsWordPress(t *testing.T) {
+	profiles := []models.Profile{
+		{ID: "wp", Name: "WP Site", ConnectionType: "WordPress"},
+		{ID: "ssh", Name: "SSH Host", ConnectionType: models.ConnectionTypeSSH, Host: "10.0.0.1"},
+	}
+	out := flattenProfiles(profiles)
+	if len(out) != 1 || out[0].ID != "ssh" {
+		t.Fatalf("expected wordpress host to be dropped, got %#v", out)
+	}
+}
+
+func TestExportAppDataPlainAndEncrypted(t *testing.T) {
+	dir := t.TempDir()
+	pathPlain := filepath.Join(dir, "app-plain.json")
+	pathEnc := filepath.Join(dir, "app-enc.json")
+	now := time.Now()
+
+	data := AppImportData{
+		Profiles: []models.Profile{{
+			ID:          "p1",
+			Name:        "Production",
+			SSHPassword: "ssh-secret",
+			DBPassword:  "db-secret",
+		}},
+		Templates: []models.SQLTemplate{{ID: "t1", Name: "Reset", Body: "SELECT 1", CreatedAt: now, UpdatedAt: now}},
+		History:   []models.ExportRecord{{ID: "h1", ProfileID: "p1", ProfileName: "Production", ExportDate: now}},
+		Logs:      []models.LogEntry{{ID: "l1", ProfileID: "p1", ProfileName: "Production", Timestamp: now, Details: "test"}},
+	}
+
+	s := New(dir)
+	if err := s.ExportAppData(pathPlain, data, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := s.ImportAppDataBundle(pathPlain, true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imported.Profiles) != 1 || imported.Profiles[0].SSHPassword != "" {
+		t.Fatalf("plain export should strip secrets: %#v", imported.Profiles[0])
+	}
+	if len(imported.Templates) != 1 || len(imported.History) != 1 || len(imported.Logs) != 1 {
+		t.Fatalf("expected full app payload, got %#v", imported)
+	}
+
+	if err := s.ExportAppData(pathEnc, data, true, "master-pass"); err != nil {
+		t.Fatal(err)
+	}
+	importedEnc, err := s.ImportAppDataBundle(pathEnc, true, "master-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if importedEnc.Profiles[0].SSHPassword != "ssh-secret" || importedEnc.Profiles[0].DBPassword != "db-secret" {
+		t.Fatalf("encrypted secrets not restored: %#v", importedEnc.Profiles[0])
+	}
+}
+
+func TestImportAppDataLegacyProfileBundle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy-profiles.json")
+	profiles := []models.Profile{{ID: "p1", Name: "Legacy", Host: "10.0.0.1"}}
+	if err := New(dir).ExportProfiles(path, profiles, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := New(dir).ImportAppDataBundle(path, true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imported.Profiles) != 1 || imported.Profiles[0].Name != "Legacy" {
+		t.Fatalf("legacy profile bundle not imported: %#v", imported)
+	}
+}
+
+func TestMergeTemplatesHistoryLogs(t *testing.T) {
+	existingTemplates := []models.SQLTemplate{{ID: "t1", Name: "One", Body: "old"}}
+	importedTemplates := []models.SQLTemplate{{ID: "t1", Name: "One", Body: "new"}, {ID: "t2", Name: "Two", Body: "two"}}
+	outTemplates := MergeTemplates(existingTemplates, importedTemplates)
+	if len(outTemplates) != 2 || outTemplates[0].Body != "new" {
+		t.Fatalf("template merge failed: %#v", outTemplates)
+	}
+
+	existingHistory := []models.ExportRecord{{ID: "h1"}}
+	importedHistory := []models.ExportRecord{{ID: "h1"}, {ID: "h2"}}
+	outHistory := MergeHistory(existingHistory, importedHistory)
+	if len(outHistory) != 2 {
+		t.Fatalf("history merge failed: %#v", outHistory)
+	}
+
+	existingLogs := []models.LogEntry{{ID: "l1"}}
+	importedLogs := []models.LogEntry{{ID: "l1"}, {ID: "l2"}}
+	outLogs := MergeLogs(existingLogs, importedLogs)
+	if len(outLogs) != 2 {
+		t.Fatalf("logs merge failed: %#v", outLogs)
 	}
 }

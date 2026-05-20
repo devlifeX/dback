@@ -188,6 +188,167 @@ func tabButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *wid
 	return actionButton(gtx, th, theme, btn, label, btnTab, active, onClick)
 }
 
+func searchField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {
+	e.SingleLine = true
+	e.Submit = true
+	return editorField(gtx, th, theme, e, hint)
+}
+
+func chipButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label, sublabel string, active bool, onClick func()) layout.Dimensions {
+	bg := theme.SurfaceAlt
+	fg := theme.TextMuted
+	border := theme.Border
+	if active {
+		bg = theme.AccentDim
+		fg = theme.Text
+		border = theme.Accent
+	}
+	clicked := btn.Clicked(gtx)
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		if clicked && onClick != nil {
+			onClick()
+		}
+		macro := op.Record(gtx.Ops)
+		dims := layout.Inset{
+			Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(10), Right: unit.Dp(10),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Body2(th, label)
+					lbl.Color = fg
+					return lbl.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if sublabel == "" {
+						return layout.Dimensions{}
+					}
+					return mutedLabel(gtx, th, theme, sublabel)
+				}),
+			)
+		})
+		call := macro.Stop()
+		borderPx := gtx.Dp(unit.Dp(1))
+		fillRoundedRect(gtx, dims.Size, gtx.Dp(theme.Radius), border)
+		inner := image.Rectangle{
+			Min: image.Pt(borderPx, borderPx),
+			Max: image.Pt(dims.Size.X-borderPx, dims.Size.Y-borderPx),
+		}
+		if inner.Dx() > 0 && inner.Dy() > 0 {
+			stack := clip.UniformRRect(inner, gtx.Dp(theme.Radius)-borderPx).Push(gtx.Ops)
+			paint.ColorOp{Color: bg}.Add(gtx.Ops)
+			paint.PaintOp{}.Add(gtx.Ops)
+			stack.Pop()
+		}
+		call.Add(gtx.Ops)
+		return dims
+	})
+}
+
+// DropdownOptions holds precomputed dropdown labels to avoid per-frame allocations.
+type DropdownOptions struct {
+	Values []string
+	Labels []string
+}
+
+func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, label string, opts DropdownOptions, selected *string, open *bool, toggle *widget.Clickable, list *widget.List, itemBtns map[string]*widget.Clickable) layout.Dimensions {
+	values := opts.Values
+	labels := opts.Labels
+	if len(values) == 0 {
+		return labeledField(gtx, th, theme, label, func(gtx layout.Context) layout.Dimensions {
+			return mutedLabel(gtx, th, theme, "(none)")
+		})
+	}
+	if *selected == "" || !containsString(values, *selected) {
+		*selected = values[0]
+	}
+	display := *selected
+	for i, v := range values {
+		if v == *selected {
+			if i < len(labels) {
+				display = labels[i]
+			} else {
+				display = v
+			}
+			break
+		}
+	}
+
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return mutedLabel(gtx, th, theme, label)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				clicked := toggle.Clicked(gtx)
+				if clicked {
+					*open = !*open
+				}
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return borderedInput(gtx, theme, *open, func(gtx layout.Context) layout.Dimensions {
+							return toggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Body1(th, display)
+										lbl.Color = theme.Text
+										return lbl.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										arrow := "▼"
+										if *open {
+											arrow = "▲"
+										}
+										return mutedLabel(gtx, th, theme, arrow)
+									}),
+								)
+							})
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !*open {
+							return layout.Dimensions{}
+						}
+						maxH := gtx.Dp(unit.Dp(180))
+						gtx.Constraints.Max.Y = maxH
+						gtx.Constraints.Min.Y = maxH
+						return borderedInput(gtx, theme, false, func(gtx layout.Context) layout.Dimensions {
+							if list.Axis == 0 {
+								list.Axis = layout.Vertical
+							}
+							return material.List(th, list).Layout(gtx, len(values), func(gtx layout.Context, index int) layout.Dimensions {
+								value := values[index]
+								itemLabel := value
+								if index < len(labels) {
+									itemLabel = labels[index]
+								}
+								btn, ok := itemBtns[value]
+								if !ok {
+									btn = new(widget.Clickable)
+									itemBtns[value] = btn
+								}
+								active := value == *selected
+								return chipButton(gtx, th, theme, btn, itemLabel, "", active, func() {
+									*selected = value
+									*open = false
+								})
+							})
+						})
+					}),
+				)
+			})
+		}),
+	)
+}
+
+func containsString(values []string, target string) bool {
+	for _, v := range values {
+		if v == target {
+			return true
+		}
+	}
+	return false
+}
+
 func editorField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {
 	focused := gtx.Focused(e)
 	return borderedInput(gtx, theme, focused, func(gtx layout.Context) layout.Dimensions {

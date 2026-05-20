@@ -16,40 +16,47 @@ import (
 )
 
 type QuerySection struct {
-	Title        string
-	HelperText   string
-	CheckLabel   string
-	Query        widget.Editor
-	RunOnImport  widget.Bool
-	TemplateEnum widget.Enum
-	AppendBtn    widget.Clickable
-	RunBtn       widget.Clickable
-	ConnectDB    bool
-	ResultCols   []string
-	ResultRows   [][]string
+	Title            string
+	HelperText       string
+	CheckLabel       string
+	Query            widget.Editor
+	RunOnImport      widget.Bool
+	TemplateSelected string
+	TemplateOpen     bool
+	TemplateToggle   widget.Clickable
+	TemplateList     widget.List
+	TemplateItemBtns map[string]*widget.Clickable
+	AppendBtn        widget.Clickable
+	RunBtn           widget.Clickable
+	ConnectDB        bool
+	ResultCols       []string
+	ResultRows       [][]string
 }
 
 type QueryForm struct {
-	Before     QuerySection
-	After      QuerySection
-	scrollList widget.List
+	Before        QuerySection
+	After         QuerySection
+	scrollList    widget.List
+	templateCache templateOptionCache
 }
 
 func newQueryForm(p models.Profile) *QueryForm {
 	before := QuerySection{
-		Title:      "Before import",
-		HelperText: "Runs on this host before restore. Placeholders: {databasename}, {host}, {profile}, {dbuser}",
-		CheckLabel: "Run before import",
-		ConnectDB:  false,
+		Title:            "Before import",
+		HelperText:       "Runs on this host before restore. Placeholders: {databasename}, {host}, {profile}, {dbuser}",
+		CheckLabel:       "Run before import",
+		ConnectDB:        false,
+		TemplateItemBtns: make(map[string]*widget.Clickable),
 	}
 	setEditorText(&before.Query, p.PreImportQuery)
 	before.RunOnImport.Value = p.RunQueryBeforeImport || strings.TrimSpace(p.PreImportQuery) != ""
 
 	after := QuerySection{
-		Title:      "After import",
-		HelperText: "Runs on this host after restore completes.",
-		CheckLabel: "Run after successful import",
-		ConnectDB:  true,
+		Title:            "After import",
+		HelperText:       "Runs on this host after restore completes.",
+		CheckLabel:       "Run after successful import",
+		ConnectDB:        true,
+		TemplateItemBtns: make(map[string]*widget.Clickable),
 	}
 	setEditorText(&after.Query, p.PostImportQuery)
 	after.RunOnImport.Value = p.RunQueryAfterImport || strings.TrimSpace(p.PostImportQuery) != ""
@@ -67,30 +74,23 @@ func (f *QueryForm) settings() models.Profile {
 }
 
 func (f *QueryForm) layout(gtx layout.Context, th *material.Theme, theme *AppTheme, u *UI, profileFn func() models.Profile, templates []models.SQLTemplate) layout.Dimensions {
+	if u.core != nil {
+		f.templateCache.rebuild(u.core.DataRevision(), templates)
+	}
 	return scrollArea(gtx, th, &f.scrollList, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return f.Before.layoutSection(gtx, th, theme, u, profileFn, templates, true)
+				return f.Before.layoutSection(gtx, th, theme, u, profileFn, &f.templateCache, true)
 			}),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return f.After.layoutSection(gtx, th, theme, u, profileFn, templates, false)
+				return f.After.layoutSection(gtx, th, theme, u, profileFn, &f.templateCache, false)
 			}),
 		)
 	})
 }
 
-func (q *QuerySection) layoutSection(gtx layout.Context, th *material.Theme, theme *AppTheme, u *UI, profileFn func() models.Profile, templates []models.SQLTemplate, isBefore bool) layout.Dimensions {
-	names := make([]string, 0, len(templates))
-	nameToBody := map[string]string{}
-	for _, t := range templates {
-		names = append(names, t.Name)
-		nameToBody[t.Name] = t.Body
-	}
-	if len(names) == 0 {
-		names = []string{"(no templates)"}
-	}
-
+func (q *QuerySection) layoutSection(gtx layout.Context, th *material.Theme, theme *AppTheme, u *UI, profileFn func() models.Profile, cache *templateOptionCache, isBefore bool) layout.Dimensions {
 	return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -106,13 +106,14 @@ func (q *QuerySection) layoutSection(gtx layout.Context, th *material.Theme, the
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return enumField(gtx, th, theme, &q.TemplateEnum, "Template", names)
+						opts := dropdownOptionsFromCache(cache)
+						return dropdownField(gtx, th, theme, "Template", opts, &q.TemplateSelected, &q.TemplateOpen, &q.TemplateToggle, &q.TemplateList, q.TemplateItemBtns)
 					}),
 					layout.Rigid(hgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return secondaryButton(gtx, th, theme, &q.AppendBtn, "Append", func() {
-							body, ok := nameToBody[q.TemplateEnum.Value]
-							if !ok || body == "" {
+							body, ok := cache.nameToBody[q.TemplateSelected]
+							if !ok || body == "" || q.TemplateSelected == "(no templates)" {
 								return
 							}
 							p := profileFn()

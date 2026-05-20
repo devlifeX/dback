@@ -58,8 +58,26 @@ func (u *UI) layoutBackupsMain(gtx layout.Context, th *material.Theme, theme *Ap
 	)
 }
 
+func dropdownOptionsFromCache(cache *templateOptionCache) DropdownOptions {
+	if cache == nil {
+		return DropdownOptions{Values: []string{"(no templates)"}, Labels: []string{"(no templates)"}}
+	}
+	return DropdownOptions{Values: cache.names, Labels: cache.labels}
+}
+
 func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *AppTheme) layout.Dimensions {
-	records := u.core.History()
+	u.backupHostSelect.Update(gtx)
+	if u.backupHostSelect.Value == "" {
+		u.backupHostSelect.Value = backupFilterAll
+	}
+	if u.backupHostFilter != u.backupHostSelect.Value {
+		u.backupHostFilter = u.backupHostSelect.Value
+		u.invalidateBackupCache()
+	}
+	u.backupCache.rebuild(u)
+	records := u.backupCache.records
+	hostValues := u.backupCache.hostValues
+	hostLabels := u.backupCache.hostLabels
 
 	status := "Select a backup file to import or open its folder."
 	if u.selectedBackup != nil {
@@ -67,6 +85,10 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return labeledEnumField(gtx, th, theme, &u.backupHostSelect, "Host filter", hostValues, hostLabels)
+		}),
+		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return scrollArea(gtx, th, &u.backupList, func(gtx layout.Context) layout.Dimensions {
 				header := []string{"Date", "Profile", "Database", "Size", "File", ""}
@@ -74,8 +96,7 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 				rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return tableHeader(gtx, th, theme, header)
 				}))
-				for i := len(records) - 1; i >= 0; i-- {
-					record := records[i]
+				for _, record := range records {
 					btn, ok := u.backupRows[record.ID]
 					if !ok {
 						btn = new(widget.Clickable)

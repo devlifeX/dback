@@ -1,18 +1,42 @@
 package app
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
+	"dback/internal/store"
 	"dback/models"
 )
 
-func TestSaveProfilePersistsUnifiedHostSettings(t *testing.T) {
-	dir := t.TempDir()
+const testMasterKey = "test-master-key"
+
+func openApp(t *testing.T, dir string) *App {
+	t.Helper()
 	a, err := New(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if a.HasVault() {
+		if err := a.Unlock(testMasterKey); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err := a.CreateVault(testMasterKey); err != nil && !errors.Is(err, store.ErrVaultExists) {
+			t.Fatal(err)
+		}
+	}
+	if !a.IsUnlocked() {
+		if err := a.Unlock(testMasterKey); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return a
+}
+
+func TestSaveProfilePersistsUnifiedHostSettings(t *testing.T) {
+	dir := t.TempDir()
+	a := openApp(t, dir)
 
 	profile := models.Profile{
 		ID:             "p1",
@@ -31,10 +55,7 @@ func TestSaveProfilePersistsUnifiedHostSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reloaded, err := New(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reloaded := openApp(t, dir)
 	profiles := reloaded.Profiles()
 	if len(profiles) != 1 {
 		t.Fatalf("expected one profile, got %d", len(profiles))
@@ -53,10 +74,7 @@ func TestSaveProfilePersistsUnifiedHostSettings(t *testing.T) {
 
 func TestProfileTransferRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	a, err := New(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := openApp(t, dir)
 	if err := a.SaveProfile(models.Profile{ID: "p1", Name: "Production", Group: "Gold"}); err != nil {
 		t.Fatal(err)
 	}
@@ -66,10 +84,7 @@ func TestProfileTransferRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	target, err := New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	target := openApp(t, t.TempDir())
 	if err := target.ImportProfiles(bundle, false, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -81,10 +96,7 @@ func TestProfileTransferRoundTrip(t *testing.T) {
 
 func TestProfileTransferEncryptedRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	a, err := New(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := openApp(t, dir)
 	profile := models.Profile{
 		ID:          "p1",
 		Name:        "Secure",
@@ -100,10 +112,7 @@ func TestProfileTransferEncryptedRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	target, err := New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	target := openApp(t, t.TempDir())
 	if err := target.ImportProfiles(bundle, true, "master-pass"); err != nil {
 		t.Fatal(err)
 	}
@@ -118,10 +127,7 @@ func TestProfileTransferEncryptedRoundTrip(t *testing.T) {
 
 func TestProfileImportMergesByID(t *testing.T) {
 	dir := t.TempDir()
-	a, err := New(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := openApp(t, dir)
 	if err := a.SaveProfile(models.Profile{ID: "p1", Name: "Local", Group: "Default"}); err != nil {
 		t.Fatal(err)
 	}
@@ -131,10 +137,7 @@ func TestProfileImportMergesByID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	target, err := New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	target := openApp(t, t.TempDir())
 	if err := target.SaveProfile(models.Profile{ID: "p2", Name: "Existing"}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,10 +152,7 @@ func TestProfileImportMergesByID(t *testing.T) {
 
 func TestPreviewImportProfilesDetectsConflicts(t *testing.T) {
 	dir := t.TempDir()
-	a, err := New(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := openApp(t, dir)
 	if err := a.SaveProfile(models.Profile{ID: "p1", Name: "Local"}); err != nil {
 		t.Fatal(err)
 	}
@@ -161,10 +161,7 @@ func TestPreviewImportProfilesDetectsConflicts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	target, err := New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	target := openApp(t, t.TempDir())
 	if err := target.SaveProfile(models.Profile{ID: "p1", Name: "Existing"}); err != nil {
 		t.Fatal(err)
 	}

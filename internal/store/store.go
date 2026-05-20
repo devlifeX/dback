@@ -18,6 +18,16 @@ const CurrentVersion = 3
 type Store struct {
 	baseDir string
 	mu      sync.Mutex
+
+	unlocked  bool
+	dataKey   []byte
+	vaultSalt string
+	revision  uint64
+
+	profiles  []models.Profile
+	templates []models.SQLTemplate
+	history   []models.ExportRecord
+	logs      []models.LogEntry
 }
 
 func New(baseDir string) *Store {
@@ -33,48 +43,47 @@ func (s *Store) LogsPath() string      { return filepath.Join(s.baseDir, "logs.j
 func (s *Store) TemplatesPath() string { return filepath.Join(s.baseDir, "templates.json") }
 
 func (s *Store) LoadProfiles() ([]models.Profile, error) {
-	var bundle models.ProfileBundle
-	if err := readJSON(s.ProfilesPath(), &bundle); err == nil && bundle.Profiles != nil {
-		return flattenProfiles(bundle.Profiles), nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		var legacy models.AppConfig
-		if legacyErr := readJSON(s.ProfilesPath(), &legacy); legacyErr == nil {
-			return flattenProfiles(legacy.Profiles), nil
-		}
-		return nil, err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return nil, ErrVaultLocked
 	}
-	return []models.Profile{}, nil
+	return append([]models.Profile(nil), s.profiles...), nil
 }
 
 func (s *Store) SaveProfiles(profiles []models.Profile) error {
-	normalized := flattenProfiles(profiles)
-	for i := range normalized {
-		normalized[i].ExportSettings = nil
-		normalized[i].ImportSettings = nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
 	}
-	return s.writeJSON(s.ProfilesPath(), models.ProfileBundle{
-		Version:  CurrentVersion,
-		Profiles: normalized,
-	})
+	s.profiles = flattenProfiles(profiles)
+	for i := range s.profiles {
+		s.profiles[i].ExportSettings = nil
+		s.profiles[i].ImportSettings = nil
+	}
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
 }
 
 func (s *Store) LoadTemplates() ([]models.SQLTemplate, error) {
-	var bundle models.TemplateBundle
-	err := readJSON(s.TemplatesPath(), &bundle)
-	if err == nil && bundle.Templates != nil {
-		return bundle.Templates, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return nil, ErrVaultLocked
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		return seedTemplates(), nil
-	}
-	return nil, err
+	return append([]models.SQLTemplate(nil), s.templates...), nil
 }
 
 func (s *Store) SaveTemplates(templates []models.SQLTemplate) error {
-	return s.writeJSON(s.TemplatesPath(), models.TemplateBundle{
-		Version:   CurrentVersion,
-		Templates: templates,
-	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	s.templates = append([]models.SQLTemplate(nil), templates...)
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
 }
 
 func seedTemplates() []models.SQLTemplate {
@@ -91,7 +100,7 @@ func seedTemplates() []models.SQLTemplate {
 		{
 			ID:          "seed-create-admin",
 			Name:        "Create admin user",
-			Description: "WordPress admin user devlife",
+			Description: "Create admin user devlife",
 			Body:        sqlTemplateCreateAdminUser,
 			CreatedAt:   now,
 			UpdatedAt:   now,
@@ -112,45 +121,43 @@ INSERT INTO wp_usermeta (user_id, meta_key, meta_value)
 SELECT ID, 'wp_user_level', '10' FROM wp_users WHERE user_login = 'devlife';`
 
 func (s *Store) LoadHistory() ([]models.ExportRecord, error) {
-	var history models.BackupHistory
-	if err := readJSON(s.HistoryPath(), &history); err == nil && history.Records != nil {
-		return history.Records, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		var legacy []models.ExportRecord
-		if legacyErr := readJSON(s.HistoryPath(), &legacy); legacyErr == nil {
-			return legacy, nil
-		}
-		return nil, err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return nil, ErrVaultLocked
 	}
-	return []models.ExportRecord{}, nil
+	return append([]models.ExportRecord(nil), s.history...), nil
 }
 
 func (s *Store) SaveHistory(records []models.ExportRecord) error {
-	return s.writeJSON(s.HistoryPath(), models.BackupHistory{
-		Version: CurrentVersion,
-		Records: records,
-	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	s.history = append([]models.ExportRecord(nil), records...)
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
 }
 
 func (s *Store) LoadLogs() ([]models.LogEntry, error) {
-	var logs models.ActivityLog
-	if err := readJSON(s.LogsPath(), &logs); err == nil && logs.Entries != nil {
-		return logs.Entries, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		var legacy []models.LogEntry
-		if legacyErr := readJSON(s.LogsPath(), &legacy); legacyErr == nil {
-			return legacy, nil
-		}
-		return nil, err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return nil, ErrVaultLocked
 	}
-	return []models.LogEntry{}, nil
+	return append([]models.LogEntry(nil), s.logs...), nil
 }
 
 func (s *Store) SaveLogs(entries []models.LogEntry) error {
-	return s.writeJSON(s.LogsPath(), models.ActivityLog{
-		Version: CurrentVersion,
-		Entries: entries,
-	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	s.logs = append([]models.LogEntry(nil), entries...)
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
 }
 
 // ImportProfilesBundle loads profiles from a bundle file (plain or encrypted).
@@ -159,23 +166,7 @@ func (s *Store) ImportProfilesBundle(path string, includeSecrets bool, passphras
 	if err := readJSON(path, &bundle); err != nil {
 		return nil, err
 	}
-	var profiles []models.Profile
-	var err error
-	if bundle.Encrypted {
-		if !includeSecrets {
-			return nil, errors.New("encrypted bundle requires include secrets and passphrase")
-		}
-		profiles, err = secrets.DecryptBundle(bundle, passphrase)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		profiles = flattenProfiles(bundle.Profiles)
-		if !includeSecrets {
-			profiles = stripSecrets(profiles)
-		}
-	}
-	return profiles, nil
+	return s.importProfileBundle(bundle, includeSecrets, passphrase)
 }
 
 func (s *Store) ExportProfiles(path string, profiles []models.Profile, includeSecrets bool, passphrase string) error {
@@ -198,6 +189,219 @@ func (s *Store) ExportProfiles(path string, profiles []models.Profile, includeSe
 		Version:  CurrentVersion,
 		Profiles: data,
 	})
+}
+
+// AppImportData holds decoded app bundle contents for merge preview.
+type AppImportData struct {
+	Profiles  []models.Profile
+	Templates []models.SQLTemplate
+	History   []models.ExportRecord
+	Logs      []models.LogEntry
+}
+
+// TemplateConflict describes an imported template that replaces an existing one.
+type TemplateConflict struct {
+	Imported models.SQLTemplate `json:"imported"`
+	Existing models.SQLTemplate `json:"existing"`
+	Reason   string             `json:"reason"`
+}
+
+// ImportAppDataBundle loads app data from a bundle file (plain, encrypted, or legacy profile bundle).
+func (s *Store) ImportAppDataBundle(path string, includeSecrets bool, passphrase string) (AppImportData, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return AppImportData{}, err
+	}
+
+	var appBundle models.AppBundle
+	if err := json.Unmarshal(raw, &appBundle); err == nil && appBundleHasPayload(appBundle) {
+		return s.decodeAppBundle(appBundle, includeSecrets, passphrase)
+	}
+
+	var profileBundle models.ProfileBundle
+	if err := json.Unmarshal(raw, &profileBundle); err == nil && (profileBundle.Profiles != nil || profileBundle.Encrypted) {
+		profiles, err := s.importProfileBundle(profileBundle, includeSecrets, passphrase)
+		if err != nil {
+			return AppImportData{}, err
+		}
+		return AppImportData{Profiles: profiles}, nil
+	}
+
+	return AppImportData{}, fmt.Errorf("unrecognized app data bundle format")
+}
+
+func appBundleHasPayload(b models.AppBundle) bool {
+	return b.Encrypted || len(b.Profiles) > 0 || len(b.Templates) > 0 || len(b.History) > 0 || len(b.Logs) > 0
+}
+
+func (s *Store) importProfileBundle(bundle models.ProfileBundle, includeSecrets bool, passphrase string) ([]models.Profile, error) {
+	if bundle.Encrypted {
+		if !includeSecrets {
+			return nil, errors.New("encrypted bundle requires include secrets and passphrase")
+		}
+		profiles, err := secrets.DecryptBundle(bundle, passphrase)
+		if err != nil {
+			return nil, err
+		}
+		return flattenProfiles(profiles), nil
+	}
+	profiles := flattenProfiles(bundle.Profiles)
+	if !includeSecrets {
+		profiles = stripSecrets(profiles)
+	}
+	return profiles, nil
+}
+
+func (s *Store) decodeAppBundle(bundle models.AppBundle, includeSecrets bool, passphrase string) (AppImportData, error) {
+	if bundle.Encrypted {
+		if !includeSecrets {
+			return AppImportData{}, errors.New("encrypted bundle requires include secrets and passphrase")
+		}
+		decoded, err := secrets.DecryptAppBundle(bundle, passphrase)
+		if err != nil {
+			return AppImportData{}, err
+		}
+		return AppImportData{
+			Profiles:  flattenProfiles(decoded.Profiles),
+			Templates: decoded.Templates,
+			History:   decoded.History,
+			Logs:      decoded.Logs,
+		}, nil
+	}
+	profiles := flattenProfiles(bundle.Profiles)
+	if !includeSecrets {
+		profiles = stripSecrets(profiles)
+	}
+	return AppImportData{
+		Profiles:  profiles,
+		Templates: append([]models.SQLTemplate(nil), bundle.Templates...),
+		History:   append([]models.ExportRecord(nil), bundle.History...),
+		Logs:      append([]models.LogEntry(nil), bundle.Logs...),
+	}, nil
+}
+
+func (s *Store) ExportAppData(path string, data AppImportData, includeSecrets bool, passphrase string) error {
+	payload := AppImportData{
+		Profiles:  flattenProfiles(data.Profiles),
+		Templates: append([]models.SQLTemplate(nil), data.Templates...),
+		History:   append([]models.ExportRecord(nil), data.History...),
+		Logs:      append([]models.LogEntry(nil), data.Logs...),
+	}
+	for i := range payload.Profiles {
+		payload.Profiles[i].ExportSettings = nil
+		payload.Profiles[i].ImportSettings = nil
+	}
+	if includeSecrets && passphrase != "" {
+		bundle, err := secrets.EncryptAppBundle(payload.Profiles, payload.Templates, payload.History, payload.Logs, passphrase)
+		if err != nil {
+			return err
+		}
+		return writeJSON(path, bundle)
+	}
+	if !includeSecrets {
+		payload.Profiles = stripSecrets(payload.Profiles)
+	}
+	return writeJSON(path, models.AppBundle{
+		Version:    CurrentVersion,
+		ExportedAt: time.Now(),
+		Profiles:   payload.Profiles,
+		Templates:  payload.Templates,
+		History:    payload.History,
+		Logs:       payload.Logs,
+	})
+}
+
+func DetectTemplateConflicts(existing, imported []models.SQLTemplate) []TemplateConflict {
+	byID := map[string]models.SQLTemplate{}
+	byName := map[string]models.SQLTemplate{}
+	for _, t := range existing {
+		byID[t.ID] = t
+		byName[t.Name] = t
+	}
+	var conflicts []TemplateConflict
+	seen := map[string]bool{}
+	for _, t := range imported {
+		if ex, ok := byID[t.ID]; ok {
+			key := "id:" + t.ID
+			if !seen[key] {
+				conflicts = append(conflicts, TemplateConflict{Imported: t, Existing: ex, Reason: "id"})
+				seen[key] = true
+			}
+			continue
+		}
+		if ex, ok := byName[t.Name]; ok {
+			key := "name:" + t.Name
+			if !seen[key] {
+				conflicts = append(conflicts, TemplateConflict{Imported: t, Existing: ex, Reason: "name"})
+				seen[key] = true
+			}
+		}
+	}
+	return conflicts
+}
+
+func MergeTemplates(existing, imported []models.SQLTemplate) []models.SQLTemplate {
+	byID := map[string]int{}
+	byName := map[string]int{}
+	out := append([]models.SQLTemplate(nil), existing...)
+	for i, t := range out {
+		byID[t.ID] = i
+		byName[t.Name] = i
+	}
+	for _, t := range imported {
+		if idx, ok := byID[t.ID]; ok {
+			out[idx] = t
+			continue
+		}
+		if idx, ok := byName[t.Name]; ok {
+			out[idx] = t
+			continue
+		}
+		out = append(out, t)
+		byID[t.ID] = len(out) - 1
+		byName[t.Name] = len(out) - 1
+	}
+	return out
+}
+
+func MergeHistory(existing, imported []models.ExportRecord) []models.ExportRecord {
+	seen := map[string]bool{}
+	out := append([]models.ExportRecord(nil), existing...)
+	for _, r := range out {
+		if r.ID != "" {
+			seen[r.ID] = true
+		}
+	}
+	for _, r := range imported {
+		if r.ID != "" && seen[r.ID] {
+			continue
+		}
+		out = append(out, r)
+		if r.ID != "" {
+			seen[r.ID] = true
+		}
+	}
+	return out
+}
+
+func MergeLogs(existing, imported []models.LogEntry) []models.LogEntry {
+	seen := map[string]bool{}
+	out := append([]models.LogEntry(nil), existing...)
+	for _, e := range out {
+		if e.ID != "" {
+			seen[e.ID] = true
+		}
+	}
+	for _, e := range imported {
+		if e.ID != "" && seen[e.ID] {
+			continue
+		}
+		out = append(out, e)
+		if e.ID != "" {
+			seen[e.ID] = true
+		}
+	}
+	return out
 }
 
 // ProfileConflict describes an imported host that replaces an existing one.
@@ -298,6 +502,9 @@ func writeJSON(path string, value any) error {
 func flattenProfiles(profiles []models.Profile) []models.Profile {
 	var out []models.Profile
 	for _, p := range profiles {
+		if p.ConnectionType == "WordPress" {
+			continue
+		}
 		out = append(out, flattenProfile(p)...)
 	}
 	return out
@@ -315,7 +522,6 @@ func flattenProfile(p models.Profile) []models.Profile {
 			export.ID = p.ID
 			export.Name = p.Name
 			export.Group = p.Group
-			export.PluginPath = p.PluginPath
 		}
 		if p.ImportSettings != nil {
 			p.ImportSettings.MigrateQueryFields()
@@ -323,7 +529,6 @@ func flattenProfile(p models.Profile) []models.Profile {
 			importP.ID = p.ID
 			importP.Name = p.Name
 			importP.Group = p.Group
-			importP.PluginPath = p.PluginPath
 			importP.PreImportQuery = p.ImportSettings.PreImportQuery
 			importP.RunQueryBeforeImport = p.ImportSettings.RunQueryBeforeImport
 			importP.PostImportQuery = p.ImportSettings.PostImportQuery
@@ -403,7 +608,6 @@ func stripSecrets(profiles []models.Profile) []models.Profile {
 		profiles[i].SSHPassword = ""
 		profiles[i].JumpPassword = ""
 		profiles[i].DBPassword = ""
-		profiles[i].WPKey = ""
 		profiles[i].AuthKeyPEM = ""
 		profiles[i].JumpAuthKeyPEM = ""
 	}

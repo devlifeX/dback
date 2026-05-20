@@ -1,0 +1,343 @@
+package store
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"dback/internal/secrets"
+	"dback/models"
+)
+
+const vaultFileName = "app_data.vault.json"
+
+var (
+	ErrVaultLocked       = errors.New("vault is locked")
+	ErrVaultExists       = errors.New("vault already exists")
+	ErrVaultNotFound     = errors.New("vault not found")
+	ErrWrongMasterKey    = errors.New("wrong master key")
+	ErrMasterKeyRequired = errors.New("master key is required")
+)
+
+func (s *Store) VaultPath() string {
+	return filepath.Join(s.baseDir, vaultFileName)
+}
+
+func (s *Store) HasVault() bool {
+	_, err := os.Stat(s.VaultPath())
+	return err == nil
+}
+
+func (s *Store) HasLegacyPlaintext() bool {
+	paths := []string{s.ProfilesPath(), s.TemplatesPath(), s.HistoryPath(), s.LogsPath()}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) IsUnlocked() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unlocked
+}
+
+func (s *Store) Revision() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.revision
+}
+
+func (s *Store) bumpRevisionLocked() {
+	s.revision++
+}
+
+func (s *Store) requireUnlocked() error {
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	return nil
+}
+
+// CreateVault initializes a new encrypted vault with seed data.
+func (s *Store) CreateVault(passphrase string) error {
+	if passphrase == "" {
+		return ErrMasterKeyRequired
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.unlocked {
+		return nil
+	}
+	if _, err := os.Stat(s.VaultPath()); err == nil {
+		return ErrVaultExists
+	}
+
+	payload := models.AppVaultPayload{
+		Version:   CurrentVersion,
+		Profiles:  []models.Profile{},
+		Templates: seedTemplates(),
+		History:   []models.ExportRecord{},
+		Logs:      []models.LogEntry{},
+	}
+	if err := s.writeVaultLocked(passphrase, payload); err != nil {
+		return err
+	}
+	s.applyPayloadLocked(payload)
+	s.unlocked = true
+	s.bumpRevisionLocked()
+	return nil
+}
+
+// Unlock opens an existing vault or migrates legacy plaintext files into a new vault.
+func (s *Store) Unlock(passphrase string) error {
+	if passphrase == "" {
+		return ErrMasterKeyRequired
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.unlocked {
+		return nil
+	}
+
+	if _, err := os.Stat(s.VaultPath()); err == nil {
+		payload, key, err := s.readVaultFileLocked(passphrase)
+		if err != nil {
+			return err
+		}
+		s.dataKey = key
+		s.applyPayloadLocked(payload)
+		s.unlocked = true
+		s.bumpRevisionLocked()
+		return nil
+	}
+
+	if s.hasLegacyPlaintextLocked() {
+		payload, err := s.loadLegacyPayloadLocked()
+		if err != nil {
+			return err
+		}
+		if err := s.writeVaultLocked(passphrase, payload); err != nil {
+			return err
+		}
+		if err := s.archiveLegacyFilesLocked(); err != nil {
+			return err
+		}
+		s.applyPayloadLocked(payload)
+		s.unlocked = true
+		s.bumpRevisionLocked()
+		return nil
+	}
+
+	return ErrVaultNotFound
+}
+
+func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) {
+	s.profiles = flattenProfiles(payload.Profiles)
+	s.templates = append([]models.SQLTemplate(nil), payload.Templates...)
+	if len(s.templates) == 0 {
+		s.templates = seedTemplates()
+	}
+	s.history = append([]models.ExportRecord(nil), payload.History...)
+	s.logs = append([]models.LogEntry(nil), payload.Logs...)
+}
+
+func (s *Store) persistVaultLocked() error {
+	if !s.unlocked || len(s.dataKey) == 0 {
+		return ErrVaultLocked
+	}
+	payload := s.currentPayloadLocked()
+	nonce, ciphertext, err := secrets.MarshalEncryptVault(s.dataKey, payload)
+	if err != nil {
+		return err
+	}
+	file := models.AppVaultFile{
+		Version:          CurrentVersion,
+		Salt:             s.vaultSalt,
+		Nonce:            base64.StdEncoding.EncodeToString(nonce),
+		UpdatedAt:        time.Now(),
+		EncryptedPayload: base64.StdEncoding.EncodeToString(ciphertext),
+	}
+	return writeJSON(s.VaultPath(), file)
+}
+
+func (s *Store) currentPayloadLocked() models.AppVaultPayload {
+	profiles := append([]models.Profile(nil), s.profiles...)
+	for i := range profiles {
+		profiles[i].ExportSettings = nil
+		profiles[i].ImportSettings = nil
+	}
+	return models.AppVaultPayload{
+		Version:   CurrentVersion,
+		Profiles:  profiles,
+		Templates: append([]models.SQLTemplate(nil), s.templates...),
+		History:   append([]models.ExportRecord(nil), s.history...),
+		Logs:      append([]models.LogEntry(nil), s.logs...),
+	}
+}
+
+func (s *Store) writeVaultLocked(passphrase string, payload models.AppVaultPayload) error {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return err
+	}
+	key := secrets.DeriveKey(passphrase, salt)
+	nonce, ciphertext, err := secrets.MarshalEncryptVault(key, payload)
+	if err != nil {
+		return err
+	}
+	file := models.AppVaultFile{
+		Version:          CurrentVersion,
+		Salt:             base64.StdEncoding.EncodeToString(salt),
+		Nonce:            base64.StdEncoding.EncodeToString(nonce),
+		UpdatedAt:        time.Now(),
+		EncryptedPayload: base64.StdEncoding.EncodeToString(ciphertext),
+	}
+	if err := writeJSON(s.VaultPath(), file); err != nil {
+		return err
+	}
+	s.dataKey = key
+	s.vaultSalt = file.Salt
+	return nil
+}
+
+func (s *Store) readVaultFileLocked(passphrase string) (models.AppVaultPayload, []byte, error) {
+	var file models.AppVaultFile
+	if err := readJSON(s.VaultPath(), &file); err != nil {
+		return models.AppVaultPayload{}, nil, err
+	}
+	salt, err := base64.StdEncoding.DecodeString(file.Salt)
+	if err != nil {
+		return models.AppVaultPayload{}, nil, fmt.Errorf("invalid vault salt: %w", err)
+	}
+	nonce, err := base64.StdEncoding.DecodeString(file.Nonce)
+	if err != nil {
+		return models.AppVaultPayload{}, nil, fmt.Errorf("invalid vault nonce: %w", err)
+	}
+	ciphertext, err := base64.StdEncoding.DecodeString(file.EncryptedPayload)
+	if err != nil {
+		return models.AppVaultPayload{}, nil, fmt.Errorf("invalid vault payload: %w", err)
+	}
+	key := secrets.DeriveKey(passphrase, salt)
+	payload, err := secrets.DecryptUnmarshalVault(key, nonce, ciphertext)
+	if err != nil {
+		return models.AppVaultPayload{}, nil, ErrWrongMasterKey
+	}
+	s.vaultSalt = file.Salt
+	return payload, key, nil
+}
+
+func (s *Store) hasLegacyPlaintextLocked() bool {
+	paths := []string{s.ProfilesPath(), s.TemplatesPath(), s.HistoryPath(), s.LogsPath()}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) loadLegacyPayloadLocked() (models.AppVaultPayload, error) {
+	profiles, err := s.loadLegacyProfiles()
+	if err != nil {
+		return models.AppVaultPayload{}, err
+	}
+	templates, err := s.loadLegacyTemplates()
+	if err != nil {
+		return models.AppVaultPayload{}, err
+	}
+	history, err := s.loadLegacyHistory()
+	if err != nil {
+		return models.AppVaultPayload{}, err
+	}
+	logs, err := s.loadLegacyLogs()
+	if err != nil {
+		return models.AppVaultPayload{}, err
+	}
+	return models.AppVaultPayload{
+		Version:   CurrentVersion,
+		Profiles:  profiles,
+		Templates: templates,
+		History:   history,
+		Logs:      logs,
+	}, nil
+}
+
+func (s *Store) loadLegacyProfiles() ([]models.Profile, error) {
+	var bundle models.ProfileBundle
+	if err := readJSON(s.ProfilesPath(), &bundle); err == nil && bundle.Profiles != nil {
+		return flattenProfiles(bundle.Profiles), nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		var legacy models.AppConfig
+		if legacyErr := readJSON(s.ProfilesPath(), &legacy); legacyErr == nil {
+			return flattenProfiles(legacy.Profiles), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return []models.Profile{}, nil
+}
+
+func (s *Store) loadLegacyTemplates() ([]models.SQLTemplate, error) {
+	var bundle models.TemplateBundle
+	err := readJSON(s.TemplatesPath(), &bundle)
+	if err == nil && bundle.Templates != nil {
+		return bundle.Templates, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return seedTemplates(), nil
+	}
+	return nil, err
+}
+
+func (s *Store) loadLegacyHistory() ([]models.ExportRecord, error) {
+	var history models.BackupHistory
+	if err := readJSON(s.HistoryPath(), &history); err == nil && history.Records != nil {
+		return history.Records, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		var legacy []models.ExportRecord
+		if legacyErr := readJSON(s.HistoryPath(), &legacy); legacyErr == nil {
+			return legacy, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return []models.ExportRecord{}, nil
+}
+
+func (s *Store) loadLegacyLogs() ([]models.LogEntry, error) {
+	var logs models.ActivityLog
+	if err := readJSON(s.LogsPath(), &logs); err == nil && logs.Entries != nil {
+		return logs.Entries, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		var legacy []models.LogEntry
+		if legacyErr := readJSON(s.LogsPath(), &legacy); legacyErr == nil {
+			return legacy, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return []models.LogEntry{}, nil
+}
+
+func (s *Store) archiveLegacyFilesLocked() error {
+	paths := []string{s.ProfilesPath(), s.TemplatesPath(), s.HistoryPath(), s.LogsPath()}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if err := os.Rename(p, p+".legacy"); err != nil {
+			return err
+		}
+	}
+	return nil
+}

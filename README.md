@@ -1,73 +1,83 @@
 ![DBack](dback.png)
 
-# DB Sync Manager
+# DBack — DB Sync Manager
 
 ![DB Sync Manager Screenshot](desgin/app.png)
 
-A Linux desktop GUI application built with Go and [Gio](https://gioui.org) for managing MySQL/MariaDB backups and restores. DBack connects to remote Linux servers via SSH or Jump Host, WordPress sites via a generated plugin, or databases running inside Docker containers, then streams backups to local files and restores them to any saved host.
+A Linux desktop GUI built with Go and [Gio](https://gioui.org) for MySQL/MariaDB backup and restore. DBack connects to remote Linux servers via SSH or Jump Host, or databases inside Docker containers. Backups stream to local files; restores target any saved host.
 
 **Repository:** [https://github.com/devlifeX/dback/](https://github.com/devlifeX/dback/)
 
 ## Features
 
-### 🔌 Connectivity
-*   **SSH / Jump Host:** Connect to remote Linux servers using password or private key authentication.
-*   **WordPress:** Direct integration with WordPress sites via a secure, auto-generated plugin (no SSH required).
-*   **Docker:** Support for MySQL/MariaDB running inside Docker containers.
-*   **Databases:** **MySQL** and **MariaDB** only.
+### Connectivity
+- **SSH / Jump Host** — password or private key authentication
+- **Docker** — MySQL/MariaDB inside containers (`docker exec`)
+- **Databases** — MySQL and MariaDB only
 
-### 🚀 Core Functions
-*   **Backup:** Stream large database dumps (5GB+) with on-the-fly compression.
-    *   **Smart transfer:** Streaming first, with automatic fallback to remote tmp-file on retryable SSH errors.
-    *   **Smart compression:** Uses `zstd` when available, falling back to `gzip`.
-*   **Restore:** Stream uploads or tmp-file import to remote servers; choose any host as the destination.
-*   **Backup Center:** Backup and restore jobs appear in the **Backups** screen with progress and cancel controls.
-*   **Clickable Backup History:** Select a saved backup record and restore it to any destination host.
-*   **Preflight checks:** Linux OS, database tools, compression, disk space, and Docker/container validation before each job.
-*   **Secure:** Credentials are shell-escaped; secrets are never written to logs.
-*   **Reliable:** Uses `pipefail` so backup failures are caught even if compression succeeds.
+### Backup & Restore
+- **Streaming first** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
+- **Smart fallback** — automatic retry with remote tmp-file when SSH streams fail
+- **Resume & checksum** — tmp-file strategy supports offset resume and size/checksum validation
+- **Preflight** — mandatory checks before each job: Linux OS, dump/client tools, compression, disk space, writable tmp paths, Docker container status
+- **Restore flow** — select a backup, pick a destination host, run import with that host's pre/post queries
+- **Job center** — progress and cancel controls in the Backups screen
 
-### 👤 Host Management
-*   **Hosts:** Each host is an independent profile with one connection, backup folder, and pre/post import queries.
-*   **Backup:** Uses the selected host's own settings.
-*   **Restore:** Pick a backup, then pick the destination host.
-*   **Profile transfer:** Export/import hosts from **Settings**. Without a master password, secrets are excluded; with secrets enabled, bundles are encrypted (Argon2id + AES-256-GCM).
-*   **Non-destructive import:** Imported hosts merge with existing ones by ID or name.
-*   **Filename formatting:** Backups are named with host, database, and timestamp.
+### Host Management
+- **Unified host model** — one connection, backup folder, and import queries per host (no separate Export/Import tabs)
+- **Duplicate** — clone a host with one click; the copy gets a new ID and a numbered name (`Production 1`, `Production 2`, …)
+- **Groups & search** — clickable group filters, single-line search, and compact group chips
+- **Legacy migration** — old profiles with separate export/import settings are flattened on load; differing import settings become a separate host named `Name (import)`
 
-### 📋 SQL Templates
-*   **Template manager:** Create, edit, and delete reusable SQL snippets.
-*   **Append to queries:** Append templates to pre/post import queries without overwriting existing SQL.
-*   **Placeholders:** `{databasename}`, `{host}`, `{profile}`, `{dbuser}`.
+### App Data Transfer
+- Export/import hosts, templates, backup history metadata, and activity logs from **Settings**
+- Backup `.sql.gz` files are **not** included in the bundle
+- Secrets excluded by default
+- Optional **encrypted export** with master password (Argon2id + AES-256-GCM)
+- **Non-destructive merge** — imported data merges by ID or name; conflicts prompt for confirmation before overwrite
+- Legacy profile-only bundles are still accepted on import
 
-### 🛠️ Diagnostics
-*   **Test connectivity:** Verify server (SSH/HTTP) and database connections before heavy operations.
-*   **Structured logs:** Operation ID, phase, strategy, attempts, and masked commands in `logs.json`.
+### SQL Templates
+- **Templates** section — create, edit, delete reusable SQL snippets
+- **Append** — add template text to pre/post import queries without overwriting existing SQL
+- **Placeholders** — `{databasename}`, `{host}`, `{profile}`, `{dbuser}`
 
-### ⚡ Why is it so fast?
-*   **Direct streaming:** Data flows from the database to the destination file without stopping.
-*   **Native tools:** Uses `mysqldump` / `mariadb-dump` already on the server.
-*   **Smart compression:** Prefers **Zstandard (zstd)** when available.
-*   **No temp files by default:** Streaming avoids filling server disk; tmp-file fallback only when needed.
+### Diagnostics & Logging
+- Test SSH/HTTP and database connectivity from the host editor
+- Structured activity logs in `~/.config/dback/logs.json`: operation ID, phase, strategy, attempt, masked commands
+- Debug mode mirrors logs to stderr (`--debug` or `DBACK_DEBUG=1`)
 
-## Installation & Running
+## Quick Start
 
-### Run via Script (Linux)
-This script handles dependency checks and runs the application.
+### Run
 
 ```bash
 ./run.sh
 ```
 
-**Debug logging (stderr):** pass `--debug` or set `DBACK_DEBUG=1`:
+With debug logging:
 
 ```bash
 ./run.sh --debug
+# or
 DBACK_DEBUG=1 ./run.sh
-./dist/dback-linux --debug
 ```
 
-*On Debian/Ubuntu, install Gio build dependencies if prompted:*
+### Build (Linux only)
+
+```bash
+./build.sh
+# or
+./build.sh linux
+```
+
+Output: `dist/dback-linux`
+
+### Build from source
+
+Requirements: **Go 1.21+** and Gio development libraries.
+
+On Debian/Ubuntu:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y \
@@ -76,23 +86,15 @@ sudo apt-get update && sudo apt-get install -y \
   libxfixes-dev libegl-dev
 ```
 
-### Build (Linux only)
+Then:
 
 ```bash
-./build.sh
-# or directly:
-./build.sh linux
+go build -o dist/dback-linux .
 ```
 
-Artifact: `dist/dback-linux`
+### Docker alternative
 
-## Build Requirements
-
-*   **Go 1.21+**
-*   **Linux:** `gcc`, `pkg-config`, `libvulkan-dev`, `xorg-dev`, `libwayland-dev`, `libxkbcommon-dev`, `libxkbcommon-x11-dev`, `libx11-xcb-dev`, `libxcursor-dev`, `libxfixes-dev`, `libegl-dev`
-
-### Docker Alternative
-If you have issues with system dependencies, you can run the app in a container:
+If system dependencies are problematic:
 
 ```bash
 ./docker-run.sh
@@ -100,29 +102,69 @@ If you have issues with system dependencies, you can run the app in a container:
 
 ## Default Paths
 
-*   **App config:** `~/.config/dback`
-*   **Default backups:** `~/dback/backups` (per-host destination can be customized)
+| Purpose | Path |
+|---------|------|
+| App config & data | `~/.config/dback` |
+| Default backups | `~/dback/backups` |
+| Profiles (vault) | `~/.config/dback/app_data.vault.json` |
+| Templates | encrypted inside vault |
+| Backup history | encrypted inside vault |
+| Activity logs | encrypted inside vault |
 
-## WordPress Integration Guide
+Each host can override the backup destination folder.
 
-1.  Open or create a host from **Hosts**.
-2.  Select **Type: WordPress**.
-3.  Click **Generate WordPress Plugin** and save the `dback-sync-plugin.zip`.
-4.  Install the plugin on your WordPress site (Plugins > Add New > Upload).
-5.  Enter your WordPress **URL**; the **API Key** is filled automatically.
-6.  Test connectivity or start a backup from the host card.
+## Security
+
+- On first launch (or when upgrading from legacy plaintext storage), DBack prompts for a **master key**.
+- All internal app data (`profiles`, `templates`, `history`, `logs`) is stored in a single encrypted vault at `~/.config/dback/app_data.vault.json`.
+- Legacy plaintext files are archived as `*.legacy` after successful migration.
+- Export App Data files remain optional plain or encrypted bundles for transfer between machines.
+
+## Usage
+
+### Hosts
+1. Open **Hosts** → **+ Host**
+2. Configure connection (SSH, Jump Host, or Docker)
+3. Set database credentials and backup destination
+4. Optional: configure pre/post import queries on the **Queries** tab
+5. Use **Backup** on the host card, or **Duplicate** to clone settings
+
+### Restore
+1. Open **Backups** → filter by host if needed (newest backups appear first)
+2. Select a backup file
+3. Choose a destination host
+4. Click **Import to Selected Host**
+
+### App data export/import
+1. Open **Settings**
+2. Optionally enable **Include saved passwords and keys (encrypted)**
+3. **Export App Data** / **Import App Data**
+4. When including secrets, enter a master password for encryption/decryption
+
+## Why is it fast?
+
+- **Direct streaming** — data flows from database to file without intermediate storage
+- **Native tools** — uses `mysqldump` / `mariadb-dump` on the server
+- **Smart compression** — prefers Zstandard (`zstd`) when available
+- **No temp files by default** — tmp-file fallback only when streaming fails
 
 ## About
 
 Created by **dariush vesal**.
 
-*   Email: `dariush.vesal@gmail.com`
-*   GitHub: [https://github.com/devlifeX/dback](https://github.com/devlifeX/dback)
+- Email: `dariush.vesal@gmail.com`
+- GitHub: [https://github.com/devlifeX/dback](https://github.com/devlifeX/dback)
 
 ## FAQ
 
-### Why does this app require Vulkan/X11 libraries on Linux?
-DBack uses **Gio**, a GPU-accelerated GUI toolkit. On Linux, Gio renders through Vulkan and creates windows through X11/Wayland, which requires the corresponding development headers at build time.
+### Why does DBack require Vulkan/X11 libraries?
+DBack uses **Gio**, a GPU-accelerated GUI toolkit. On Linux, Gio renders through Vulkan and creates windows via X11/Wayland, which requires development headers at build time.
 
 ### Which platforms are supported?
-DBack targets **Linux desktop** only. macOS, Windows, and Android builds are not part of this release.
+**Linux desktop only.** macOS, Windows, and Android are not supported in this release.
+
+### What happened to PostgreSQL and CouchDB?
+Removed. DBack now supports **MySQL and MariaDB** only.
+
+### What happened to separate Export/Import settings per profile?
+Profiles are now independent **hosts** with a single connection. Legacy dual settings are migrated automatically on first load.

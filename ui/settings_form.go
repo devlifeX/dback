@@ -3,7 +3,6 @@ package ui
 import (
 	"strings"
 
-	"dback/backend/wordpress"
 	"dback/models"
 
 	"gioui.org/layout"
@@ -12,7 +11,7 @@ import (
 )
 
 var (
-	connTypeValues = []string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeJumpHost), string(models.ConnectionTypeWordPress)}
+	connTypeValues = []string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeJumpHost)}
 	authTypeValues = []string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}
 	dbTypeValues   = []string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB)}
 )
@@ -33,8 +32,6 @@ type SettingsForm struct {
 	JumpAuthType   widget.Enum
 	JumpKeyPath    widget.Editor
 	JumpAuthKeyPEM string
-	WPURL          widget.Editor
-	WPKey          widget.Editor
 	DBHost         widget.Editor
 	DBPort         widget.Editor
 	DBUser         widget.Editor
@@ -48,10 +45,9 @@ type SettingsForm struct {
 	defaultDestination string
 	scrollList         widget.List
 
-	selectKeyBtn      widget.Clickable
-	selectJumpKeyBtn  widget.Clickable
-	selectFolderBtn   widget.Clickable
-	generatePluginBtn widget.Clickable
+	selectKeyBtn     widget.Clickable
+	selectJumpKeyBtn widget.Clickable
+	selectFolderBtn  widget.Clickable
 }
 
 func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
@@ -71,8 +67,6 @@ func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
 	f.JumpAuthType.Value = defaultString(string(p.JumpAuthType), string(models.AuthTypePassword))
 	setEditorText(&f.JumpKeyPath, p.JumpAuthKeyPath)
 	f.JumpAuthKeyPEM = p.JumpAuthKeyPEM
-	setEditorText(&f.WPURL, p.WPUrl)
-	setEditorText(&f.WPKey, p.WPKey)
 	setEditorText(&f.DBHost, defaultString(p.DBHost, "127.0.0.1"))
 	setEditorText(&f.DBPort, defaultString(p.DBPort, "3306"))
 	setEditorText(&f.DBUser, p.DBUser)
@@ -89,18 +83,7 @@ func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
 	return f
 }
 
-func setEditorText(e *widget.Editor, text string) {
-	e.SetText(text)
-}
-
-func editorText(e *widget.Editor) string {
-	return e.Text()
-}
-
 func (f *SettingsForm) supportsSQLQuery() bool {
-	if f.ConnectionType.Value == string(models.ConnectionTypeWordPress) {
-		return false
-	}
 	db := f.DBType.Value
 	return db == string(models.DBTypeMySQL) || db == string(models.DBTypeMariaDB)
 }
@@ -122,8 +105,6 @@ func (f *SettingsForm) profile() models.Profile {
 		JumpAuthType:    models.AuthType(f.JumpAuthType.Value),
 		JumpAuthKeyPath: strings.TrimSpace(editorText(&f.JumpKeyPath)),
 		JumpAuthKeyPEM:  f.JumpAuthKeyPEM,
-		WPUrl:           strings.TrimSpace(editorText(&f.WPURL)),
-		WPKey:           editorText(&f.WPKey),
 		DBHost:          strings.TrimSpace(editorText(&f.DBHost)),
 		DBPort:          strings.TrimSpace(editorText(&f.DBPort)),
 		DBUser:          strings.TrimSpace(editorText(&f.DBUser)),
@@ -137,7 +118,6 @@ func (f *SettingsForm) profile() models.Profile {
 }
 
 func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *AppTheme, u *UI) layout.Dimensions {
-	isWP := f.ConnectionType.Value == string(models.ConnectionTypeWordPress)
 	isJump := f.ConnectionType.Value == string(models.ConnectionTypeJumpHost)
 	useKey := f.AuthType.Value == string(models.AuthTypeKeyFile)
 	useJumpKey := f.JumpAuthType.Value == string(models.AuthTypeKeyFile)
@@ -160,160 +140,53 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if isWP {
-							return layout.Dimensions{}
-						}
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "Target SSH Host", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.Host, "host.example.com")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "Port", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.Port, "22")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "SSH User", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.SSHUser, "root")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if useKey {
-									return layout.Dimensions{}
-								}
-								return labeledField(gtx, th, theme, "SSH Password", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.SSHPassword, "")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return enumField(gtx, th, theme, &f.AuthType, "Auth Type", authTypeValues)
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if !useKey {
-									return layout.Dimensions{}
-								}
-								return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-										return labeledField(gtx, th, theme, "Key Path", func(gtx layout.Context) layout.Dimensions {
-											return editorField(gtx, th, theme, &f.KeyPath, "")
-										})
-									}),
-									layout.Rigid(hgap(theme)),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return secondaryButton(gtx, th, theme, &f.selectKeyBtn, "Select Key", func() {
-											u.pickOpenFile(func(path string, data []byte) {
-												f.AuthKeyPEM = string(data)
-												setEditorText(&f.KeyPath, path)
-												u.invalidate()
-											})
-										})
-									}),
-								)
-							}),
-						)
+						return labeledField(gtx, th, theme, "Host", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.Host, "example.com")
+						})
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if isWP || !isJump {
-							return layout.Dimensions{}
-						}
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Subtitle2(th, "Jump Host")
-								lbl.Color = theme.Text
-								return lbl.Layout(gtx)
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "Jump Host", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.JumpHost, "")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "Jump Port", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.JumpPort, "22")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "Jump User", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.JumpUser, "")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if useJumpKey {
-									return layout.Dimensions{}
-								}
-								return labeledField(gtx, th, theme, "Jump Password", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.JumpPassword, "")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return enumField(gtx, th, theme, &f.JumpAuthType, "Jump Auth Type", authTypeValues)
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if !useJumpKey {
-									return layout.Dimensions{}
-								}
-								return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-										return labeledField(gtx, th, theme, "Jump Key Path", func(gtx layout.Context) layout.Dimensions {
-											return editorField(gtx, th, theme, &f.JumpKeyPath, "")
-										})
-									}),
-									layout.Rigid(hgap(theme)),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return secondaryButton(gtx, th, theme, &f.selectJumpKeyBtn, "Select Jump Key", func() {
-											u.pickOpenFile(func(path string, data []byte) {
-												f.JumpAuthKeyPEM = string(data)
-												setEditorText(&f.JumpKeyPath, path)
-												u.invalidate()
-											})
-										})
-									}),
-								)
-							}),
-						)
+						return labeledField(gtx, th, theme, "Port", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.Port, "22")
+						})
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !isWP {
+						return labeledField(gtx, th, theme, "SSH User", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.SSHUser, "root")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if useKey {
 							return layout.Dimensions{}
 						}
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "WordPress URL", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.WPURL, "https://example.com")
+						return labeledField(gtx, th, theme, "SSH Password", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.SSHPassword, "")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return enumField(gtx, th, theme, &f.AuthType, "Auth Type", authTypeValues)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !useKey {
+							return layout.Dimensions{}
+						}
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								return labeledField(gtx, th, theme, "Key Path", func(gtx layout.Context) layout.Dimensions {
+									return editorField(gtx, th, theme, &f.KeyPath, "")
 								})
 							}),
-							layout.Rigid(vgap(theme)),
+							layout.Rigid(hgap(theme)),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return labeledField(gtx, th, theme, "WordPress API Key", func(gtx layout.Context) layout.Dimensions {
-									return editorField(gtx, th, theme, &f.WPKey, "")
-								})
-							}),
-							layout.Rigid(vgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return secondaryButton(gtx, th, theme, &f.generatePluginBtn, "Generate WordPress Plugin", func() {
-									u.pickFolder(func(path string) {
-										key, pluginPath, err := wordpress.GeneratePlugin("plugin_template/dback-sync.php", path)
-										if err != nil {
-											u.showError(err)
-											return
-										}
-										setEditorText(&f.WPKey, key)
-										u.showInfo("Plugin Generated", pluginPath)
+								return secondaryButton(gtx, th, theme, &f.selectKeyBtn, "Select Key", func() {
+									u.pickOpenFile(func(path string, data []byte) {
+										f.AuthKeyPEM = string(data)
+										setEditorText(&f.KeyPath, path)
+										u.invalidate()
 									})
 								})
 							}),
@@ -323,73 +196,140 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 			})
 		}))
 
-		if !isWP {
+		if isJump {
 			sections = append(sections, layout.Rigid(vgap(theme)))
 			sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Subtitle1(th, "Database")
+							lbl := material.Subtitle2(th, "Jump Host")
 							lbl.Color = theme.Text
 							return lbl.Layout(gtx)
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return checkboxField(gtx, th, theme, &f.IsDocker, "Docker container")
+							return labeledField(gtx, th, theme, "Jump Host", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.JumpHost, "")
+							})
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if !isDocker {
+							return labeledField(gtx, th, theme, "Jump Port", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.JumpPort, "22")
+							})
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return labeledField(gtx, th, theme, "Jump User", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.JumpUser, "")
+							})
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if useJumpKey {
 								return layout.Dimensions{}
 							}
-							return labeledField(gtx, th, theme, "Container ID", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.ContainerID, "mysql_container")
+							return labeledField(gtx, th, theme, "Jump Password", func(gtx layout.Context) layout.Dimensions {
+								return editorField(gtx, th, theme, &f.JumpPassword, "")
 							})
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return enumField(gtx, th, theme, &f.DBType, "DB Type", dbTypeValues)
+							return enumField(gtx, th, theme, &f.JumpAuthType, "Jump Auth Type", authTypeValues)
 						}),
 						layout.Rigid(vgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if isDocker {
+							if !useJumpKey {
 								return layout.Dimensions{}
 							}
-							return labeledField(gtx, th, theme, "DB Host", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.DBHost, "127.0.0.1")
-							})
-						}),
-						layout.Rigid(vgap(theme)),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if isDocker {
-								return layout.Dimensions{}
-							}
-							return labeledField(gtx, th, theme, "DB Port", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.DBPort, "3306")
-							})
-						}),
-						layout.Rigid(vgap(theme)),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return labeledField(gtx, th, theme, "DB User", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.DBUser, "")
-							})
-						}),
-						layout.Rigid(vgap(theme)),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return labeledField(gtx, th, theme, "DB Password", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.DBPassword, "")
-							})
-						}),
-						layout.Rigid(vgap(theme)),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return labeledField(gtx, th, theme, "Database", func(gtx layout.Context) layout.Dimensions {
-								return editorField(gtx, th, theme, &f.TargetDB, "")
-							})
+							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									return labeledField(gtx, th, theme, "Jump Key Path", func(gtx layout.Context) layout.Dimensions {
+										return editorField(gtx, th, theme, &f.JumpKeyPath, "")
+									})
+								}),
+								layout.Rigid(hgap(theme)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return secondaryButton(gtx, th, theme, &f.selectJumpKeyBtn, "Select Jump Key", func() {
+										u.pickOpenFile(func(path string, data []byte) {
+											f.JumpAuthKeyPEM = string(data)
+											setEditorText(&f.JumpKeyPath, path)
+											u.invalidate()
+										})
+									})
+								}),
+							)
 						}),
 					)
 				})
 			}))
 		}
+
+		sections = append(sections, layout.Rigid(vgap(theme)))
+		sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Subtitle1(th, "Database")
+						lbl.Color = theme.Text
+						return lbl.Layout(gtx)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return checkboxField(gtx, th, theme, &f.IsDocker, "Docker container")
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !isDocker {
+							return layout.Dimensions{}
+						}
+						return labeledField(gtx, th, theme, "Container ID", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.ContainerID, "mysql_container")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return enumField(gtx, th, theme, &f.DBType, "DB Type", dbTypeValues)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isDocker {
+							return layout.Dimensions{}
+						}
+						return labeledField(gtx, th, theme, "DB Host", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.DBHost, "127.0.0.1")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isDocker {
+							return layout.Dimensions{}
+						}
+						return labeledField(gtx, th, theme, "DB Port", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.DBPort, "3306")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return labeledField(gtx, th, theme, "DB User", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.DBUser, "")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return labeledField(gtx, th, theme, "DB Password", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.DBPassword, "")
+						})
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return labeledField(gtx, th, theme, "Database", func(gtx layout.Context) layout.Dimensions {
+							return editorField(gtx, th, theme, &f.TargetDB, "")
+						})
+					}),
+				)
+			})
+		}))
 
 		sections = append(sections, layout.Rigid(vgap(theme)))
 		sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {

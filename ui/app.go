@@ -32,8 +32,9 @@ type UI struct {
 	section Section
 	view    View
 
-	searchEditor widget.Editor
-	search       string
+	searchEditor  widget.Editor
+	search        string
+	selectedGroup string
 
 	editingProfile models.Profile
 	profileName    widget.Editor
@@ -50,6 +51,8 @@ type UI struct {
 	backupTab        int
 	selectedBackup   *models.ExportRecord
 	selectedBackupID string
+	backupHostFilter string
+	backupHostSelect widget.Enum
 	destSelect       widget.Enum
 	backupList       widget.List
 	jobsList         widget.List
@@ -78,8 +81,8 @@ type UI struct {
 	saveTemplateBtn     widget.Clickable
 	backBtn             widget.Clickable
 	testExportBtn       widget.Clickable
-	exportProfilesBtn   widget.Clickable
-	importProfilesBtn   widget.Clickable
+	exportAppDataBtn    widget.Clickable
+	importAppDataBtn    widget.Clickable
 	tabConnection       widget.Clickable
 	tabQuery            widget.Clickable
 	tabBackupFiles      widget.Clickable
@@ -93,9 +96,17 @@ type UI struct {
 	deleteTemplateBtn   widget.Clickable
 
 	profileCards  map[string]profileCardWidgets
+	groupChips    map[string]*widget.Clickable
 	templateRows  map[string]*widget.Clickable
 	backupRows    map[string]*widget.Clickable
 	jobCancelBtns map[string]*widget.Clickable
+
+	unlocked      bool
+	loginPassword widget.Editor
+	loginError    string
+	loginBtn      widget.Clickable
+	templateCache templateOptionCache
+	backupCache   backupViewCache
 
 	invalidate func()
 }
@@ -121,6 +132,7 @@ func New(logoPNG []byte) *UI {
 		section:       SectionHosts,
 		view:          ViewList,
 		profileCards:  make(map[string]profileCardWidgets),
+		groupChips:    make(map[string]*widget.Clickable),
 		templateRows:  make(map[string]*widget.Clickable),
 		backupRows:    make(map[string]*widget.Clickable),
 		jobCancelBtns: make(map[string]*widget.Clickable),
@@ -175,6 +187,10 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	th := u.theme.WithPalette()
 
 	fillRect(gtx, gtx.Constraints.Max, u.theme.Bg)
+
+	if !u.unlocked {
+		return u.layoutLogin(gtx, th)
+	}
 
 	if u.dialog.Kind != DialogNone {
 		return u.layoutDialog(gtx, th)

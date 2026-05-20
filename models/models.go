@@ -17,10 +17,12 @@ const (
 type ConnectionType string
 
 const (
-	ConnectionTypeSSH       ConnectionType = "SSH"
-	ConnectionTypeJumpHost  ConnectionType = "JumpHost"
-	ConnectionTypeWordPress ConnectionType = "WordPress"
+	ConnectionTypeSSH      ConnectionType = "SSH"
+	ConnectionTypeJumpHost ConnectionType = "JumpHost"
 )
+
+// legacyConnectionWordPress is filtered out on load; not supported in the UI.
+const legacyConnectionWordPress ConnectionType = "WordPress"
 
 // DBType defines the database type (MySQL/MariaDB only)
 type DBType string
@@ -52,10 +54,6 @@ type Profile struct {
 	JumpAuthType    AuthType `json:"jump_auth_type,omitempty"`
 	JumpAuthKeyPath string   `json:"jump_auth_key_path,omitempty"`
 	JumpAuthKeyPEM  string   `json:"jump_auth_key_pem,omitempty"`
-
-	WPUrl      string `json:"wp_url"`
-	WPKey      string `json:"wp_key"`
-	PluginPath string `json:"plugin_path,omitempty"`
 
 	DBHost      string `json:"db_host"`
 	DBPort      string `json:"db_port"`
@@ -188,6 +186,39 @@ type ProfileBundle struct {
 	EncryptedPayload string `json:"encrypted_payload,omitempty"`
 }
 
+// AppVaultFile is the on-disk encrypted application vault (single file storage).
+type AppVaultFile struct {
+	Version          int       `json:"version"`
+	Salt             string    `json:"salt"`
+	Nonce            string    `json:"nonce"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	EncryptedPayload string    `json:"encrypted_payload"`
+}
+
+// AppVaultPayload is the decrypted contents of the internal vault.
+type AppVaultPayload struct {
+	Version   int            `json:"version"`
+	Profiles  []Profile      `json:"profiles"`
+	Templates []SQLTemplate  `json:"templates"`
+	History   []ExportRecord `json:"history"`
+	Logs      []LogEntry     `json:"logs"`
+}
+
+// AppBundle exports hosts, templates, backup history metadata, and activity logs.
+// Backup .sql.gz files are not included.
+type AppBundle struct {
+	Version          int            `json:"version"`
+	ExportedAt       time.Time      `json:"exported_at"`
+	Encrypted        bool           `json:"encrypted,omitempty"`
+	Salt             string         `json:"salt,omitempty"`
+	Nonce            string         `json:"nonce,omitempty"`
+	Profiles         []Profile      `json:"profiles,omitempty"`
+	Templates        []SQLTemplate  `json:"templates,omitempty"`
+	History          []ExportRecord `json:"history,omitempty"`
+	Logs             []LogEntry     `json:"logs,omitempty"`
+	EncryptedPayload string         `json:"encrypted_payload,omitempty"`
+}
+
 type BackupHistory struct {
 	Version int            `json:"version"`
 	Records []ExportRecord `json:"records"`
@@ -215,8 +246,6 @@ func SettingsFromProfile(p Profile) TransferSettings {
 		JumpAuthType:         p.JumpAuthType,
 		JumpAuthKeyPath:      p.JumpAuthKeyPath,
 		JumpAuthKeyPEM:       p.JumpAuthKeyPEM,
-		WPUrl:                p.WPUrl,
-		WPKey:                p.WPKey,
 		DBHost:               p.DBHost,
 		DBPort:               p.DBPort,
 		DBUser:               p.DBUser,
@@ -256,8 +285,6 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 	p.JumpAuthType = s.JumpAuthType
 	p.JumpAuthKeyPath = s.JumpAuthKeyPath
 	p.JumpAuthKeyPEM = s.JumpAuthKeyPEM
-	p.WPUrl = s.WPUrl
-	p.WPKey = s.WPKey
 	p.DBHost = s.DBHost
 	p.DBPort = s.DBPort
 	p.DBUser = s.DBUser
@@ -318,7 +345,7 @@ func (p Profile) QueryVars() QueryVars {
 }
 
 func (p Profile) SupportsSQLQuery() bool {
-	return mysqlOrMariaDB(p) && p.ConnectionType != ConnectionTypeWordPress
+	return mysqlOrMariaDB(p)
 }
 
 func mysqlOrMariaDB(p Profile) bool {
@@ -344,13 +371,11 @@ func SettingsEqual(a, b *TransferSettings) bool {
 	bb := *b
 	aa.SSHPassword = ""
 	aa.DBPassword = ""
-	aa.WPKey = ""
 	aa.AuthKeyPEM = ""
 	aa.JumpPassword = ""
 	aa.JumpAuthKeyPEM = ""
 	bb.SSHPassword = ""
 	bb.DBPassword = ""
-	bb.WPKey = ""
 	bb.AuthKeyPEM = ""
 	bb.JumpPassword = ""
 	bb.JumpAuthKeyPEM = ""

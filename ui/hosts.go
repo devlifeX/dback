@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ func (u *UI) layoutHosts(gtx layout.Context, th *material.Theme) layout.Dimensio
 func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppTheme) layout.Dimensions {
 	u.search = editorText(&u.searchEditor)
 	profiles := u.filteredProfiles()
+	allProfiles := u.core.Profiles()
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -48,7 +50,7 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return editorField(gtx, th, theme, &u.searchEditor, "Search hosts...")
+			return searchField(gtx, th, theme, &u.searchEditor, "Search hosts...")
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -59,7 +61,7 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return u.layoutGroupCards(gtx, th, theme, profiles)
+						return u.layoutGroupCards(gtx, th, theme, allProfiles)
 					}),
 					layout.Rigid(spacer(theme, unit.Dp(20))),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -76,56 +78,55 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 }
 
 func (u *UI) filteredProfiles() []models.Profile {
-	profiles := u.core.Profiles()
-	q := strings.ToLower(strings.TrimSpace(u.search))
-	if q == "" {
-		return profiles
-	}
-	var filtered []models.Profile
-	for _, p := range profiles {
-		if strings.Contains(strings.ToLower(p.Name), q) ||
-			strings.Contains(strings.ToLower(p.Host), q) ||
-			strings.Contains(strings.ToLower(p.Group), q) {
-			filtered = append(filtered, p)
-		}
-	}
-	return filtered
+	return filterProfiles(u.core.Profiles(), editorText(&u.searchEditor), u.selectedGroup)
 }
 
 func (u *UI) layoutGroupCards(gtx layout.Context, th *material.Theme, theme *AppTheme, profiles []models.Profile) layout.Dimensions {
 	counts := map[string]int{}
 	for _, p := range profiles {
-		group := p.Group
-		if group == "" {
-			group = "Default"
-		}
-		counts[group]++
+		counts[normalizeGroup(p.Group)]++
 	}
 	if len(counts) == 0 {
 		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 			return mutedLabel(gtx, th, theme, "Create a host to start.")
 		})
 	}
+
+	groups := collectGroups(profiles)
 	var children []layout.FlexChild
-	for group, count := range counts {
-		group, count := group, count
-		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Body1(th, group)
-						lbl.Color = theme.Text
-						return lbl.Layout(gtx)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, fmt.Sprintf("%d hosts", count))
-					}),
-				)
+
+	allKey := "__all__"
+	allBtn, ok := u.groupChips[allKey]
+	if !ok {
+		allBtn = new(widget.Clickable)
+		u.groupChips[allKey] = allBtn
+	}
+	total := len(profiles)
+	children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		return chipButton(gtx, th, theme, allBtn, "All", fmt.Sprintf("%d hosts", total), u.selectedGroup == groupFilterAll, func() {
+			u.selectedGroup = groupFilterAll
+			u.invalidate()
+		})
+	}))
+
+	for _, group := range groups {
+		group := group
+		count := counts[group]
+		btn, ok := u.groupChips[group]
+		if !ok {
+			btn = new(widget.Clickable)
+			u.groupChips[group] = btn
+		}
+		children = append(children, layout.Rigid(hgap(theme)))
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return chipButton(gtx, th, theme, btn, group, fmt.Sprintf("%d hosts", count), u.selectedGroup == group, func() {
+				u.selectedGroup = group
+				u.invalidate()
 			})
 		}))
-		children = append(children, layout.Rigid(hgap(theme)))
 	}
-	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
 func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *AppTheme, profiles []models.Profile) layout.Dimensions {
@@ -149,9 +150,6 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 		}
 
 		subtitle := fmt.Sprintf("%s@%s:%s - %s", p.SSHUser, p.Host, p.Port, p.TargetDBName)
-		if p.ConnectionType == models.ConnectionTypeWordPress {
-			subtitle = p.WPUrl + " - WordPress"
-		}
 		if p.IsDocker {
 			subtitle += " (Docker)"
 		}
@@ -165,7 +163,7 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 						return lbl.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, p.Group)
+						return mutedLabel(gtx, th, theme, normalizeGroup(p.Group))
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -293,4 +291,28 @@ func (u *UI) openProfileEditor(p models.Profile) {
 	u.profileTab = 0
 	u.view = ViewProfileEditor
 	u.invalidate()
+}
+
+// sortedBackupHostOptions returns host filter values and labels for backups view.
+func sortedBackupHostOptions(profiles []models.Profile) (values, labels []string) {
+	type hostOpt struct {
+		id    string
+		label string
+	}
+	opts := make([]hostOpt, 0, len(profiles))
+	for _, p := range profiles {
+		label := p.Name
+		if p.Group != "" {
+			label += " (" + normalizeGroup(p.Group) + ")"
+		}
+		opts = append(opts, hostOpt{id: p.ID, label: label})
+	}
+	sort.Slice(opts, func(i, j int) bool { return opts[i].label < opts[j].label })
+	values = append(values, backupFilterAll)
+	labels = append(labels, "All hosts")
+	for _, o := range opts {
+		values = append(values, o.id)
+		labels = append(labels, o.label)
+	}
+	return values, labels
 }
