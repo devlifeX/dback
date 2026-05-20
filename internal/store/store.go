@@ -187,6 +187,12 @@ func migrateProfiles(profiles []models.Profile) []models.Profile {
 			settings := models.SettingsFromProfile(*p)
 			p.ImportSettings = &settings
 		}
+		p.ExportSettings.MigrateQueryFields()
+		p.ImportSettings.MigrateQueryFields()
+		if p.ImportSettings.PostImportQuery == "" && p.ExportSettings.PostImportQuery != "" {
+			p.ImportSettings.PostImportQuery = p.ExportSettings.PostImportQuery
+			p.ImportSettings.RunQueryAfterImport = p.ExportSettings.RunQueryAfterImport
+		}
 	}
 	return profiles
 }

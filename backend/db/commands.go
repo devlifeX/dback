@@ -1,14 +1,71 @@
 package db
 
 import (
-	"dback/models"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
+
+	"dback/models"
 )
 
 func shellEscape(s string) string {
 	// Replace ' with '\''
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+func sqlIdent(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
+
+func mysqlOrMariaDB(p models.Profile) bool {
+	return p.DBType == models.DBTypeMySQL || p.DBType == models.DBTypeMariaDB
+}
+
+// ImportUsesStreaming returns true when restore should run prepare + stream (no /tmp buffer).
+func ImportUsesStreaming(p models.Profile) bool {
+	return mysqlOrMariaDB(p)
+}
+
+// mysqlClientExec builds: if mariadb; then mariadb <args>; else mysql <args>; fi
+// extraArgs is appended inside each branch (e.g. -e 'SQL' or empty for stdin import).
+func mysqlClientExec(p models.Profile, database, extraArgs string) string {
+	authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, shellEscape(p.DBPassword))
+	hostArgs := ""
+	if !p.IsDocker {
+		hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+	}
+	dbArg := ""
+	if database != "" {
+		dbArg = " " + shellEscape(database)
+	}
+	if extraArgs != "" {
+		extraArgs = " " + extraArgs
+	}
+	return fmt.Sprintf(
+		"if command -v mariadb >/dev/null 2>&1; then mariadb %s%s%s%s; else mysql %s%s%s%s; fi",
+		hostArgs, authArgs, dbArg, extraArgs,
+		hostArgs, authArgs, dbArg, extraArgs,
+	)
+}
+
+func importDecompressStream(compression string) string {
+	switch compression {
+	case "gzip":
+		return "gzip -dc"
+	case "zstd":
+		return "zstd -d -c"
+	default:
+		return "cat"
+	}
+}
+
+func shellWithPipefail(script string) string {
+	return fmt.Sprintf(
+		"if command -v bash >/dev/null 2>&1; then bash -o pipefail -c %s; else sh -c %s; fi",
+		shellEscape(script),
+		shellEscape(script),
+	)
 }
 
 // BuildExportCommand constructs the shell command to dump the database.
@@ -123,36 +180,87 @@ func BuildImportCommand(p models.Profile) string {
 				authEnv, hostArgs, p.DBUser, p.TargetDBName)
 		}
 
+	} else if mysqlOrMariaDB(p) {
+		return BuildImportStreamCommand(p, "")
 	} else {
-		// MySQL/MariaDB Logic - try mariadb first (for MariaDB 10.5+), fallback to mysql
-		// Connect WITHOUT database name so we can DROP and CREATE it
-		authArgs := fmt.Sprintf("-u %s -p'%s'", p.DBUser, p.DBPassword)
-		hostArgs := ""
-		if !p.IsDocker {
-			hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
-		}
-
-		if p.IsDocker {
-			// Inside container - connect without database name
-			cmd = fmt.Sprintf("docker exec -i %s sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s; else mysql %s; fi'",
-				p.ContainerID, authArgs, authArgs)
-		} else {
-			// On host - connect without database name
-			cmd = fmt.Sprintf("sh -c 'if command -v mariadb >/dev/null 2>&1; then mariadb %s %s; else mysql %s %s; fi'",
-				hostArgs, authArgs, hostArgs, authArgs)
-		}
+		return ""
 	}
 
-	// Decompression Logic: Detect format and decompress if needed
-	decompressCmd := `F=/tmp/dback_import_$$.dat; cat > $F; 
-if file "$F" 2>/dev/null | grep -q "gzip"; then gunzip -c "$F"; 
-elif file "$F" 2>/dev/null | grep -q "Zstandard"; then zstd -d -c "$F"; 
-else cat "$F"; fi; rm -f "$F"`
+	return cmd
+}
 
-	// Prepend SQL: Drop and recreate database, then set session options
-	// Using escaped quotes to avoid bash interpreting backticks
-	dropAndCreate := fmt.Sprintf(`printf 'DROP DATABASE IF EXISTS %s; CREATE DATABASE %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE %s; SET SESSION sql_mode='"'"''"'"'; SET FOREIGN_KEY_CHECKS=0;\n'`,
-		p.TargetDBName, p.TargetDBName, p.TargetDBName)
+// BuildImportPrepareCommand runs DROP/CREATE DATABASE before streaming a MySQL/MariaDB dump.
+func BuildImportPrepareCommand(p models.Profile) string {
+	if !mysqlOrMariaDB(p) {
+		return ""
+	}
+	db := sqlIdent(p.TargetDBName)
+	sql := fmt.Sprintf(
+		"DROP DATABASE IF EXISTS %s; CREATE DATABASE %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
+		db, db,
+	)
+	inner := fmt.Sprintf("set -e; %s", mysqlClientExec(p, "", "-e "+shellEscape(sql)))
+	if p.IsDocker {
+		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(inner))
+	}
+	return fmt.Sprintf("sh -c %s", shellEscape(inner))
+}
 
-	return fmt.Sprintf("{ %s; { %s; }; } | %s", dropAndCreate, decompressCmd, cmd)
+// BuildImportStreamCommand streams a dump from stdin into mysql/mariadb (no /tmp buffer).
+func BuildImportStreamCommand(p models.Profile, compression string) string {
+	if !mysqlOrMariaDB(p) {
+		return ""
+	}
+	client := mysqlClientExec(p, p.TargetDBName, "")
+	sessionSetup := `printf "SET SESSION sql_mode=''; SET FOREIGN_KEY_CHECKS=0;\n"`
+	pipe := fmt.Sprintf(
+		"{ %s; %s; } | %s",
+		sessionSetup, importDecompressStream(compression), client,
+	)
+	cmd := shellWithPipefail(pipe)
+	if p.IsDocker {
+		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(cmd))
+	}
+	return cmd
+}
+
+// BuildQueryCommand constructs a shell command to run SQL via mysql/mariadb CLI.
+// When connectDB is false, SQL runs without selecting a database (for DROP/CREATE DATABASE).
+func BuildQueryCommand(p models.Profile, query string, connectDB bool) (string, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", errors.New("query is empty")
+	}
+	if p.DBType != models.DBTypeMySQL && p.DBType != models.DBTypeMariaDB {
+		return "", errors.New("query only supported for MySQL/MariaDB")
+	}
+
+	b64 := base64.StdEncoding.EncodeToString([]byte(query))
+	b64Esc := shellEscape(b64)
+
+	authArgs := fmt.Sprintf("-u %s -p%s", p.DBUser, shellEscape(p.DBPassword))
+	hostArgs := ""
+	if !p.IsDocker {
+		hostArgs = fmt.Sprintf("-h %s -P %s", p.DBHost, p.DBPort)
+	}
+	batchFlags := "--batch --raw"
+	var clientInner string
+	if connectDB {
+		dbName := shellEscape(p.TargetDBName)
+		clientInner = fmt.Sprintf(
+			"if command -v mariadb >/dev/null 2>&1; then mariadb %s %s %s %s; else mysql %s %s %s %s; fi",
+			hostArgs, authArgs, batchFlags, dbName, hostArgs, authArgs, batchFlags, dbName,
+		)
+	} else {
+		clientInner = fmt.Sprintf(
+			"if command -v mariadb >/dev/null 2>&1; then mariadb %s %s %s; else mysql %s %s %s; fi",
+			hostArgs, authArgs, batchFlags, hostArgs, authArgs, batchFlags,
+		)
+	}
+	pipe := fmt.Sprintf("echo %s | base64 -d | %s", b64Esc, clientInner)
+
+	if p.IsDocker {
+		return fmt.Sprintf("docker exec -i %s sh -c %s", p.ContainerID, shellEscape(pipe)), nil
+	}
+	return fmt.Sprintf("sh -c %s", shellEscape(pipe)), nil
 }

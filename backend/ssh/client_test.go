@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -39,6 +40,15 @@ func TestLoadPrivateKeyMissing(t *testing.T) {
 	_, err := loadPrivateKey("", "")
 	if err == nil {
 		t.Fatal("expected error for missing key")
+	}
+}
+
+func TestIsRetryableError(t *testing.T) {
+	if !isRetryableError(fmt.Errorf("connection reset by peer")) {
+		t.Fatal("expected connection reset to be retryable")
+	}
+	if isRetryableError(fmt.Errorf("permission denied")) {
+		t.Fatal("expected permission denied to be non-retryable")
 	}
 }
 

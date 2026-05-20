@@ -7,3 +7,5 @@ dback-windows.exe
 *.sql
 *.sql.gz
 export_history.json
+*.json
+*.log

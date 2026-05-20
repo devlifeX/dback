@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"dback/internal/debug"
 )
 
 // Client handles communication with the WordPress plugin
@@ -66,7 +68,7 @@ func (c *Client) Ping() (*PingResponse, error) {
 
 	// Use shorter timeout for ping
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := doWithRetry(client, req)
 	if err != nil {
 		return nil, fmt.Errorf("connection failed: %w", err)
 	}
@@ -110,8 +112,9 @@ func (c *Client) ExportContext(ctx context.Context, destPath string, progressCal
 	}
 	req.Header.Set("X-DBACK-KEY", c.Key)
 
-	resp, err := c.Client.Do(req)
+	resp, err := doWithRetry(c.Client, req)
 	if err != nil {
+		debug.Errorf("wordpress export request failed: %v", err)
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -227,9 +230,32 @@ func (c *Client) ImportContext(ctx context.Context, sourcePath string, progressC
 	req.Header.Set("Content-Type", "application/gzip")
 	req.ContentLength = totalSize // Important for streaming upload
 
-	resp, err := c.Client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+	var resp *http.Response
+	var lastErr error
+	backoffs := []time.Duration{0, time.Second, 2 * time.Second}
+	for attempt, wait := range backoffs {
+		if wait > 0 {
+			time.Sleep(wait)
+			debug.Errorf("wordpress import retry %d/%d: %v", attempt+1, len(backoffs), lastErr)
+			file.Seek(0, 0)
+			pr.Reader = file
+			pr.Current = 0
+			req, err = http.NewRequestWithContext(ctx, "POST", apiURL, pr)
+			if err != nil {
+				return fmt.Errorf("failed to recreate request: %w", err)
+			}
+			req.Header.Set("X-DBACK-KEY", c.Key)
+			req.Header.Set("Content-Type", "application/gzip")
+			req.ContentLength = totalSize
+		}
+		resp, lastErr = c.Client.Do(req)
+		if lastErr == nil {
+			break
+		}
+		if !isHTTPRetryable(lastErr) || attempt == len(backoffs)-1 {
+			debug.Errorf("wordpress import request failed: %v", lastErr)
+			return fmt.Errorf("request failed: %w", lastErr)
+		}
 	}
 	defer resp.Body.Close()
 
@@ -261,6 +287,53 @@ type ProgressReader struct {
 	Reader   io.Reader
 	Current  int64
 	Callback func(int64)
+}
+
+func isHTTPRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{"timeout", "connection refused", "connection reset", "eof", "broken pipe", "temporary failure"} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func isRetryableHTTPStatus(code int) bool {
+	return code == http.StatusBadGateway || code == http.StatusServiceUnavailable || code == http.StatusGatewayTimeout
+}
+
+func doWithRetry(client *http.Client, req *http.Request) (*http.Response, error) {
+	backoffs := []time.Duration{0, time.Second, 2 * time.Second}
+	var lastErr error
+
+	for attempt, wait := range backoffs {
+		if wait > 0 {
+			time.Sleep(wait)
+			debug.Errorf("HTTP retry %d/%d %s: %v", attempt+1, len(backoffs), req.URL.String(), lastErr)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			if isHTTPRetryable(err) && attempt < len(backoffs)-1 {
+				continue
+			}
+			return nil, err
+		}
+		if isRetryableHTTPStatus(resp.StatusCode) && attempt < len(backoffs)-1 {
+			_ = resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+		return resp, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("HTTP request failed")
+	}
+	return nil, lastErr
 }
 
 func (pr *ProgressReader) Read(p []byte) (int, error) {

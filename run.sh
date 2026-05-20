@@ -15,8 +15,17 @@ fi
 echo "Setting up environment..."
 export CGO_ENABLED=1
 
+if [[ "${DBACK_DEBUG}" == "1" || "${DBACK_DEBUG}" == "true" ]]; then
+    export FYNE_LOG="${FYNE_LOG:-info}"
+fi
+
 echo "Tidying modules..."
 go mod tidy
 
+ARGS=()
+if [[ "${DBACK_DEBUG}" == "1" || "${DBACK_DEBUG}" == "true" ]]; then
+    ARGS+=(--debug)
+fi
+
 echo "Running DB Sync Manager..."
-go run main.go
+go run . "${ARGS[@]}" "$@"

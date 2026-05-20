@@ -56,6 +56,15 @@ This script handles dependency checks and runs the application.
 ```bash
 ./run.sh
 ```
+
+**Debug logging (stderr):** pass `--debug` or set `DBACK_DEBUG=1` to mirror activity and errors to the terminal (useful when running from a TTY):
+
+```bash
+./run.sh --debug
+DBACK_DEBUG=1 ./run.sh
+./dist/dback-linux --debug
+```
+
 *Note: You may need to install `gcc`, `libgl1-mesa-dev`, and `xorg-dev` if prompted.*
 
 ### Build Binaries

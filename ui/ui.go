@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"dback/backend/db"
 	"dback/backend/wordpress"
 	coreapp "dback/internal/app"
 	"dback/models"
@@ -28,6 +29,7 @@ import (
 
 type UI struct {
 	app               fyne.App
+	logo              fyne.Resource
 	window            fyne.Window
 	core              *coreapp.App
 	content           *fyne.Container
@@ -38,6 +40,8 @@ type UI struct {
 	backupTab         string
 	jobsMu            sync.Mutex
 	jobs              []*operationJob
+	jobsUIMu          sync.Mutex
+	lastBackupsRefresh time.Time
 }
 
 type operationJob struct {
@@ -57,8 +61,15 @@ type tableCell struct {
 	box    *fyne.Container
 }
 
-func NewUI(app fyne.App) *UI {
-	return &UI{app: app, currentSection: "hosts"}
+func NewUI(app fyne.App, logo fyne.Resource) *UI {
+	return &UI{app: app, logo: logo, currentSection: "hosts"}
+}
+
+func (u *UI) newLogoImage(size fyne.Size) *canvas.Image {
+	img := canvas.NewImageFromResource(u.logo)
+	img.SetMinSize(size)
+	img.FillMode = canvas.ImageFillContain
+	return img
 }
 
 func (u *UI) Run() {
@@ -86,11 +97,8 @@ func (u *UI) Run() {
 }
 
 func (u *UI) createSidebar() *fyne.Container {
-	logoImage := canvas.NewImageFromFile("logo.png")
-	logoImage.SetMinSize(fyne.NewSize(56, 56))
-	logoImage.FillMode = canvas.ImageFillContain
 	logo := container.NewVBox(
-		logoImage,
+		u.newLogoImage(fyne.NewSize(56, 56)),
 		widget.NewLabelWithStyle("DBack", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 	)
 	return container.NewBorder(logo, nil, nil, nil, container.NewVBox(
@@ -117,9 +125,32 @@ func (u *UI) navButton(label string, icon fyne.Resource, tapped func()) *widget.
 	})
 }
 
+func (u *UI) runOnMain(fn func()) {
+	fyne.Do(fn)
+}
+
 func (u *UI) setContent(content fyne.CanvasObject) {
-	u.content.Objects = []fyne.CanvasObject{content}
-	u.content.Refresh()
+	u.runOnMain(func() {
+		u.content.Objects = []fyne.CanvasObject{content}
+		u.content.Refresh()
+	})
+}
+
+func (u *UI) requestBackupsRefresh(force bool) {
+	u.runOnMain(func() {
+		if u.currentSection != "backups" {
+			return
+		}
+		u.jobsUIMu.Lock()
+		now := time.Now()
+		if !force && now.Sub(u.lastBackupsRefresh) < 300*time.Millisecond {
+			u.jobsUIMu.Unlock()
+			return
+		}
+		u.lastBackupsRefresh = now
+		u.jobsUIMu.Unlock()
+		u.showBackupsUI()
+	})
 }
 
 func (u *UI) cardGrid() *fyne.Container {
@@ -242,6 +273,14 @@ func (u *UI) showProfileEditorWith(p models.Profile) {
 	defaultDest := u.defaultBackupDir()
 	exportEditor := newSettingsEditor(p.EffectiveExport(), defaultDest)
 	importEditor := newSettingsEditor(p.EffectiveImport(), defaultDest)
+	importQuery := models.TransferSettings{}
+	if p.ImportSettings != nil {
+		importQuery.PreImportQuery = p.ImportSettings.PreImportQuery
+		importQuery.RunQueryBeforeImport = p.ImportSettings.RunQueryBeforeImport
+		importQuery.PostImportQuery = p.ImportSettings.PostImportQuery
+		importQuery.RunQueryAfterImport = p.ImportSettings.RunQueryAfterImport
+	}
+	queryEditor := newDualQueryEditor(importQuery)
 
 	save := widget.NewButtonWithIcon("Save Profile", theme.DocumentSaveIcon(), func() {
 		p.Name = strings.TrimSpace(name.Text)
@@ -251,7 +290,7 @@ func (u *UI) showProfileEditorWith(p models.Profile) {
 			return
 		}
 		exportSettings := exportEditor.settings()
-		importSettings := importEditor.settings()
+		importSettings := mergeImportQuerySettings(importEditor.settings(), queryEditor.settings())
 		p.ExportSettings = &exportSettings
 		p.ImportSettings = &importSettings
 		legacy := withLegacy(p, exportSettings)
@@ -273,11 +312,6 @@ func (u *UI) showProfileEditorWith(p models.Profile) {
 	copyImportToExport := widget.NewButton("Copy Import to Export", func() {
 		exportEditor.apply(importEditor.settings())
 	})
-
-	tabs := container.NewAppTabs(
-		container.NewTabItem("Export", exportEditor.form(u.window)),
-		container.NewTabItem("Import", importEditor.form(u.window)),
-	)
 
 	var header fyne.CanvasObject
 	if fyne.CurrentDevice().IsMobile() {
@@ -323,6 +357,34 @@ func (u *UI) showProfileEditorWith(p models.Profile) {
 		)
 	}
 
+	profileFromEditors := func() models.Profile {
+		tmp := p
+		tmp.Name = strings.TrimSpace(name.Text)
+		tmp.Group = strings.TrimSpace(group.Text)
+		tmp.ExportSettings = ptrSettings(exportEditor.settings())
+		is := mergeImportQuerySettings(importEditor.settings(), queryEditor.settings())
+		tmp.ImportSettings = &is
+		return withLegacy(tmp, is)
+	}
+
+	buildTabs := func() *container.AppTabs {
+		items := []*container.TabItem{
+			container.NewTabItem("Export", exportEditor.form(u.window)),
+			container.NewTabItem("Import", importEditor.form(u.window)),
+		}
+		if importEditor.supportsSQLQuery() {
+			exportDBName := strings.TrimSpace(exportEditor.settings().TargetDBName)
+			items = append(items, container.NewTabItem("Query", queryEditor.form(u, u.window, profileFromEditors, exportDBName)))
+		}
+		return container.NewAppTabs(items...)
+	}
+	tabs := buildTabs()
+	rebuildTabs := func() {
+		u.setContent(container.NewBorder(header, footer, nil, nil, buildTabs()))
+	}
+	importEditor.onChanged = rebuildTabs
+	exportEditor.onChanged = rebuildTabs
+
 	u.setContent(container.NewBorder(header, footer, nil, nil, tabs))
 }
 
@@ -354,7 +416,6 @@ func (u *UI) runBackup(p models.Profile) {
 			return
 		}
 		u.finishJob(job.ID, "Backup complete: "+filepath.Base(record.FilePath), nil)
-		u.showBackups()
 	}()
 }
 
@@ -383,9 +444,7 @@ func (u *UI) updateJob(id, status string, progress float64, errText string) {
 		}
 	}
 	u.jobsMu.Unlock()
-	if u.currentSection == "backups" {
-		u.showBackups()
-	}
+	u.requestBackupsRefresh(false)
 }
 
 func (u *UI) finishJob(id, status string, err error) {
@@ -403,9 +462,7 @@ func (u *UI) finishJob(id, status string, err error) {
 		}
 	}
 	u.jobsMu.Unlock()
-	if u.currentSection == "backups" {
-		u.showBackups()
-	}
+	u.requestBackupsRefresh(true)
 }
 
 func (u *UI) currentJobs() []*operationJob {
@@ -417,6 +474,15 @@ func (u *UI) currentJobs() []*operationJob {
 }
 
 func (u *UI) showBackups() {
+	u.runOnMain(func() {
+		u.jobsUIMu.Lock()
+		u.lastBackupsRefresh = time.Now()
+		u.jobsUIMu.Unlock()
+		u.showBackupsUI()
+	})
+}
+
+func (u *UI) showBackupsUI() {
 	u.currentSection = "backups"
 	if u.backupTab == "" {
 		u.backupTab = "files"
@@ -635,7 +701,6 @@ func (u *UI) showBackupActions(record models.ExportRecord) {
 				return
 			}
 			u.finishJob(job.ID, "Import complete", nil)
-			u.showBackups()
 		}()
 	})
 	openBtn := widget.NewButtonWithIcon("Open Folder", theme.FolderOpenIcon(), func() {
@@ -670,12 +735,14 @@ func (u *UI) testProfileConnection(base models.Profile, name, group string, expo
 	loading.Show()
 	go func() {
 		err := u.core.TestConnection(withLegacy(base, exportSettings), useImport)
-		loading.Hide()
-		if err != nil {
-			dialog.ShowError(err, u.window)
-			return
-		}
-		dialog.ShowInformation("Connection OK", "Connection test succeeded.", u.window)
+		u.runOnMain(func() {
+			loading.Hide()
+			if err != nil {
+				dialog.ShowError(err, u.window)
+				return
+			}
+			dialog.ShowInformation("Connection OK", "Connection test succeeded.", u.window)
+		})
 	}()
 }
 
@@ -726,16 +793,13 @@ func (u *UI) showSettings() {
 
 func (u *UI) showAbout() {
 	githubURL, _ := url.Parse("https://github.com/devlifeX/dback")
-	logo := canvas.NewImageFromFile("logo.png")
 	logoSize := float32(96)
 	if fyne.CurrentDevice().IsMobile() {
 		logoSize = 48
 	}
-	logo.SetMinSize(fyne.NewSize(logoSize, logoSize))
-	logo.FillMode = canvas.ImageFillContain
 
 	u.setContent(container.NewCenter(widget.NewCard("About DBack", "DB Sync Manager", container.NewVBox(
-		container.NewCenter(logo),
+		container.NewCenter(u.newLogoImage(fyne.NewSize(logoSize, logoSize))),
 		widget.NewLabelWithStyle("dariush vesal", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		widget.NewLabelWithStyle("dariush.vesal@gmail.com", fyne.TextAlignCenter, fyne.TextStyle{}),
 		container.NewCenter(widget.NewHyperlink("https://github.com/devlifeX/dback", githubURL)),
@@ -804,6 +868,15 @@ type settingsEditor struct {
 	targetDB       *widget.Entry
 	destination    *widget.Entry
 	refresh        func()
+	onChanged      func()
+}
+
+func (e *settingsEditor) supportsSQLQuery() bool {
+	if e.connectionType.Selected == string(models.ConnectionTypeWordPress) {
+		return false
+	}
+	db := e.dbType.Selected
+	return db == string(models.DBTypeMySQL) || db == string(models.DBTypeMariaDB)
 }
 
 func newSettingsEditor(p models.Profile, defaultDestination string) *settingsEditor {
@@ -1007,7 +1080,14 @@ func (e *settingsEditor) form(w fyne.Window) fyne.CanvasObject {
 		wpGrid.Refresh()
 		dbCard.Refresh()
 	}
-	e.connectionType.OnChanged = func(string) { e.refresh() }
+	notify := func() {
+		e.refresh()
+		if e.onChanged != nil {
+			e.onChanged()
+		}
+	}
+	e.connectionType.OnChanged = func(string) { notify() }
+	e.dbType.OnChanged = func(string) { notify() }
 	e.authType.OnChanged = func(string) { e.refresh() }
 	e.jumpAuthType.OnChanged = func(string) { e.refresh() }
 	e.refresh()
@@ -1149,7 +1229,15 @@ func withLegacy(p models.Profile, settings models.TransferSettings) models.Profi
 	p.ContainerID = settings.ContainerID
 	p.TargetDBName = settings.TargetDBName
 	p.Destination = settings.Destination
+	p.PreImportQuery = settings.PreImportQuery
+	p.RunQueryBeforeImport = settings.RunQueryBeforeImport
+	p.PostImportQuery = settings.PostImportQuery
+	p.RunQueryAfterImport = settings.RunQueryAfterImport
 	return p
+}
+
+func ptrSettings(s models.TransferSettings) *models.TransferSettings {
+	return &s
 }
 
 func loadKeyFromReader(reader fyne.URIReadCloser) (pem, displayName string, err error) {
@@ -1167,6 +1255,299 @@ func loadKeyFromReader(reader fyne.URIReadCloser) (pem, displayName string, err 
 
 func isDocumentURIPath(path string) bool {
 	return strings.HasPrefix(path, "/document/") || strings.Contains(path, "mf%3A")
+}
+
+type querySectionEditor struct {
+	title          string
+	helperText     string
+	checkLabel     string
+	query          *widget.Entry
+	runOnImport    *widget.Check
+	resultsTable   *widget.Table
+	resultColumns  []string
+	resultRows     [][]string
+	templates      []queryTemplate
+	minRows        int
+	connectDB      bool
+	substituteDB   bool
+}
+
+type dualQueryEditor struct {
+	before *querySectionEditor
+	after  *querySectionEditor
+}
+
+type queryTemplate struct {
+	label string
+	sql   string
+}
+
+const sqlTemplateCreateAdminUser = `INSERT INTO wp_users
+(
+    user_login,
+    user_pass,
+    user_nicename,
+    user_email,
+    user_registered,
+    user_status,
+    display_name
+)
+VALUES
+(
+    'devlife',
+    MD5('devlife'),
+    'devlife',
+    'devlife@example.com',
+    NOW(),
+    0,
+    'devlife'
+);
+
+DELETE FROM wp_usermeta
+WHERE user_id IN (
+    SELECT ID FROM (
+        SELECT ID
+        FROM wp_users
+        WHERE user_login = 'devlife'
+    ) t
+);
+
+INSERT INTO wp_usermeta
+(user_id, meta_key, meta_value)
+SELECT
+    ID,
+    'wp_capabilities',
+    'a:1:{s:13:"administrator";b:1;}'
+FROM wp_users
+WHERE user_login = 'devlife';
+
+INSERT INTO wp_usermeta
+(user_id, meta_key, meta_value)
+SELECT
+    ID,
+    'wp_user_level',
+    '10'
+FROM wp_users
+WHERE user_login = 'devlife';`
+
+const sqlTemplateRecreateDatabase = `DROP DATABASE IF EXISTS {databasename};
+CREATE DATABASE {databasename};`
+
+var queryTemplatesBefore = []queryTemplate{
+	{"Recreate database", sqlTemplateRecreateDatabase},
+}
+
+var queryTemplatesAfter = []queryTemplate{
+	{"Create admin user", sqlTemplateCreateAdminUser},
+	{"Show whl_page", "SELECT * FROM `wp_options` WHERE `option_name` LIKE 'whl_page'"},
+	{"Change site URL", "UPDATE `wp_options` SET `option_value` = 'https://devlife.ir/' WHERE `wp_options`.`option_id` = 1 OR `wp_options`.`option_id` = 2;"},
+}
+
+func newDualQueryEditor(settings models.TransferSettings) *dualQueryEditor {
+	return &dualQueryEditor{
+		before: newQuerySectionEditor(querySectionConfig{
+			title:        "Before import",
+			helperText:   "Runs on import host before restore. Use {databasename} from export settings.",
+			checkLabel:   "Run before import",
+			queryText:    settings.PreImportQuery,
+			runChecked:   settings.RunQueryBeforeImport || strings.TrimSpace(settings.PreImportQuery) != "",
+			templates:    queryTemplatesBefore,
+			minRows:      6,
+			connectDB:    false,
+			substituteDB: true,
+		}),
+		after: newQuerySectionEditor(querySectionConfig{
+			title:        "After import",
+			helperText:   "Runs on import database after restore completes.",
+			checkLabel:   "Run after successful import",
+			queryText:    settings.PostImportQuery,
+			runChecked:   settings.RunQueryAfterImport || strings.TrimSpace(settings.PostImportQuery) != "",
+			templates:    queryTemplatesAfter,
+			minRows:      14,
+			connectDB:    true,
+			substituteDB: true,
+		}),
+	}
+}
+
+type querySectionConfig struct {
+	title        string
+	helperText   string
+	checkLabel   string
+	queryText    string
+	runChecked   bool
+	templates    []queryTemplate
+	minRows      int
+	connectDB    bool
+	substituteDB bool
+}
+
+func newQuerySectionEditor(cfg querySectionConfig) *querySectionEditor {
+	q := &querySectionEditor{
+		title:        cfg.title,
+		helperText:   cfg.helperText,
+		checkLabel:   cfg.checkLabel,
+		query:        widget.NewMultiLineEntry(),
+		runOnImport:  widget.NewCheck(cfg.checkLabel, nil),
+		templates:    cfg.templates,
+		minRows:      cfg.minRows,
+		connectDB:    cfg.connectDB,
+		substituteDB: cfg.substituteDB,
+	}
+	q.query.SetText(cfg.queryText)
+	q.query.SetMinRowsVisible(cfg.minRows)
+	q.runOnImport.SetChecked(cfg.runChecked)
+	q.initResultsTable()
+	return q
+}
+
+func (d *dualQueryEditor) settings() models.TransferSettings {
+	return models.TransferSettings{
+		PreImportQuery:       strings.TrimSpace(d.before.query.Text),
+		RunQueryBeforeImport: d.before.runOnImport.Checked,
+		PostImportQuery:      strings.TrimSpace(d.after.query.Text),
+		RunQueryAfterImport:  d.after.runOnImport.Checked,
+	}
+}
+
+func (d *dualQueryEditor) apply(settings models.TransferSettings) {
+	d.before.query.SetText(settings.PreImportQuery)
+	d.before.runOnImport.SetChecked(settings.RunQueryBeforeImport)
+	d.after.query.SetText(settings.PostImportQuery)
+	d.after.runOnImport.SetChecked(settings.RunQueryAfterImport)
+}
+
+func (d *dualQueryEditor) form(u *UI, w fyne.Window, profileFn func() models.Profile, exportDBName string) fyne.CanvasObject {
+	return container.NewVScroll(container.NewVBox(
+		d.before.sectionForm(u, w, profileFn, exportDBName),
+		d.after.sectionForm(u, w, profileFn, exportDBName),
+	))
+}
+
+func (q *querySectionEditor) initResultsTable() {
+	q.resultsTable = widget.NewTable(
+		func() (int, int) {
+			rows := len(q.resultRows)
+			if len(q.resultColumns) > 0 {
+				rows++
+			}
+			cols := len(q.resultColumns)
+			if cols == 0 {
+				cols = 1
+			}
+			return rows, cols
+		},
+		newTableCell,
+		func(id widget.TableCellID, o fyne.CanvasObject) {
+			if len(q.resultColumns) == 0 {
+				if id.Row == 0 && id.Col == 0 {
+					setCellLabel(o, "Run a query to see results", false)
+				} else {
+					setCellLabel(o, "", false)
+				}
+				return
+			}
+			if id.Row == 0 {
+				if id.Col < len(q.resultColumns) {
+					setCellLabel(o, q.resultColumns[id.Col], true)
+				}
+				return
+			}
+			row := id.Row - 1
+			if row < len(q.resultRows) && id.Col < len(q.resultRows[row]) {
+				setCellLabel(o, q.resultRows[row][id.Col], false)
+			} else {
+				setCellLabel(o, "", false)
+			}
+		},
+	)
+	q.resultsTable.SetRowHeight(0, 32)
+}
+
+func (q *querySectionEditor) setQueryResults(result db.QueryResult) {
+	q.resultColumns = result.Columns
+	q.resultRows = result.Rows
+	if len(q.resultColumns) == 0 {
+		q.resultColumns = []string{"Result"}
+		q.resultRows = [][]string{{result.Message}}
+	}
+	for col := range q.resultColumns {
+		width := float32(120)
+		if col == 0 {
+			width = 160
+		}
+		q.resultsTable.SetColumnWidth(col, width)
+	}
+	q.resultsTable.Refresh()
+}
+
+func (q *querySectionEditor) sectionForm(u *UI, w fyne.Window, profileFn func() models.Profile, exportDBName string) fyne.CanvasObject {
+	templateBtns := make([]fyne.CanvasObject, 0, len(q.templates))
+	for _, tmpl := range q.templates {
+		tmpl := tmpl
+		templateBtns = append(templateBtns, widget.NewButton(tmpl.label, func() {
+			sql := tmpl.sql
+			if q.substituteDB {
+				sql = models.SubstituteQueryDBName(sql, exportDBName)
+			}
+			q.query.SetText(sql)
+		}))
+	}
+
+	runBtn := widget.NewButtonWithIcon("Run Query", theme.MediaPlayIcon(), func() {
+		profile := profileFn()
+		query := strings.TrimSpace(q.query.Text)
+		if query == "" {
+			dialog.ShowError(fmt.Errorf("enter a SQL query first"), w)
+			return
+		}
+		if !profile.SupportsImportSQLQuery() {
+			dialog.ShowError(fmt.Errorf("query requires SSH/Jump Host with MySQL or MariaDB import settings"), w)
+			return
+		}
+		if q.substituteDB {
+			query = models.SubstituteQueryDBName(query, exportDBName)
+		}
+		progress := dialog.NewProgressInfinite("Running query", q.title+"...", w)
+		progress.Show()
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			result, err := u.core.RunImportQuery(ctx, profile, query, q.connectDB)
+			u.runOnMain(func() {
+				progress.Hide()
+				if err != nil {
+					q.setQueryResults(result)
+					dialog.ShowError(err, w)
+					return
+				}
+				q.setQueryResults(result)
+			})
+		}()
+	})
+
+	top := container.NewVBox(
+		widget.NewLabelWithStyle(q.title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabel(q.helperText),
+		widget.NewCard("Templates", "", responsiveGrid(templateBtns...)),
+		widget.NewCard("SQL", "", q.query),
+		q.runOnImport,
+		runBtn,
+	)
+
+	resultsScroll := container.NewScroll(q.resultsTable)
+	resultsScroll.SetMinSize(fyne.NewSize(400, 140))
+	resultsCard := widget.NewCard("Results", "", resultsScroll)
+
+	return widget.NewCard("", "", container.NewBorder(nil, resultsCard, nil, nil, top))
+}
+
+func mergeImportQuerySettings(importSettings, query models.TransferSettings) models.TransferSettings {
+	importSettings.PreImportQuery = query.PreImportQuery
+	importSettings.RunQueryBeforeImport = query.RunQueryBeforeImport
+	importSettings.PostImportQuery = query.PostImportQuery
+	importSettings.RunQueryAfterImport = query.RunQueryAfterImport
+	return importSettings
 }
 
 func defaultString(value, fallback string) string {

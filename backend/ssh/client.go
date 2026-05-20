@@ -5,11 +5,19 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"time"
 
+	"dback/internal/debug"
 	"dback/models"
 
 	"golang.org/x/crypto/ssh"
+)
+
+const (
+	maxDialAttempts = 3
+	dialTimeout     = 30 * time.Second
+	tcpKeepAlive    = 30 * time.Second
 )
 
 // Client wraps the ssh.Client and provides high-level operations
@@ -30,7 +38,7 @@ func NewClient(p models.Profile) (*Client, error) {
 		return newJumpClient(p, targetConfig, targetAddr)
 	}
 
-	client, err := ssh.Dial("tcp", targetAddr, targetConfig)
+	client, err := dialSSH(targetAddr, targetConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +50,7 @@ func sshConfig(user, password string, authType models.AuthType, keyPath, keyPEM 
 	config := &ssh.ClientConfig{
 		User:            user,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For simplicity; in prod, verify host keys
-		Timeout:         10 * time.Second,
+		Timeout:         dialTimeout,
 	}
 
 	if authType == models.AuthTypePassword {
@@ -80,6 +88,76 @@ func loadPrivateKey(keyPEM, keyPath string) ([]byte, error) {
 	return key, nil
 }
 
+func dialTCP(addr string) (net.Conn, error) {
+	dialer := &net.Dialer{
+		Timeout:   dialTimeout,
+		KeepAlive: tcpKeepAlive,
+	}
+	return dialer.Dial("tcp", addr)
+}
+
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	retryable := []string{
+		"timeout",
+		"connection refused",
+		"connection reset",
+		"broken pipe",
+		"eof",
+		"i/o timeout",
+		"no route to host",
+		"network is unreachable",
+		"temporarily unavailable",
+	}
+	for _, needle := range retryable {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func dialSSH(addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	backoffs := []time.Duration{0, time.Second, 2 * time.Second}
+	var lastErr error
+
+	for attempt, wait := range backoffs {
+		if wait > 0 {
+			time.Sleep(wait)
+			debug.Errorf("SSH dial retry %d/%d to %s: %v", attempt+1, maxDialAttempts, addr, lastErr)
+		}
+
+		conn, err := dialTCP(addr)
+		if err != nil {
+			lastErr = err
+			if !isRetryableError(err) || attempt == len(backoffs)-1 {
+				return nil, err
+			}
+			continue
+		}
+
+		sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+		if err != nil {
+			_ = conn.Close()
+			lastErr = err
+			if !isRetryableError(err) || attempt == len(backoffs)-1 {
+				return nil, err
+			}
+			continue
+		}
+
+		return ssh.NewClient(sshConn, chans, reqs), nil
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("ssh dial failed for %s", addr)
+	}
+	return nil, lastErr
+}
+
 func newJumpClient(p models.Profile, targetConfig *ssh.ClientConfig, targetAddr string) (*Client, error) {
 	jumpPort := p.JumpPort
 	if jumpPort == "" {
@@ -94,28 +172,79 @@ func newJumpClient(p models.Profile, targetConfig *ssh.ClientConfig, targetAddr 
 		return nil, fmt.Errorf("jump host auth failed: %w", err)
 	}
 	jumpAddr := net.JoinHostPort(p.JumpHost, jumpPort)
-	jumpClient, err := ssh.Dial("tcp", jumpAddr, jumpConfig)
+
+	jumpClient, err := dialSSH(jumpAddr, jumpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("jump host connection failed: %w", err)
 	}
 
-	targetConn, err := jumpClient.Dial("tcp", targetAddr)
+	targetConn, err := dialThroughJump(jumpClient, targetAddr)
 	if err != nil {
 		jumpClient.Close()
 		return nil, fmt.Errorf("target connection through jump host failed: %w", err)
 	}
 
-	conn, chans, reqs, err := ssh.NewClientConn(targetConn, targetAddr, targetConfig)
+	conn, chans, reqs, err := handshakeTarget(targetAddr, targetConfig, targetConn)
 	if err != nil {
 		targetConn.Close()
 		jumpClient.Close()
-		return nil, fmt.Errorf("target ssh handshake through jump host failed: %w", err)
+		return nil, err
 	}
 
 	return &Client{
 		conn:     ssh.NewClient(conn, chans, reqs),
 		jumpConn: jumpClient,
 	}, nil
+}
+
+func dialThroughJump(jumpClient *ssh.Client, targetAddr string) (net.Conn, error) {
+	backoffs := []time.Duration{0, time.Second, 2 * time.Second}
+	var lastErr error
+
+	for attempt, wait := range backoffs {
+		if wait > 0 {
+			time.Sleep(wait)
+			debug.Errorf("SSH jump tunnel retry %d/%d to %s: %v", attempt+1, maxDialAttempts, targetAddr, lastErr)
+		}
+		targetConn, err := jumpClient.Dial("tcp", targetAddr)
+		if err != nil {
+			lastErr = err
+			if !isRetryableError(err) || attempt == len(backoffs)-1 {
+				return nil, err
+			}
+			continue
+		}
+		return targetConn, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("jump tunnel dial failed for %s", targetAddr)
+	}
+	return nil, lastErr
+}
+
+func handshakeTarget(targetAddr string, targetConfig *ssh.ClientConfig, targetConn net.Conn) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
+	backoffs := []time.Duration{0, time.Second, 2 * time.Second}
+	var lastErr error
+
+	for attempt, wait := range backoffs {
+		if wait > 0 {
+			time.Sleep(wait)
+			debug.Errorf("SSH target handshake retry %d/%d to %s: %v", attempt+1, maxDialAttempts, targetAddr, lastErr)
+		}
+		conn, chans, reqs, err := ssh.NewClientConn(targetConn, targetAddr, targetConfig)
+		if err != nil {
+			lastErr = err
+			if !isRetryableError(err) || attempt == len(backoffs)-1 {
+				return nil, nil, nil, fmt.Errorf("target ssh handshake through jump host failed: %w", err)
+			}
+			continue
+		}
+		return conn, chans, reqs, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("target ssh handshake failed for %s", targetAddr)
+	}
+	return nil, nil, nil, lastErr
 }
 
 // Close closes the SSH connection

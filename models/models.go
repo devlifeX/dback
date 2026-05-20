@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 )
 
@@ -68,8 +69,12 @@ type Profile struct {
 	DBType       DBType `json:"db_type"`
 	IsDocker     bool   `json:"is_docker"`
 	ContainerID  string `json:"container_id"`
-	TargetDBName string `json:"target_db_name"`
-	Destination  string `json:"destination"` // Local folder path
+	TargetDBName        string `json:"target_db_name"`
+	Destination         string `json:"destination"` // Local folder path
+	PreImportQuery      string `json:"pre_import_query,omitempty"`
+	RunQueryBeforeImport bool  `json:"run_query_before_import,omitempty"`
+	PostImportQuery     string `json:"post_import_query,omitempty"`
+	RunQueryAfterImport bool   `json:"run_query_after_import,omitempty"`
 
 	ExportSettings *TransferSettings `json:"export_settings,omitempty"`
 	ImportSettings *TransferSettings `json:"import_settings,omitempty"`
@@ -137,8 +142,29 @@ type TransferSettings struct {
 	DBType          DBType         `json:"db_type"`
 	IsDocker        bool           `json:"is_docker"`
 	ContainerID     string         `json:"container_id,omitempty"`
-	TargetDBName    string         `json:"target_db_name"`
-	Destination     string         `json:"destination,omitempty"`
+	TargetDBName        string `json:"target_db_name"`
+	Destination         string `json:"destination,omitempty"`
+	PreImportQuery       string `json:"pre_import_query,omitempty"`
+	RunQueryBeforeImport bool   `json:"run_query_before_import,omitempty"`
+	PostImportQuery      string `json:"post_import_query,omitempty"`
+	RunQueryAfterImport  bool   `json:"run_query_after_import,omitempty"`
+
+	// Legacy JSON fields (migrated in store.migrateProfiles).
+	legacyPostExportQuery     string `json:"post_export_query,omitempty"`
+	legacyRunQueryAfterExport bool   `json:"run_query_after_export,omitempty"`
+}
+
+// MigrateQueryFields copies legacy post-export query fields into post-import fields.
+func (s *TransferSettings) MigrateQueryFields() {
+	if s == nil {
+		return
+	}
+	if s.PostImportQuery == "" && s.legacyPostExportQuery != "" {
+		s.PostImportQuery = s.legacyPostExportQuery
+	}
+	if !s.RunQueryAfterImport && s.legacyRunQueryAfterExport {
+		s.RunQueryAfterImport = true
+	}
 }
 
 type ProfileBundle struct {
@@ -197,6 +223,10 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 	p.ContainerID = s.ContainerID
 	p.TargetDBName = s.TargetDBName
 	p.Destination = s.Destination
+	p.PreImportQuery = s.PreImportQuery
+	p.RunQueryBeforeImport = s.RunQueryBeforeImport
+	p.PostImportQuery = s.PostImportQuery
+	p.RunQueryAfterImport = s.RunQueryAfterImport
 	return p
 }
 
@@ -226,7 +256,28 @@ func SettingsFromProfile(p Profile) TransferSettings {
 		DBType:          p.DBType,
 		IsDocker:        p.IsDocker,
 		ContainerID:     p.ContainerID,
-		TargetDBName:    p.TargetDBName,
-		Destination:     p.Destination,
+		TargetDBName:        p.TargetDBName,
+		Destination:         p.Destination,
+		PreImportQuery:       p.PreImportQuery,
+		RunQueryBeforeImport: p.RunQueryBeforeImport,
+		PostImportQuery:      p.PostImportQuery,
+		RunQueryAfterImport:  p.RunQueryAfterImport,
 	}
+}
+
+// SubstituteQueryDBName replaces {databasename} in query text.
+func SubstituteQueryDBName(query, dbName string) string {
+	if dbName == "" {
+		return query
+	}
+	return strings.ReplaceAll(query, "{databasename}", dbName)
+}
+
+func (s TransferSettings) SupportsSQLQuery() bool {
+	return s.DBType == DBTypeMySQL || s.DBType == DBTypeMariaDB
+}
+
+func (p Profile) SupportsImportSQLQuery() bool {
+	s := p.EffectiveImport()
+	return (s.DBType == DBTypeMySQL || s.DBType == DBTypeMariaDB) && s.ConnectionType != ConnectionTypeWordPress
 }
