@@ -142,37 +142,61 @@ func (u *UI) layoutTemplateEditor(gtx layout.Context, th *material.Theme) layout
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return dangerButton(gtx, th, theme, &u.deleteTemplateBtn, "Delete", func() {
-						id := u.editingTemplate.ID
-						u.showConfirm("Delete template", "Delete this template?", func() {
-							_ = u.core.DeleteTemplate(id)
-							u.view = ViewList
-							u.invalidate()
+			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return dangerButton(gtx, th, theme, &u.deleteTemplateBtn, "Delete", func() {
+							id := u.editingTemplate.ID
+							u.showConfirm("Delete template", "Delete this template?", func() {
+								_ = u.core.DeleteTemplate(id)
+								u.view = ViewList
+								u.invalidate()
+							})
 						})
-					})
-				}),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return primaryButton(gtx, th, theme, &u.saveTemplateBtn, "Save", func() {
-						t := u.editingTemplate
-						t.Name = strings.TrimSpace(editorText(&u.templateName))
-						t.Description = strings.TrimSpace(editorText(&u.templateDesc))
-						t.Body = editorText(&u.templateBody)
-						if t.Name == "" {
-							u.showError(fmt.Errorf("template name is required"))
-							return
-						}
-						if err := u.core.SaveTemplate(t); err != nil {
-							u.showError(err)
-							return
-						}
-						u.view = ViewList
-						u.invalidate()
-					})
-				}),
-			)
+					}),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return primaryButton(gtx, th, theme, &u.saveTemplateBtn, "Save", func() {
+							u.commitTemplateSave()
+						})
+					}),
+				)
+			})
 		}),
 	)
+}
+
+func (u *UI) commitTemplateSave() {
+	t := u.editingTemplate
+	t.Name = strings.TrimSpace(editorText(&u.templateName))
+	t.Description = strings.TrimSpace(editorText(&u.templateDesc))
+	t.Body = editorText(&u.templateBody)
+	if t.Name == "" {
+		u.showError(fmt.Errorf("template name is required"))
+		return
+	}
+
+	oldBody := u.editingTemplate.Body
+	finish := func() {
+		if err := u.core.SaveTemplate(t); err != nil {
+			u.showError(err)
+			return
+		}
+		u.editingTemplate = t
+		u.view = ViewList
+		u.invalidate()
+	}
+
+	if !models.TemplateBodyChanged(oldBody, t.Body) {
+		finish()
+		return
+	}
+
+	usages := models.FindProfilesUsingTemplate(u.core.Profiles(), oldBody)
+	if len(usages) == 0 {
+		finish()
+		return
+	}
+
+	u.showTemplateReplacePrompt(t, oldBody, usages, finish)
 }

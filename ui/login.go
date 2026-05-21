@@ -52,6 +52,7 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 				layout.Rigid(spacer(theme, unit.Dp(24))),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					consumeEditorSubmit(gtx, &u.loginPassword, submitLogin)
+					requestEditorFocus(gtx, &u.loginPassword, &u.loginFocusPending)
 					return labeledField(gtx, th, theme, "Master key", func(gtx layout.Context) layout.Dimensions {
 						return passwordField(gtx, th, theme, &u.loginPassword, "", &u.loginPasswordVisible, &u.loginPasswordToggle)
 					})

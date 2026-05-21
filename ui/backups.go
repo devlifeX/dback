@@ -103,7 +103,7 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return scrollArea(gtx, th, &u.backupList, func(gtx layout.Context) layout.Dimensions {
-				header := []string{"Date", "Profile", "Database", "Size", "File", ""}
+				header := []string{"When", "Profile", "Database", "Size", "File", ""}
 				var rows []layout.FlexChild
 				rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return tableHeader(gtx, th, theme, header)
@@ -138,7 +138,7 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return tableRow(gtx, th, theme, selected, []string{
-									rec.ExportDate.Format("2006-01-02 15:04"),
+									formatRelativeTime(rec.ExportDate),
 									rec.ProfileName,
 									rec.DatabaseName,
 									rec.FileSize,
@@ -210,10 +210,7 @@ func (u *UI) layoutJobsTable(gtx layout.Context, th *material.Theme, theme *AppT
 				btn = new(widget.Clickable)
 				u.jobCancelBtns[job.ID] = btn
 			}
-			status := job.Status
-			if job.Err != "" {
-				status += " - " + truncateError(job.Err, maxErrorMessageLen)
-			}
+			status := jobStatusLine(job)
 			action := "Cancel"
 			if job.Done {
 				action = ""
@@ -254,9 +251,11 @@ func (u *UI) layoutJobsTable(gtx layout.Context, th *material.Theme, theme *AppT
 func (u *UI) openBackupDetail(record models.ExportRecord) {
 	u.selectedBackup = &record
 	u.view = ViewBackupDetail
-	profiles := u.core.Profiles()
-	if len(profiles) > 0 {
-		u.destSelect.Value = profiles[0].ID
+	importable := importableProfiles(u.core.Profiles())
+	if len(importable) > 0 {
+		u.destSelect.Value = importable[0].ID
+	} else {
+		u.destSelect.Value = ""
 	}
 	u.invalidate()
 }
@@ -269,7 +268,7 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 		return layout.Dimensions{}
 	}
 
-	profiles := u.core.Profiles()
+	profiles := importableProfiles(u.core.Profiles())
 	values := make([]string, 0, len(profiles))
 	labels := make([]string, 0, len(profiles))
 	for _, p := range profiles {
@@ -280,6 +279,8 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 		}
 		labels = append(labels, label)
 	}
+
+	canImport := len(profiles) > 0
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -306,7 +307,11 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 						return lbl.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, record.FileSize)
+						when := formatRelativeTime(record.ExportDate)
+						if when == "" {
+							return mutedLabel(gtx, th, theme, record.FileSize)
+						}
+						return mutedLabel(gtx, th, theme, when+" · "+record.FileSize)
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -317,12 +322,18 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return labeledEnumField(gtx, th, theme, &u.destSelect, "Destination Host", values, labels)
+			if canImport {
+				return labeledEnumField(gtx, th, theme, &u.destSelect, "Destination Host", values, labels)
+			}
+			return mutedLabel(gtx, th, theme, "No import destinations available. All hosts are protected from import, or no hosts exist.")
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if !canImport {
+						return disabledButton(gtx, th, theme, "Import to Selected Host")
+					}
 					return primaryButton(gtx, th, theme, &u.restoreBtn, "Import to Selected Host", func() {
 						u.runRestore(*record)
 					})
@@ -339,7 +350,7 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 }
 
 func (u *UI) runRestore(record models.ExportRecord) {
-	profiles := u.core.Profiles()
+	profiles := importableProfiles(u.core.Profiles())
 	var dest models.Profile
 	for _, p := range profiles {
 		if p.ID == u.destSelect.Value {
@@ -348,7 +359,11 @@ func (u *UI) runRestore(record models.ExportRecord) {
 		}
 	}
 	if dest.ID == "" {
-		u.showError(fmt.Errorf("select a destination profile"))
+		u.showError(fmt.Errorf("select an import destination host"))
+		return
+	}
+	if !dest.AllowsImport() {
+		u.showError(fmt.Errorf("host %q is protected from import", dest.Name))
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())

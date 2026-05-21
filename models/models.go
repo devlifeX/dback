@@ -17,8 +17,9 @@ const (
 type ConnectionType string
 
 const (
-	ConnectionTypeSSH      ConnectionType = "SSH"
-	ConnectionTypeJumpHost ConnectionType = "JumpHost"
+	ConnectionTypeSSH       ConnectionType = "SSH"
+	ConnectionTypeJumpHost  ConnectionType = "JumpHost"
+	ConnectionTypeLocalhost ConnectionType = "Localhost"
 )
 
 // legacyConnectionWordPress is filtered out on load; not supported in the UI.
@@ -69,6 +70,9 @@ type Profile struct {
 	RunQueryBeforeImport bool   `json:"run_query_before_import,omitempty"`
 	PostImportQuery      string `json:"post_import_query,omitempty"`
 	RunQueryAfterImport  bool   `json:"run_query_after_import,omitempty"`
+
+	// ImportProtected blocks restore/import to this host (production safety).
+	ImportProtected bool `json:"import_protected,omitempty"`
 
 	// Legacy fields — read-only for migration; not written on save.
 	ExportSettings *TransferSettings `json:"export_settings,omitempty"`
@@ -346,6 +350,18 @@ func (p Profile) QueryVars() QueryVars {
 
 func (p Profile) SupportsSQLQuery() bool {
 	return mysqlOrMariaDB(p)
+}
+
+func (p Profile) UsesSSH() bool {
+	return p.ConnectionType == ConnectionTypeSSH || p.ConnectionType == ConnectionTypeJumpHost
+}
+
+func (p Profile) IsLocalhost() bool {
+	return p.ConnectionType == ConnectionTypeLocalhost
+}
+
+func (p Profile) AllowsImport() bool {
+	return !p.ImportProtected
 }
 
 func mysqlOrMariaDB(p Profile) bool {

@@ -72,16 +72,40 @@ func mysqlClientExec(p models.Profile, database, extraArgs string) string {
 	)
 }
 
+func mysqlDumpArgs(p models.Profile) string {
+	flags := []string{
+		"--single-transaction",
+		"--quick",
+		"--lock-tables=false",
+		"--routines",
+		"--triggers",
+		"--events",
+		"--hex-blob",
+		"--default-character-set=utf8mb4",
+		"--skip-comments",
+	}
+	if p.DBType == models.DBTypeMySQL {
+		flags = append(flags,
+			"--set-gtid-purged=OFF",
+			"--column-statistics=0",
+			"--no-tablespaces",
+		)
+	}
+	return strings.Join(flags, " ")
+}
+
 func mysqlDumpExec(p models.Profile) string {
+	dumpArgs := mysqlDumpArgs(p)
 	authArgs := fmt.Sprintf("-u %s -p%s", shellEscape(p.DBUser), shellEscape(p.DBPassword))
 	hostArgs := ""
 	if !p.IsDocker {
 		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
+	dbArg := shellEscape(p.TargetDBName)
 	return fmt.Sprintf(
-		"if command -v mariadb-dump >/dev/null 2>&1; then mariadb-dump %s %s %s; elif command -v mysqldump >/dev/null 2>&1; then mysqldump %s %s %s; else echo 'no dump tool' >&2; exit 127; fi",
-		hostArgs, authArgs, shellEscape(p.TargetDBName),
-		hostArgs, authArgs, shellEscape(p.TargetDBName),
+		"if command -v mariadb-dump >/dev/null 2>&1; then mariadb-dump %s %s %s %s; elif command -v mysqldump >/dev/null 2>&1; then mysqldump %s %s %s %s; else echo 'no dump tool' >&2; exit 127; fi",
+		hostArgs, authArgs, dumpArgs, dbArg,
+		hostArgs, authArgs, dumpArgs, dbArg,
 	)
 }
 
@@ -105,7 +129,8 @@ func shellWithPipefail(script string) string {
 }
 
 func compressCmd() string {
-	return "if command -v zstd >/dev/null 2>&1; then zstd; else gzip; fi"
+	// pigz/gzip -1: fast compression (phpMyAdmin-like). zstd -1 as fallback.
+	return "if command -v pigz >/dev/null 2>&1; then pigz -1; elif command -v gzip >/dev/null 2>&1; then gzip -1; elif command -v zstd >/dev/null 2>&1; then zstd -1; else gzip -1; fi"
 }
 
 // BuildNativeExportCommand streams dump from native host tools.
@@ -389,6 +414,25 @@ func BuildDownloadChunkCommand(path string, offset int64) string {
 		shellEscape(path), offset/1024/1024, offset+1, shellEscape(path))
 }
 
+// BuildDatabaseApproxRowCountCommand returns approximate total row count from information_schema.
+func BuildDatabaseApproxRowCountCommand(p models.Profile) (string, error) {
+	if !mysqlOrMariaDB(p) {
+		return "", errors.New("row count only supported for MySQL/MariaDB")
+	}
+	if err := ValidateProfileForRemoteOps(p); err != nil {
+		return "", err
+	}
+	dbName := strings.ReplaceAll(strings.TrimSpace(p.TargetDBName), "'", "''")
+	if dbName == "" {
+		return "", errors.New("target database name is required")
+	}
+	query := fmt.Sprintf(
+		"SELECT COALESCE(SUM(TABLE_ROWS), 0) FROM information_schema.tables WHERE table_schema = '%s'",
+		dbName,
+	)
+	return BuildQueryCommand(p, query, false)
+}
+
 // BuildDatabaseSizeCommand returns a remote command that estimates uncompressed DB size in bytes.
 func BuildDatabaseSizeCommand(p models.Profile) (string, error) {
 	if !mysqlOrMariaDB(p) {
@@ -430,15 +474,22 @@ func ParseDatabaseSizeBytes(out string) int64 {
 	return 0
 }
 
-// EstimateCompressedBackupSize converts raw DB bytes to an expected compressed dump size.
+// EstimateCompressedBackupSize converts raw InnoDB bytes to an expected .sql.gz size.
 func EstimateCompressedBackupSize(rawBytes int64) int64 {
 	if rawBytes <= 0 {
 		return 0
 	}
-	// Typical mysqldump + gzip/zstd output is well below raw table size.
-	estimated := rawBytes / 3
-	if estimated < 1024 {
-		return 0
+	// SQL text dumps (WordPress, etc.) gzip to roughly 3–8% of on-disk InnoDB size.
+	estimated := rawBytes / 20
+	if estimated < 512*1024 {
+		if rawBytes >= 512*1024 {
+			estimated = 512 * 1024
+		} else {
+			estimated = rawBytes / 5
+			if estimated < 1024 {
+				return 0
+			}
+		}
 	}
 	return estimated
 }

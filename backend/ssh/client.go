@@ -26,8 +26,11 @@ type Client struct {
 	jumpConn *ssh.Client
 }
 
-// NewClient creates a new SSH client based on the profile
+// NewClient creates a new SSH client based on the profile.
 func NewClient(p models.Profile) (*Client, error) {
+	if p.ConnectionType == models.ConnectionTypeLocalhost {
+		return nil, fmt.Errorf("localhost profiles use LocalClient; call NewExecutor instead")
+	}
 	targetConfig, err := sshConfig(p.SSHUser, p.SSHPassword, p.AuthType, p.AuthKeyPath, p.AuthKeyPEM)
 	if err != nil {
 		return nil, err
@@ -97,7 +100,22 @@ func dialTCP(addr string) (net.Conn, error) {
 		Timeout:   dialTimeout,
 		KeepAlive: tcpKeepAlive,
 	}
-	return dialer.Dial("tcp", addr)
+	conn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	tuneTCPConn(conn)
+	return conn, nil
+}
+
+func tuneTCPConn(conn net.Conn) {
+	tcp, ok := conn.(*net.TCPConn)
+	if !ok {
+		return
+	}
+	_ = tcp.SetNoDelay(true)
+	_ = tcp.SetReadBuffer(4 << 20)
+	_ = tcp.SetWriteBuffer(4 << 20)
 }
 
 func isRetryableError(err error) bool {
@@ -218,6 +236,7 @@ func dialThroughJump(jumpClient *ssh.Client, targetAddr string) (net.Conn, error
 			}
 			continue
 		}
+		tuneTCPConn(targetConn)
 		return targetConn, nil
 	}
 	if lastErr == nil {
@@ -270,7 +289,7 @@ func (c *Client) Close() error {
 
 // RunCommandStream executes a command and returns its stdout pipe and stderr pipe.
 // This is crucial for streaming large dumps.
-func (c *Client) RunCommandStream(cmd string) (io.Reader, io.Reader, *ssh.Session, error) {
+func (c *Client) RunCommandStream(cmd string) (io.Reader, io.Reader, Session, error) {
 	session, err := c.conn.NewSession()
 	if err != nil {
 		return nil, nil, nil, err
@@ -293,12 +312,12 @@ func (c *Client) RunCommandStream(cmd string) (io.Reader, io.Reader, *ssh.Sessio
 		return nil, nil, nil, err
 	}
 
-	return stdout, stderr, session, nil
+	return stdout, stderr, wrapSession(session), nil
 }
 
 // RunCommandPipeInput executes a command and returns its stdin pipe and stderr pipe.
 // This is used for uploading/restoring dumps.
-func (c *Client) RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader, *ssh.Session, error) {
+func (c *Client) RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader, Session, error) {
 	session, err := c.conn.NewSession()
 	if err != nil {
 		return nil, nil, nil, err
@@ -321,7 +340,7 @@ func (c *Client) RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader, *ss
 		return nil, nil, nil, err
 	}
 
-	return stdin, stderr, session, nil
+	return stdin, stderr, wrapSession(session), nil
 }
 
 // RunCommand executes a command and returns combined stdout/stderr

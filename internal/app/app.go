@@ -194,6 +194,17 @@ func (a *App) SaveTemplate(t models.SQLTemplate) error {
 	return a.store.SaveTemplates(templates)
 }
 
+func (a *App) ReplaceTemplateInProfiles(oldBody, newBody string, profileIDs map[string]struct{}) error {
+	if len(profileIDs) == 0 {
+		return nil
+	}
+	a.mu.Lock()
+	a.profiles = models.ReplaceTemplateInProfiles(a.profiles, oldBody, newBody, profileIDs)
+	profiles := append([]models.Profile(nil), a.profiles...)
+	a.mu.Unlock()
+	return a.store.SaveProfiles(profiles)
+}
+
 func (a *App) DeleteTemplate(id string) error {
 	a.mu.Lock()
 	for i := range a.templates {
@@ -361,7 +372,7 @@ func (a *App) RunImportQuery(ctx context.Context, profile models.Profile, query 
 	}
 	debug.Log("Debug", "Query", "Started", db.MaskCommand(cmd), profile.Name, "", "")
 
-	client, err := ssh.NewClient(profile)
+	client, err := ssh.NewExecutor(profile)
 	if err != nil {
 		return db.QueryResult{}, err
 	}
@@ -395,6 +406,9 @@ func (a *App) RunImportQuery(ctx context.Context, profile models.Profile, query 
 }
 
 func (a *App) Restore(ctx context.Context, record models.ExportRecord, destination models.Profile, progress ProgressFunc) error {
+	if !destination.AllowsImport() {
+		return fmt.Errorf("host %q is protected from import", destination.Name)
+	}
 	operationID := newID()
 	started := time.Now()
 	if info, err := os.Stat(record.FilePath); err != nil {
@@ -453,11 +467,22 @@ func (a *App) Restore(ctx context.Context, record models.ExportRecord, destinati
 }
 
 func (a *App) TestConnection(profile models.Profile) error {
-	client, err := ssh.NewClient(profile)
+	client, err := ssh.NewExecutor(profile)
 	if err != nil {
 		return err
 	}
-	return client.Close()
+	defer client.Close()
+	if profile.IsLocalhost() {
+		out, err := client.RunCommand("echo dback-localhost-ok")
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(out, "dback-localhost-ok") {
+			return fmt.Errorf("local shell check failed")
+		}
+		return nil
+	}
+	return nil
 }
 
 type opLogger struct {

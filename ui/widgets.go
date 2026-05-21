@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 
+	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -159,6 +160,14 @@ func labeledField(gtx layout.Context, th *material.Theme, theme *AppTheme, label
 	)
 }
 
+func requestEditorFocus(gtx layout.Context, e *widget.Editor, pending *bool) {
+	if pending == nil || !*pending {
+		return
+	}
+	gtx.Execute(key.FocusCmd{Tag: e})
+	*pending = false
+}
+
 func scrollArea(gtx layout.Context, th *material.Theme, list *widget.List, content layout.Widget) layout.Dimensions {
 	if list == nil {
 		return content(gtx)
@@ -238,6 +247,22 @@ func secondaryButton(gtx layout.Context, th *material.Theme, theme *AppTheme, bt
 	return actionButton(gtx, th, theme, btn, label, btnSecondary, false, onClick)
 }
 
+func disabledButton(gtx layout.Context, th *material.Theme, theme *AppTheme, label string) layout.Dimensions {
+	macro := op.Record(gtx.Ops)
+	dims := layout.Inset{
+		Top: unit.Dp(10), Bottom: unit.Dp(10),
+		Left: unit.Dp(16), Right: unit.Dp(16),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		lbl := material.Body2(th, label)
+		lbl.Color = theme.TextMuted
+		return lbl.Layout(gtx)
+	})
+	call := macro.Stop()
+	borderedRoundedRect(gtx, dims.Size, gtx.Dp(theme.RadiusSm), theme.SurfaceAlt, theme.Border, gtx.Dp(unit.Dp(1)))
+	call.Add(gtx.Ops)
+	return dims
+}
+
 func dangerButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
 	return actionButton(gtx, th, theme, btn, label, btnDanger, false, onClick)
 }
@@ -290,6 +315,34 @@ func badge(gtx layout.Context, th *material.Theme, theme *AppTheme, label string
 	borderedRoundedRect(gtx, dims.Size, gtx.Dp(theme.RadiusSm), bg, border, borderPx)
 	call.Add(gtx.Ops)
 	return dims
+}
+
+func importProtectedIcon(gtx layout.Context, theme *AppTheme) layout.Dimensions {
+	return lockIcon(gtx, theme.Success)
+}
+
+func lockIcon(gtx layout.Context, col color.NRGBA) layout.Dimensions {
+	sz := gtx.Dp(unit.Dp(18))
+	gtx.Constraints = layout.Exact(image.Pt(sz, sz))
+
+	bodyW := sz * 11 / 18
+	bodyH := sz * 8 / 18
+	bodyX := (sz - bodyW) / 2
+	bodyY := sz - bodyH - 1
+
+	stack := op.Offset(image.Pt(bodyX, bodyY)).Push(gtx.Ops)
+	fillRoundedRect(gtx, image.Pt(bodyW, bodyH), gtx.Dp(unit.Dp(2)), col)
+	stack.Pop()
+
+	shW := bodyW
+	shH := sz * 7 / 18
+	shX := bodyX
+	shY := bodyY - shH/2
+	stack = op.Offset(image.Pt(shX, shY)).Push(gtx.Ops)
+	strokeRoundedRect(gtx, image.Pt(shW, shH), shW/2, col, gtx.Dp(unit.Dp(2)))
+	stack.Pop()
+
+	return layout.Dimensions{Size: image.Pt(sz, sz)}
 }
 
 func searchField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Editor, hint string) layout.Dimensions {

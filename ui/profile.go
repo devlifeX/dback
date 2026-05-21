@@ -123,6 +123,7 @@ func (u *UI) profileFromEditors() models.Profile {
 	p.ContainerID = host.ContainerID
 	p.TargetDBName = host.TargetDBName
 	p.Destination = host.Destination
+	p.ImportProtected = host.ImportProtected
 	qs := u.queryForm.settings()
 	p.PreImportQuery = qs.PreImportQuery
 	p.RunQueryBeforeImport = qs.RunQueryBeforeImport

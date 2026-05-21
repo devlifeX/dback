@@ -11,7 +11,11 @@ import (
 )
 
 var (
-	connTypeValues = []string{string(models.ConnectionTypeSSH), string(models.ConnectionTypeJumpHost)}
+	connTypeValues = []string{
+		string(models.ConnectionTypeSSH),
+		string(models.ConnectionTypeJumpHost),
+		string(models.ConnectionTypeLocalhost),
+	}
 	authTypeValues = []string{string(models.AuthTypePassword), string(models.AuthTypeKeyFile)}
 	dbTypeValues   = []string{string(models.DBTypeMySQL), string(models.DBTypeMariaDB)}
 )
@@ -41,6 +45,7 @@ type SettingsForm struct {
 	ContainerID    widget.Editor
 	TargetDB       widget.Editor
 	Destination    widget.Editor
+	ImportProtected widget.Bool
 
 	defaultDestination string
 	scrollList         widget.List
@@ -86,6 +91,7 @@ func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
 		dest = defaultDest
 	}
 	setEditorText(&f.Destination, dest)
+	f.ImportProtected.Value = p.ImportProtected
 	return f
 }
 
@@ -120,10 +126,12 @@ func (f *SettingsForm) profile() models.Profile {
 		ContainerID:     strings.TrimSpace(editorText(&f.ContainerID)),
 		TargetDBName:    strings.TrimSpace(editorText(&f.TargetDB)),
 		Destination:     strings.TrimSpace(editorText(&f.Destination)),
+		ImportProtected:   f.ImportProtected.Value,
 	}
 }
 
 func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *AppTheme, u *UI) layout.Dimensions {
+	isLocal := f.ConnectionType.Value == string(models.ConnectionTypeLocalhost)
 	isJump := f.ConnectionType.Value == string(models.ConnectionTypeJumpHost)
 	useKey := f.AuthType.Value == string(models.AuthTypeKeyFile)
 	useJumpKey := f.JumpAuthType.Value == string(models.AuthTypeKeyFile)
@@ -146,25 +154,40 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isLocal {
+							return mutedLabel(gtx, th, theme, "Runs mysqldump on this machine — no SSH settings needed.")
+						}
+						return layout.Dimensions{}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isLocal {
+							return layout.Dimensions{}
+						}
 						return labeledField(gtx, th, theme, "Host", func(gtx layout.Context) layout.Dimensions {
 							return editorField(gtx, th, theme, &f.Host, "example.com")
 						})
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isLocal {
+							return layout.Dimensions{}
+						}
 						return labeledField(gtx, th, theme, "Port", func(gtx layout.Context) layout.Dimensions {
 							return editorField(gtx, th, theme, &f.Port, "22")
 						})
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isLocal {
+							return layout.Dimensions{}
+						}
 						return labeledField(gtx, th, theme, "SSH User", func(gtx layout.Context) layout.Dimensions {
 							return editorField(gtx, th, theme, &f.SSHUser, "root")
 						})
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if useKey {
+						if isLocal || useKey {
 							return layout.Dimensions{}
 						}
 						return labeledField(gtx, th, theme, "SSH Password", func(gtx layout.Context) layout.Dimensions {
@@ -173,14 +196,17 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isLocal {
+							return layout.Dimensions{}
+						}
 						return enumField(gtx, th, theme, &f.AuthType, "Auth Type", authTypeValues)
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !useKey {
+						if isLocal || !useKey {
 							return layout.Dimensions{}
 						}
-						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End}.Layout(gtx,
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return labeledField(gtx, th, theme, "Key Path", func(gtx layout.Context) layout.Dimensions {
 									return editorField(gtx, th, theme, &f.KeyPath, "")
@@ -248,7 +274,7 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 							if !useJumpKey {
 								return layout.Dimensions{}
 							}
-							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End}.Layout(gtx,
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 									return labeledField(gtx, th, theme, "Jump Key Path", func(gtx layout.Context) layout.Dimensions {
 										return editorField(gtx, th, theme, &f.JumpKeyPath, "")
@@ -348,7 +374,7 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 					}),
 					layout.Rigid(vgap(theme)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End}.Layout(gtx,
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return labeledField(gtx, th, theme, "Destination Folder", func(gtx layout.Context) layout.Dimensions {
 									return editorField(gtx, th, theme, &f.Destination, f.defaultDestination)
@@ -368,6 +394,27 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 								})
 							}),
 						)
+					}),
+				)
+			})
+		}))
+
+		sections = append(sections, layout.Rigid(vgap(theme)))
+		sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Subtitle1(th, "Security")
+						lbl.Color = theme.Text
+						return lbl.Layout(gtx)
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return checkboxField(gtx, th, theme, &f.ImportProtected, "Block import to this host")
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return mutedLabel(gtx, th, theme, "When enabled, this host cannot be selected as an import destination. Use this to protect production servers from accidental database overwrites.")
 					}),
 				)
 			})

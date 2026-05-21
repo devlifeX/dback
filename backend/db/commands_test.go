@@ -180,8 +180,31 @@ func TestEstimateCompressedBackupSize(t *testing.T) {
 	if got := EstimateCompressedBackupSize(0); got != 0 {
 		t.Fatalf("expected zero for empty input")
 	}
-	if got := EstimateCompressedBackupSize(1024 * 1024); got != (1024*1024)/3 {
-		t.Fatalf("unexpected compressed estimate: %d", got)
+	if got := EstimateCompressedBackupSize(10 * 1024 * 1024); got != 512*1024 {
+		t.Fatalf("expected 512KB floor for 10MB raw, got %d", got)
+	}
+	if got := EstimateCompressedBackupSize(100 * 1024 * 1024); got != 5*1024*1024 {
+		t.Fatalf("expected gzip ratio /20, got %d", got)
+	}
+}
+
+func TestMysqlDumpArgs(t *testing.T) {
+	p := models.Profile{DBType: models.DBTypeMySQL}
+	args := mysqlDumpArgs(p)
+	for _, want := range []string{
+		"--single-transaction",
+		"--quick",
+		"--lock-tables=false",
+		"--hex-blob",
+		"--set-gtid-purged=OFF",
+	} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("dump args missing %q: %s", want, args)
+		}
+	}
+	dump := mysqlDumpExec(p)
+	if !strings.Contains(dump, "--single-transaction") {
+		t.Fatalf("dump command missing flags: %s", dump)
 	}
 }
 

@@ -1,5 +1,7 @@
 package ui
 
+import "dback/models"
+
 type Section int
 
 const (
@@ -45,14 +47,17 @@ const (
 	DialogInfo
 	DialogLoading
 	DialogPassword
+	DialogTemplateReplace
 )
 
 type DialogState struct {
-	Kind     DialogKind
-	Title    string
-	Message  string
-	OnOK     func()
-	OnCancel func()
+	Kind       DialogKind
+	Title      string
+	Message    string
+	OKLabel    string
+	HostUsages []models.TemplateHostUsage
+	OnOK       func()
+	OnCancel   func()
 }
 
 type PendingFilePick struct {

@@ -70,6 +70,8 @@ type UI struct {
 	jobsMu             sync.Mutex
 	jobs               []*operationJob
 	jobsUIMu           sync.Mutex
+	jobTickerMu        sync.Mutex
+	jobTickerRunning   bool
 	lastBackupsRefresh time.Time
 
 	navHosts            widget.Clickable
@@ -95,6 +97,7 @@ type UI struct {
 	openBackupFolderBtn widget.Clickable
 	dialogOKBtn         widget.Clickable
 	dialogCancelBtn     widget.Clickable
+	dialogHostList      widget.List
 	deleteTemplateBtn   widget.Clickable
 	aboutProjectBtn     widget.Clickable
 
@@ -106,6 +109,7 @@ type UI struct {
 	jobCancelBtns    map[string]*widget.Clickable
 
 	unlocked             bool
+	loginFocusPending    bool
 	loginPassword        widget.Editor
 	loginConfirmPassword widget.Editor
 	loginPasswordVisible bool
@@ -152,6 +156,7 @@ func New(logoPNG []byte, version string) *UI {
 		backupRows:       make(map[string]*widget.Clickable),
 		backupFolderBtns: make(map[string]*widget.Clickable),
 		jobCancelBtns:    make(map[string]*widget.Clickable),
+		loginFocusPending: true,
 	}
 }
 

@@ -14,8 +14,6 @@ import (
 	"dback/backend/preflight"
 	"dback/backend/ssh"
 	"dback/models"
-
-	cryptossh "golang.org/x/crypto/ssh"
 )
 
 type Strategy string
@@ -53,7 +51,7 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 	if err := db.ValidateProfileForRemoteOps(p); err != nil {
 		return BackupResult{}, err
 	}
-	client, err := ssh.NewClient(p)
+	client, err := ssh.NewExecutor(p)
 	if err != nil {
 		return BackupResult{}, err
 	}
@@ -78,7 +76,7 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 	exportCmd := db.BuildExportCommand(p)
 	logReq(req, "command", string(StrategyStreaming), 0, db.MaskCommand(exportCmd), "Built", "")
 
-	strategies := []Strategy{StrategyStreaming, StrategyTmpFile}
+	strategies := backupStrategies(p)
 	var lastErr error
 	for attempt, strategy := range strategies {
 		if err := ctx.Err(); err != nil {
@@ -94,7 +92,9 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 			size, err = backupTmpFile(ctx, client, p, pf.SelectedTmpDir, fullPath, req.OperationID, estimatedTotal, req.Progress)
 		}
 		if err == nil {
-			if validateErr := validateLocalFile(fullPath, size, ""); validateErr != nil {
+			if validateErr := validateBackupIntegrity(fullPath); validateErr != nil {
+				err = validateErr
+			} else if validateErr := validateLocalFile(fullPath, size, ""); validateErr != nil {
 				err = validateErr
 			} else if sum, sumErr := checksumFile(fullPath); sumErr == nil {
 				logReq(req, "checksum", string(strategy), attempt+1, "sha256="+sum, "Succeeded", "")
@@ -120,7 +120,16 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 	return BackupResult{}, lastErr
 }
 
-func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, fullPath string, estimatedTotal int64, progress ProgressFunc) (int64, error) {
+func backupStrategies(p models.Profile) []Strategy {
+	// Jump host: dump to remote file first, then download (phpMyAdmin-style).
+	// Streaming through a double SSH tunnel is slow and can truncate large dumps.
+	if p.ConnectionType == models.ConnectionTypeJumpHost {
+		return []Strategy{StrategyTmpFile, StrategyStreaming}
+	}
+	return []Strategy{StrategyStreaming, StrategyTmpFile}
+}
+
+func backupStream(ctx context.Context, client ssh.Executor, p models.Profile, fullPath string, estimatedTotal int64, progress ProgressFunc) (int64, error) {
 	cmd := db.BuildExportCommand(p)
 	stdout, stderr, session, err := client.RunCommandStream(cmd)
 	if err != nil {
@@ -130,7 +139,11 @@ func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, ful
 	go cancelOnContext(ctx, session, client)
 
 	var stderrBuf strings.Builder
-	go func() { _, _ = io.Copy(&stderrBuf, stderr) }()
+	stderrDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&stderrBuf, stderr)
+		close(stderrDone)
+	}()
 
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return 0, err
@@ -141,13 +154,14 @@ func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, ful
 	}
 	defer out.Close()
 
-	written, err := io.Copy(out, &ssh.ProgressReader{
+	written, err := fastCopy(out, &ssh.ProgressReader{
 		Reader: stdout,
 		Total:  estimatedTotal,
 		Callback: func(current int64, total int64) {
 			if progress != nil {
-				if total > 0 {
-					progress(fmt.Sprintf("Streaming backup %.1f%%", percent(current, total)), current, total)
+				effectiveTotal := progressTotal(current, estimatedTotal)
+				if effectiveTotal > 0 {
+					progress(fmt.Sprintf("Streaming backup %.1f%%", percent(current, effectiveTotal)), current, effectiveTotal)
 				} else {
 					progress(fmt.Sprintf("Streaming backup %.2f MB", float64(current)/1024/1024), current, 0)
 				}
@@ -166,6 +180,15 @@ func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, ful
 		_ = os.Remove(fullPath)
 		return 0, fmt.Errorf("%w: %s", err, stderrBuf.String())
 	}
+	<-stderrDone
+	if msg := strings.TrimSpace(stderrBuf.String()); msg != "" && dumpStderrIsFatal(msg) {
+		_ = os.Remove(fullPath)
+		return 0, fmt.Errorf("mysqldump error: %s", msg)
+	}
+	if err := validateBackupIntegrity(fullPath); err != nil {
+		_ = os.Remove(fullPath)
+		return 0, err
+	}
 	if written < 128 {
 		_ = os.Remove(fullPath)
 		return 0, fmt.Errorf("backup file too small (%d bytes)", written)
@@ -173,7 +196,7 @@ func backupStream(ctx context.Context, client *ssh.Client, p models.Profile, ful
 	return written, nil
 }
 
-func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tmpDir, localPath, operationID string, estimatedTotal int64, progress ProgressFunc) (int64, error) {
+func backupTmpFile(ctx context.Context, client ssh.Executor, p models.Profile, tmpDir, localPath, operationID string, estimatedTotal int64, progress ProgressFunc) (int64, error) {
 	remotePath := tmpDir + "/dump.sql.gz"
 	mkdir := shellMkdir(tmpDir)
 	if _, err := client.RunCommand(mkdir); err != nil {
@@ -190,7 +213,7 @@ func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tm
 		}
 	} else {
 		if progress != nil {
-			progress("Creating remote dump...", 0, estimatedTotal)
+			progress("Creating remote dump on server...", 0, estimatedTotal)
 		}
 		exportCmd := db.BuildExportToFileCommand(p, remotePath)
 		if out, err := client.RunCommand(exportCmd); err != nil {
@@ -206,6 +229,10 @@ func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tm
 	fmt.Sscanf(strings.TrimSpace(sizeOut), "%d", &remoteSize)
 	if remoteSize < 128 {
 		return 0, fmt.Errorf("remote dump too small (%d bytes)", remoteSize)
+	}
+
+	if err := validateRemoteBackupIntegrity(client, remotePath); err != nil {
+		return 0, err
 	}
 
 	checksumOut, _ := client.RunCommand(db.BuildChecksumCommand(remotePath))
@@ -226,6 +253,10 @@ func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tm
 		return 0, err
 	}
 
+	if progress != nil {
+		progress(fmt.Sprintf("Downloading backup (%.1f MB)...", float64(remoteSize)/1024/1024), offset, remoteSize)
+	}
+
 	downloadCmd := db.BuildDownloadChunkCommand(remotePath, offset)
 	stdout, stderr, session, err := client.RunCommandStream(downloadCmd)
 	if err != nil {
@@ -243,7 +274,7 @@ func backupTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tm
 	}
 	defer out.Close()
 
-	written, err := io.Copy(out, &ssh.ProgressReader{
+	written, err := fastCopy(out, &ssh.ProgressReader{
 		Reader: stdout,
 		Total:  remoteSize - offset,
 		Callback: func(current int64, total int64) {
@@ -308,7 +339,7 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 		logRestore(req, "checksum", "", 0, "local sha256="+sum, "Info", "")
 	}
 
-	client, err := ssh.NewClient(p)
+	client, err := ssh.NewExecutor(p)
 	if err != nil {
 		return err
 	}
@@ -390,7 +421,7 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 	return lastErr
 }
 
-func restoreStream(ctx context.Context, client *ssh.Client, p models.Profile, in *os.File, total int64, compression string, progress ProgressFunc) error {
+func restoreStream(ctx context.Context, client ssh.Executor, p models.Profile, in *os.File, total int64, compression string, progress ProgressFunc) error {
 	importCmd := db.BuildImportStreamCommand(p, compression)
 	stdin, stderr, session, err := client.RunCommandPipeInput(importCmd)
 	if err != nil {
@@ -402,7 +433,7 @@ func restoreStream(ctx context.Context, client *ssh.Client, p models.Profile, in
 	var stderrBuf strings.Builder
 	go func() { _, _ = io.Copy(&stderrBuf, stderr) }()
 
-	_, err = io.Copy(stdin, &ssh.ProgressReader{
+	_, err = fastCopy(stdin, &ssh.ProgressReader{
 		Reader: in,
 		Total:  total,
 		Callback: func(current int64, total int64) {
@@ -427,7 +458,7 @@ func restoreStream(ctx context.Context, client *ssh.Client, p models.Profile, in
 	return nil
 }
 
-func restoreTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, tmpDir, localPath string, in *os.File, total int64, compression, operationID string, progress ProgressFunc) error {
+func restoreTmpFile(ctx context.Context, client ssh.Executor, p models.Profile, tmpDir, localPath string, in *os.File, total int64, compression, operationID string, progress ProgressFunc) error {
 	remotePath := tmpDir + "/import.sql.gz"
 	mkdir := shellMkdir(tmpDir)
 	if _, err := client.RunCommand(mkdir); err != nil {
@@ -456,7 +487,7 @@ func restoreTmpFile(ctx context.Context, client *ssh.Client, p models.Profile, t
 		}
 	}
 
-	_, copyErr := io.Copy(stdin, &ssh.ProgressReader{
+	_, copyErr := fastCopy(stdin, &ssh.ProgressReader{
 		Reader: in,
 		Total:  total - offset,
 		Callback: func(current int64, total int64) {
@@ -541,13 +572,13 @@ func detectCompression(file *os.File) (string, error) {
 	return "", nil
 }
 
-func cancelOnContext(ctx context.Context, session *cryptossh.Session, client *ssh.Client) {
+func cancelOnContext(ctx context.Context, session ssh.Session, client ssh.Executor) {
 	<-ctx.Done()
 	_ = session.Close()
 	_ = client.Close()
 }
 
-func estimateBackupTotal(client *ssh.Client, p models.Profile, progress ProgressFunc) int64 {
+func estimateBackupTotal(client ssh.Executor, p models.Profile, progress ProgressFunc) int64 {
 	if progress != nil {
 		progress("Estimating database size...", 0, 0)
 	}
@@ -562,9 +593,39 @@ func estimateBackupTotal(client *ssh.Client, p models.Profile, progress Progress
 	raw := db.ParseDatabaseSizeBytes(out)
 	estimated := db.EstimateCompressedBackupSize(raw)
 	if progress != nil && estimated > 0 {
-		progress(fmt.Sprintf("Estimated backup size: %.1f MB", float64(estimated)/1024/1024), 0, estimated)
+		progress(fmt.Sprintf("Estimated backup size (gzip): %.1f MB", float64(estimated)/1024/1024), 0, estimated)
+	}
+	if progress != nil {
+		if approx, err := fetchApproxRowCount(client, p); err == nil && approx > 0 {
+			progress(fmt.Sprintf("Database rows (approx): %d", approx), 0, estimated)
+		}
 	}
 	return estimated
+}
+
+func fetchApproxRowCount(client ssh.Executor, p models.Profile) (int64, error) {
+	cmd, err := db.BuildDatabaseApproxRowCountCommand(p)
+	if err != nil {
+		return 0, err
+	}
+	out, err := client.RunCommand(cmd)
+	if err != nil {
+		return 0, err
+	}
+	return db.ParseDatabaseSizeBytes(out), nil
+}
+
+func dumpStderrIsFatal(msg string) bool {
+	low := strings.ToLower(msg)
+	for _, needle := range []string{
+		"error", "got errno", "lost connection", "server has gone away",
+		"access denied", "unknown table", "couldn't execute",
+	} {
+		if strings.Contains(low, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func logReq(req BackupRequest, phase, strategy string, attempt int, details, status, errStr string) {

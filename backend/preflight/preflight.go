@@ -25,7 +25,7 @@ type Result struct {
 const minFreeKB = 512 * 1024 // 512 MB default threshold
 
 // Run executes preflight checks on SSH host before backup/restore.
-func Run(client *ssh.Client, p models.Profile, requiredBytes int64, operationID string) (Result, error) {
+func Run(client ssh.Executor, p models.Profile, requiredBytes int64, operationID string) (Result, error) {
 	candidates := []string{"/tmp/dback", "/tmp", "$HOME/dback-tmp"}
 	script := db.BuildPreflightScript(p, requiredBytes, candidates)
 	out, err := client.RunCommand(script)

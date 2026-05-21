@@ -1,6 +1,10 @@
 package ui
 
 import (
+	"fmt"
+
+	"dback/models"
+
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
@@ -13,7 +17,11 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 	fillRect(gtx, gtx.Constraints.Max, theme.Overlay)
 
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(440))
+		maxW := unit.Dp(440)
+		if d.Kind == DialogTemplateReplace {
+			maxW = unit.Dp(520)
+		}
+		gtx.Constraints.Max.X = gtx.Dp(maxW)
 		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -26,6 +34,26 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 					lbl := material.Body1(th, d.Message)
 					lbl.Color = theme.TextMuted
 					return lbl.Layout(gtx)
+				}),
+				layout.Rigid(vgap(theme)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if d.Kind != DialogTemplateReplace || len(d.HostUsages) == 0 {
+						return layout.Dimensions{}
+					}
+					maxH := gtx.Dp(unit.Dp(180))
+					gtx.Constraints.Max.Y = maxH
+					return scrollArea(gtx, th, &u.dialogHostList, func(gtx layout.Context) layout.Dimensions {
+						var rows []layout.FlexChild
+						for _, usage := range d.HostUsages {
+							usage := usage
+							rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								line := fmt.Sprintf("• %s (%s)", usage.ProfileName, usage.LocationLabel())
+								return mutedLabel(gtx, th, theme, line)
+							}))
+							rows = append(rows, layout.Rigid(vgap(theme)))
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+					})
 				}),
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -51,7 +79,7 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if d.Kind != DialogConfirm && d.Kind != DialogPassword {
+							if d.Kind != DialogConfirm && d.Kind != DialogPassword && d.Kind != DialogTemplateReplace {
 								return layout.Dimensions{}
 							}
 							return secondaryButton(gtx, th, theme, &u.dialogCancelBtn, "Cancel", func() {
@@ -65,11 +93,19 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 						layout.Rigid(hgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							label := "OK"
-							if d.Kind == DialogConfirm {
+							switch d.Kind {
+							case DialogConfirm:
 								label = "Confirm"
-							}
-							if d.Kind == DialogPassword {
+							case DialogPassword:
 								label = "Continue"
+							case DialogTemplateReplace:
+								label = "Replace"
+							}
+							if d.OKLabel != "" {
+								label = d.OKLabel
+							}
+							if d.Kind != DialogConfirm && d.Kind != DialogPassword && d.Kind != DialogTemplateReplace {
+								return layout.Dimensions{}
 							}
 							return primaryButton(gtx, th, theme, &u.dialogOKBtn, label, func() {
 								if d.OnOK != nil {
@@ -133,5 +169,26 @@ func (u *UI) showPasswordPrompt(title, message string, onOK func(passphrase stri
 			onOK(editorText(&u.passphraseEditor))
 		},
 		OnCancel: func() {},
+	})
+}
+
+func (u *UI) showTemplateReplacePrompt(t models.SQLTemplate, oldBody string, usages []models.TemplateHostUsage, onSave func()) {
+	u.showDialog(DialogState{
+		Kind:       DialogTemplateReplace,
+		Title:      "Update hosts using this template?",
+		Message:    fmt.Sprintf("The template SQL changed. %d host(s) still contain the previous version:", len(usages)),
+		HostUsages: usages,
+		OnCancel:   onSave,
+		OnOK: func() {
+			ids := make(map[string]struct{}, len(usages))
+			for _, usage := range usages {
+				ids[usage.ProfileID] = struct{}{}
+			}
+			if err := u.core.ReplaceTemplateInProfiles(oldBody, t.Body, ids); err != nil {
+				u.showError(err)
+				return
+			}
+			onSave()
+		},
 	})
 }

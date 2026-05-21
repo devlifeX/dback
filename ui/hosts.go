@@ -12,6 +12,7 @@ import (
 	"dback/models"
 
 	"gioui.org/layout"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
@@ -141,16 +142,21 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 			u.profileCards[p.ID] = cards
 		}
 
-		subtitle := fmt.Sprintf("%s@%s:%s - %s", p.SSHUser, p.Host, p.Port, p.TargetDBName)
-		if p.IsDocker {
-			subtitle += " (Docker)"
-		}
+		subtitle := hostConnectionSubtitle(p)
 
 		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if !p.ImportProtected {
+									return layout.Dimensions{}
+								}
+								return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return importProtectedIcon(gtx, theme)
+								})
+							}),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								lbl := material.Body1(th, p.Name)
 								lbl.Color = theme.Text

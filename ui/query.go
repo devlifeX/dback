@@ -109,7 +109,7 @@ func (q *QuerySection) layoutSection(gtx layout.Context, th *material.Theme, the
 			}),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						opts := dropdownOptionsFromCache(cache)
 						return dropdownField(gtx, th, theme, "Template", opts, &q.TemplateSelected, &q.TemplateOpen, &q.TemplateToggle, &q.TemplateList, q.TemplateItemBtns)

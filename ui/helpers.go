@@ -70,3 +70,30 @@ func loadKeyFromReader(reader io.ReadCloser) (pem, displayName string, err error
 func isDocumentURIPath(path string) bool {
 	return strings.HasPrefix(path, "/document/") || strings.Contains(path, "mf%3A")
 }
+
+func importableProfiles(profiles []models.Profile) []models.Profile {
+	var out []models.Profile
+	for _, p := range profiles {
+		if p.AllowsImport() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func hostConnectionSubtitle(p models.Profile) string {
+	var conn string
+	switch p.ConnectionType {
+	case models.ConnectionTypeLocalhost:
+		conn = "Localhost"
+	case models.ConnectionTypeJumpHost:
+		conn = fmt.Sprintf("%s@%s:%s (via %s)", p.SSHUser, p.Host, p.Port, p.JumpHost)
+	default:
+		conn = fmt.Sprintf("%s@%s:%s", p.SSHUser, p.Host, p.Port)
+	}
+	subtitle := fmt.Sprintf("%s — %s", conn, p.TargetDBName)
+	if p.IsDocker {
+		subtitle += " (Docker)"
+	}
+	return subtitle
+}
