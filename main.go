@@ -12,8 +12,8 @@ import (
 //go:embed logo.png
 var logoBytes []byte
 
-// appVersion is set at build time via -ldflags; defaults to "dev" for local runs.
-var appVersion = "dev"
+// appVersion is set at build time via -ldflags; defaults to "3.2.0" for local runs.
+var appVersion = "3.2.0"
 
 func main() {
 	args := os.Args[1:]

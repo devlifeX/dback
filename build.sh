@@ -5,7 +5,7 @@ set -u
 APP_NAME="dback"
 DIST_DIR="dist"
 ICON_PATH="logo.png"
-APP_VERSION="${APP_VERSION:-1.0.0}"
+APP_VERSION="${APP_VERSION:-3.2.0}"
 
 export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
 
