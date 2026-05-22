@@ -267,27 +267,7 @@ func (a *App) ImportAppData(path string, includeSecrets bool, passphrase string)
 	if err != nil {
 		return err
 	}
-	a.mu.Lock()
-	a.profiles = store.MergeProfiles(a.profiles, imported.Profiles)
-	a.templates = store.MergeTemplates(a.templates, imported.Templates)
-	a.history = store.MergeHistory(a.history, imported.History)
-	a.logs = store.MergeLogs(a.logs, imported.Logs)
-	profiles := append([]models.Profile(nil), a.profiles...)
-	templates := append([]models.SQLTemplate(nil), a.templates...)
-	history := append([]models.ExportRecord(nil), a.history...)
-	logs := append([]models.LogEntry(nil), a.logs...)
-	a.mu.Unlock()
-
-	if err := a.store.SaveProfiles(profiles); err != nil {
-		return err
-	}
-	if err := a.store.SaveTemplates(templates); err != nil {
-		return err
-	}
-	if err := a.store.SaveHistory(history); err != nil {
-		return err
-	}
-	return a.store.SaveLogs(logs)
+	return a.applyImportedAppData(imported)
 }
 
 func (a *App) Backup(ctx context.Context, profile models.Profile, progress ProgressFunc) (models.ExportRecord, error) {

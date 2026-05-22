@@ -199,13 +199,39 @@ type AppVaultFile struct {
 	EncryptedPayload string    `json:"encrypted_payload"`
 }
 
+// SyncSettings holds S3-compatible remote sync configuration.
+type SyncSettings struct {
+	Endpoint    string `json:"endpoint"`
+	Region      string `json:"region,omitempty"`
+	Bucket      string `json:"bucket"`
+	AccessKeyID string `json:"access_key_id"`
+	SecretKey   string `json:"secret_key"`
+	UseSSL      bool   `json:"use_ssl"`
+}
+
+func (s *SyncSettings) Clone() *SyncSettings {
+	if s == nil {
+		return nil
+	}
+	c := *s
+	return &c
+}
+
+// SyncActivity tracks local push/pull history (not included in remote sync bundles).
+type SyncActivity struct {
+	LastPushAt time.Time `json:"last_push_at,omitempty"`
+	LastPullAt time.Time `json:"last_pull_at,omitempty"`
+}
+
 // AppVaultPayload is the decrypted contents of the internal vault.
 type AppVaultPayload struct {
-	Version   int            `json:"version"`
-	Profiles  []Profile      `json:"profiles"`
-	Templates []SQLTemplate  `json:"templates"`
-	History   []ExportRecord `json:"history"`
-	Logs      []LogEntry     `json:"logs"`
+	Version      int            `json:"version"`
+	Profiles     []Profile      `json:"profiles"`
+	Templates    []SQLTemplate  `json:"templates"`
+	History      []ExportRecord `json:"history"`
+	Logs         []LogEntry     `json:"logs"`
+	Sync         *SyncSettings  `json:"sync,omitempty"`
+	SyncActivity SyncActivity   `json:"sync_activity,omitempty"`
 }
 
 // AppBundle exports hosts, templates, backup history metadata, and activity logs.
@@ -220,6 +246,7 @@ type AppBundle struct {
 	Templates        []SQLTemplate  `json:"templates,omitempty"`
 	History          []ExportRecord `json:"history,omitempty"`
 	Logs             []LogEntry     `json:"logs,omitempty"`
+	Sync             *SyncSettings  `json:"sync,omitempty"`
 	EncryptedPayload string         `json:"encrypted_payload,omitempty"`
 }
 

@@ -27,9 +27,14 @@ func sanitizeError(err error) string {
 		return "Passphrase is required when exporting secrets."
 	case errors.Is(err, store.ErrLegacyPlaintextWithVault):
 		return "Legacy plaintext files were found alongside the encrypted vault and could not be removed safely."
+	case errors.Is(err, store.ErrSyncNotConfigured):
+		return "Configure and save S3 sync settings first."
 	default:
 		msg := err.Error()
 		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "decryption failed") {
+			return "Wrong master key or corrupted remote data."
+		}
 		if strings.Contains(lower, "password") ||
 			strings.Contains(lower, "secret") ||
 			strings.Contains(lower, "key") ||

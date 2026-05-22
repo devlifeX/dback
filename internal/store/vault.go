@@ -23,6 +23,7 @@ var (
 	ErrMasterKeyRequired          = errors.New("master key is required")
 	ErrIncludeSecretsNoPassphrase = errors.New("passphrase required when including secrets")
 	ErrLegacyPlaintextWithVault   = errors.New("legacy plaintext files found alongside encrypted vault")
+	ErrSyncNotConfigured          = errors.New("sync settings are not configured")
 )
 
 const minMasterKeyLen = 8
@@ -94,6 +95,7 @@ func (s *Store) CreateVault(passphrase string) error {
 		return err
 	}
 	s.applyPayloadLocked(payload)
+	s.setMasterKeyLocked(passphrase)
 	s.unlocked = true
 	s.bumpRevisionLocked()
 	return nil
@@ -122,6 +124,7 @@ func (s *Store) Unlock(passphrase string) error {
 		}
 		s.dataKey = key
 		s.applyPayloadLocked(payload)
+		s.setMasterKeyLocked(passphrase)
 		s.unlocked = true
 		s.bumpRevisionLocked()
 		_ = s.removeLegacyPlaintextLocked()
@@ -140,6 +143,7 @@ func (s *Store) Unlock(passphrase string) error {
 			return err
 		}
 		s.applyPayloadLocked(payload)
+		s.setMasterKeyLocked(passphrase)
 		s.unlocked = true
 		s.bumpRevisionLocked()
 		return nil
@@ -156,6 +160,8 @@ func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) {
 	}
 	s.history = append([]models.ExportRecord(nil), payload.History...)
 	s.logs = append([]models.LogEntry(nil), payload.Logs...)
+	s.sync = payload.Sync.Clone()
+	s.syncActivity = payload.SyncActivity
 }
 
 func (s *Store) persistVaultLocked() error {
@@ -184,11 +190,13 @@ func (s *Store) currentPayloadLocked() models.AppVaultPayload {
 		profiles[i].ImportSettings = nil
 	}
 	return models.AppVaultPayload{
-		Version:   CurrentVersion,
-		Profiles:  profiles,
-		Templates: append([]models.SQLTemplate(nil), s.templates...),
-		History:   append([]models.ExportRecord(nil), s.history...),
-		Logs:      append([]models.LogEntry(nil), s.logs...),
+		Version:      CurrentVersion,
+		Profiles:     profiles,
+		Templates:    append([]models.SQLTemplate(nil), s.templates...),
+		History:      append([]models.ExportRecord(nil), s.history...),
+		Logs:         append([]models.LogEntry(nil), s.logs...),
+		Sync:         s.sync.Clone(),
+		SyncActivity: s.syncActivity,
 	}
 }
 
@@ -360,12 +368,34 @@ func (s *Store) Lock() {
 		s.dataKey[i] = 0
 	}
 	s.dataKey = nil
+	s.clearMasterKeyLocked()
 	s.vaultSalt = ""
 	s.unlocked = false
 	s.profiles = nil
 	s.templates = nil
 	s.history = nil
 	s.logs = nil
+	s.sync = nil
+	s.syncActivity = models.SyncActivity{}
+}
+
+func (s *Store) setMasterKeyLocked(passphrase string) {
+	s.clearMasterKeyLocked()
+	s.masterKey = []byte(passphrase)
+}
+
+func (s *Store) clearMasterKeyLocked() {
+	for i := range s.masterKey {
+		s.masterKey[i] = 0
+	}
+	s.masterKey = nil
+}
+
+func (s *Store) masterPassphraseLocked() (string, error) {
+	if !s.unlocked || len(s.masterKey) == 0 {
+		return "", ErrVaultLocked
+	}
+	return string(s.masterKey), nil
 }
 
 func validateMasterKey(passphrase string) error {

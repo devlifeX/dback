@@ -51,6 +51,7 @@ type UI struct {
 	templateBody    widget.Editor
 
 	backupTab        int
+	settingsTab      int
 	selectedBackup   *models.ExportRecord
 	selectedBackupID string
 	backupHostFilter string
@@ -87,7 +88,18 @@ type UI struct {
 	testExportBtn       widget.Clickable
 	exportAppDataBtn    widget.Clickable
 	importAppDataBtn    widget.Clickable
-	tabConnection       widget.Clickable
+	tabSettingsExport   widget.Clickable
+	tabSettingsSync     widget.Clickable
+	saveSyncBtn         widget.Clickable
+	testSyncBtn         widget.Clickable
+	syncPushBtn         widget.Clickable
+	syncPullBtn         widget.Clickable
+	syncForm             *SyncForm
+	syncConnectionOK     bool
+	syncSavedBaseline    *models.SyncSettings
+	syncActivity         models.SyncActivity
+	settingsList         widget.List
+	tabConnection        widget.Clickable
 	tabQuery            widget.Clickable
 	tabBackupFiles      widget.Clickable
 	tabBackupJobs       widget.Clickable
@@ -210,17 +222,34 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	fillRect(gtx, gtx.Constraints.Max, u.theme.Bg)
 
 	if !u.unlocked {
-		return u.layoutLogin(gtx, th)
+		dims := u.layoutLogin(gtx, th)
+		if u.dialog.Kind != DialogNone {
+			return layout.Stack{}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions { return dims }),
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min = gtx.Constraints.Max
+					return u.layoutDialog(gtx, th)
+				}),
+			)
+		}
+		return dims
 	}
 
-	if u.dialog.Kind != DialogNone {
-		return u.layoutDialog(gtx, th)
-	}
-
-	if u.platform.IsMobile() {
-		return u.layoutMobile(gtx, th)
-	}
-	return u.layoutDesktop(gtx, th)
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			if u.platform.IsMobile() {
+				return u.layoutMobile(gtx, th)
+			}
+			return u.layoutDesktop(gtx, th)
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if u.dialog.Kind == DialogNone {
+				return layout.Dimensions{}
+			}
+			gtx.Constraints.Min = gtx.Constraints.Max
+			return u.layoutDialog(gtx, th)
+		}),
+	)
 }
 
 func (u *UI) layoutDesktop(gtx layout.Context, th *material.Theme) layout.Dimensions {
@@ -253,6 +282,9 @@ func (u *UI) layoutContent(gtx layout.Context, th *material.Theme) layout.Dimens
 		Left: u.theme.Padding, Right: u.theme.Padding,
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		if u.section == SectionAbout {
+			gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
+		}
 		switch u.section {
 		case SectionHosts:
 			return u.layoutHosts(gtx, th)

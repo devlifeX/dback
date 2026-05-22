@@ -165,10 +165,11 @@ type appPlainPayload struct {
 	Templates []models.SQLTemplate  `json:"templates"`
 	History   []models.ExportRecord `json:"history"`
 	Logs      []models.LogEntry     `json:"logs"`
+	Sync      *models.SyncSettings  `json:"sync,omitempty"`
 }
 
 // EncryptAppBundle encrypts profile secrets and app metadata into an encrypted AppBundle.
-func EncryptAppBundle(profiles []models.Profile, templates []models.SQLTemplate, history []models.ExportRecord, logs []models.LogEntry, passphrase string) (models.AppBundle, error) {
+func EncryptAppBundle(profiles []models.Profile, templates []models.SQLTemplate, history []models.ExportRecord, logs []models.LogEntry, sync *models.SyncSettings, passphrase string) (models.AppBundle, error) {
 	if passphrase == "" {
 		return models.AppBundle{}, errors.New("passphrase required for encrypted export")
 	}
@@ -197,6 +198,7 @@ func EncryptAppBundle(profiles []models.Profile, templates []models.SQLTemplate,
 		Templates: templates,
 		History:   history,
 		Logs:      logs,
+		Sync:      sync,
 	})
 	if err != nil {
 		return models.AppBundle{}, err
@@ -282,5 +284,6 @@ func DecryptAppBundle(bundle models.AppBundle, passphrase string) (models.AppBun
 		Templates:  payload.Templates,
 		History:    payload.History,
 		Logs:       payload.Logs,
+		Sync:       payload.Sync,
 	}, nil
 }

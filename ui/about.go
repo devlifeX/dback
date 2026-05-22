@@ -10,6 +10,7 @@ import (
 
 func (u *UI) layoutAbout(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	theme := u.theme
+	gtx.Constraints.Min = gtx.Constraints.Max
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(520))
 		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {

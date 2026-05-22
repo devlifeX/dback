@@ -273,3 +273,157 @@ func TestMergeTemplatesHistoryLogs(t *testing.T) {
 		t.Fatalf("logs merge failed: %#v", outLogs)
 	}
 }
+
+func TestSyncSettingsVaultRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+
+	settings := models.SyncSettings{
+		Endpoint:    "minio.local:9000",
+		Region:      "us-east-1",
+		Bucket:      "dback-sync",
+		AccessKeyID: "access",
+		SecretKey:   "secret",
+		UseSSL:      false,
+	}
+	if err := s.SaveSyncSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	s2 := New(dir)
+	unlockStore(t, s2)
+	loaded, err := s2.LoadSyncSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.Bucket != "dback-sync" || loaded.SecretKey != "secret" {
+		t.Fatalf("sync settings not restored: %#v", loaded)
+	}
+}
+
+func TestMarshalAppDataBundleForSync(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+
+	syncSettings := models.SyncSettings{
+		Endpoint:    "s3.amazonaws.com",
+		Bucket:      "bucket",
+		AccessKeyID: "key",
+		SecretKey:   "secret",
+		UseSSL:      true,
+	}
+	if err := s.SaveSyncSettings(syncSettings); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := s.MarshalAppDataBundleForSync(AppImportData{
+		Profiles: []models.Profile{{ID: "p1", Name: "Host", SSHPassword: "pw"}},
+		Sync:     syncSettings.Clone(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported, err := s.ImportAppDataBundleForSync(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imported.Profiles[0].SSHPassword != "pw" {
+		t.Fatalf("profile secret not restored: %#v", imported.Profiles[0])
+	}
+	if imported.Sync == nil || imported.Sync.Bucket != "bucket" {
+		t.Fatalf("sync settings not restored: %#v", imported.Sync)
+	}
+}
+
+func TestValidateMasterPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+	if err := s.ValidateMasterPassphrase(testMasterKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ValidateMasterPassphrase("wrong-key"); err != ErrWrongMasterKey {
+		t.Fatalf("expected ErrWrongMasterKey, got %v", err)
+	}
+}
+
+func TestSyncActivityRecord(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+	if err := s.RecordSyncPush(); err != nil {
+		t.Fatal(err)
+	}
+	activity, err := s.LoadSyncActivity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activity.LastPushAt.IsZero() {
+		t.Fatal("expected last push time")
+	}
+	if err := s.RecordSyncPull(); err != nil {
+		t.Fatal(err)
+	}
+	activity, err = s.LoadSyncActivity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activity.LastPullAt.IsZero() {
+		t.Fatal("expected last pull time")
+	}
+}
+
+func TestSyncActivityVaultPersist(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+	if err := s.RecordSyncPush(); err != nil {
+		t.Fatal(err)
+	}
+	pushAt, err := s.LoadSyncActivity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushAt.LastPushAt.IsZero() {
+		t.Fatal("expected last push time in memory")
+	}
+
+	s2 := New(dir)
+	unlockStore(t, s2)
+	activity, err := s2.LoadSyncActivity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activity.LastPushAt.IsZero() {
+		t.Fatal("expected last push time persisted in vault")
+	}
+	if !activity.LastPushAt.Equal(pushAt.LastPushAt) {
+		t.Fatalf("expected %v, got %v", pushAt.LastPushAt, activity.LastPushAt)
+	}
+}
+
+func TestSyncActivitySurvivesSaveSyncSettings(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+	if err := s.RecordSyncPush(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSyncSettings(models.SyncSettings{
+		Endpoint:    "s3.example.com",
+		Bucket:      "bucket",
+		AccessKeyID: "key",
+		SecretKey:   "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	activity, err := s.LoadSyncActivity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activity.LastPushAt.IsZero() {
+		t.Fatal("expected last push time after saving sync settings")
+	}
+}

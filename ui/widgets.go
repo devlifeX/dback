@@ -20,6 +20,7 @@ const (
 	btnPrimary buttonStyle = iota
 	btnSecondary
 	btnDanger
+	btnSuccess
 	btnTab
 )
 
@@ -203,6 +204,9 @@ func renderButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *
 	case btnDanger:
 		bg = theme.Danger
 		fg = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	case btnSuccess:
+		bg = theme.Success
+		fg = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 	case btnTab:
 		if active {
 			bg = theme.SurfaceAlt
@@ -245,6 +249,10 @@ func primaryButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn 
 
 func secondaryButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
 	return actionButton(gtx, th, theme, btn, label, btnSecondary, false, onClick)
+}
+
+func successButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
+	return actionButton(gtx, th, theme, btn, label, btnSuccess, false, onClick)
 }
 
 func disabledButton(gtx layout.Context, th *material.Theme, theme *AppTheme, label string) layout.Dimensions {

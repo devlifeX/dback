@@ -14,6 +14,7 @@ DBack connects to remote Linux servers, streams database dumps to local files wi
 - **Smart fallback** — retries with a remote tmp-file when SSH streams fail; supports resume and checksum validation
 - **Unified hosts** — one connection, backup folder, and import queries per host
 - **Encrypted vault** — profiles, templates, history, and logs stored in `app_data.vault.json`
+- **Remote sync** — push/pull encrypted app settings to S3-compatible storage (AWS S3, MinIO, etc.)
 - **SQL templates** — reusable snippets with placeholders for pre/post import queries
 - **Modern UI** — dark GitHub-style desktop interface with sidebar navigation
 
@@ -52,10 +53,24 @@ Configure pre-import SQL, append templates, and test queries before restore.
 - **Legacy migration** — old export/import profiles are flattened on load
 
 ### App Data Transfer
-- Export/import hosts, templates, backup history metadata, and activity logs from **Settings**
+Settings has two tabs: **Export** and **Sync**.
+
+**Export / Import (local file)**
+- Export/import hosts, templates, backup history metadata, and activity logs
 - Backup `.sql.gz` files are **not** included in the bundle
-- Encrypted export with export password (Argon2id + AES-256-GCM)
+- Encrypted export with an export password (Argon2id + AES-256-GCM)
 - Non-destructive merge — conflicts prompt before overwrite
+
+**Remote Sync (S3-compatible)**
+- Push or pull the same encrypted app-data bundle to `{bucket}/dback/app-data.json`
+- Works with AWS S3, MinIO, and other S3-compatible endpoints
+- Configure endpoint, region, bucket, access key, secret key, and SSL
+- **Test Connection** verifies bucket access and read/write permissions under `dback/`
+- **Push** / **Pull** appear after a successful connection test
+- Encrypted with your **vault master key** (the same key used to unlock DBack), not the export password
+- Sync settings (S3 credentials) are included in the remote bundle
+- Pull downloads the bundle, asks for confirmation, then merges like a local import
+- **Sync log** (local only, not uploaded): last push and last pull timestamps
 
 ### SQL Templates
 - Create, edit, and delete reusable SQL snippets
@@ -135,6 +150,7 @@ If system dependencies are problematic:
 | App config & data | `~/.config/dback` |
 | Default backups | `~/dback/backups` |
 | Encrypted vault | `~/.config/dback/app_data.vault.json` |
+| Remote sync object | `{bucket}/dback/app-data.json` |
 | SSH known hosts | `~/.config/dback/ssh_known_hosts` |
 
 Hosts, templates, backup history, and activity logs are stored inside the encrypted vault. Each host can override the backup destination folder.
@@ -143,7 +159,8 @@ Hosts, templates, backup history, and activity logs are stored inside the encryp
 
 - On first launch, DBack prompts for a **master key** (minimum 8 characters; confirmation required when creating a new vault).
 - Legacy plaintext files are removed after successful migration into the vault.
-- **App Data Transfer** exports require an export password. Metadata in history and logs may still contain host names and paths.
+- **App Data Transfer** exports require an export password. **Remote Sync** uses the vault master key instead. Metadata in history and logs may still contain host names and paths.
+- S3 credentials are stored in the encrypted vault and included in sync bundles — use bucket policies and least-privilege IAM where possible.
 - SSH uses **TOFU host key verification** — unknown keys are saved on first connect; mismatches are rejected.
 - Remote database commands validate and shell-escape profile fields to reduce injection risk.
 - Password fields are masked in the UI. Error messages are sanitized unless debug mode is enabled.
@@ -164,9 +181,17 @@ Hosts, templates, backup history, and activity logs are stored inside the encryp
 4. Click **Import to Selected Host**
 
 ### App data export/import
-1. Open **Settings**
+1. Open **Settings** → **Export** tab
 2. **Export App Data** — enter an export password
 3. **Import App Data** — enter the export password for encrypted bundles
+
+### Remote sync (S3)
+1. Open **Settings** → **Sync** tab
+2. Enter S3 endpoint, bucket, and credentials → **Save**
+3. Click **Test Connection** — on success, **Push** and **Pull** appear
+4. **Push** — uploads encrypted app data to `dback/app-data.json`
+5. **Pull** — downloads the remote bundle, confirms, then merges into this device
+6. Scroll to **Sync log** at the bottom to see last push/pull times (stored locally only)
 
 ## Why is it fast?
 
@@ -195,3 +220,9 @@ Removed. DBack now supports **MySQL and MariaDB** only.
 
 ### What happened to separate Export/Import settings per profile?
 Profiles are now independent **hosts** with a single connection. Legacy dual settings are migrated automatically on first load.
+
+### What is included in remote sync?
+The same data as **Export App Data**: hosts, templates, backup history metadata, activity logs, and sync settings. Backup `.sql.gz` files and local sync timestamps (last push/pull) are **not** uploaded.
+
+### Can I use MinIO or a self-hosted S3 endpoint?
+Yes. Enter the host (with or without `https://`) and port, set **Use SSL** as needed, and provide bucket credentials. The remote object path is always `dback/app-data.json` inside your bucket.

@@ -21,6 +21,7 @@ type Store struct {
 
 	unlocked  bool
 	dataKey   []byte
+	masterKey []byte
 	vaultSalt string
 	revision  uint64
 
@@ -28,6 +29,8 @@ type Store struct {
 	templates []models.SQLTemplate
 	history   []models.ExportRecord
 	logs      []models.LogEntry
+	sync      *models.SyncSettings
+	syncActivity models.SyncActivity
 }
 
 func New(baseDir string) *Store {
@@ -160,6 +163,74 @@ func (s *Store) SaveLogs(entries []models.LogEntry) error {
 	return s.persistVaultLocked()
 }
 
+func (s *Store) LoadSyncSettings() (*models.SyncSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return nil, ErrVaultLocked
+	}
+	return s.sync.Clone(), nil
+}
+
+func (s *Store) SaveSyncSettings(settings models.SyncSettings) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	s.sync = settings.Clone()
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
+}
+
+func (s *Store) LoadSyncActivity() (models.SyncActivity, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return models.SyncActivity{}, ErrVaultLocked
+	}
+	return s.syncActivity, nil
+}
+
+func (s *Store) RecordSyncPush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	s.syncActivity.LastPushAt = time.Now()
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
+}
+
+func (s *Store) RecordSyncPull() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	s.syncActivity.LastPullAt = time.Now()
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
+}
+
+// ValidateMasterPassphrase checks the passphrase against the vault unlock key.
+func (s *Store) ValidateMasterPassphrase(passphrase string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	cached, err := s.masterPassphraseLocked()
+	if err != nil {
+		return err
+	}
+	if passphrase != cached {
+		return ErrWrongMasterKey
+	}
+	return nil
+}
+
 // ImportProfilesBundle loads profiles from a bundle file (plain or encrypted).
 func (s *Store) ImportProfilesBundle(path string, includeSecrets bool, passphrase string) ([]models.Profile, error) {
 	var bundle models.ProfileBundle
@@ -200,6 +271,7 @@ type AppImportData struct {
 	Templates []models.SQLTemplate
 	History   []models.ExportRecord
 	Logs      []models.LogEntry
+	Sync      *models.SyncSettings
 }
 
 // TemplateConflict describes an imported template that replaces an existing one.
@@ -215,7 +287,11 @@ func (s *Store) ImportAppDataBundle(path string, includeSecrets bool, passphrase
 	if err != nil {
 		return AppImportData{}, err
 	}
+	return s.ImportAppDataBytes(raw, includeSecrets, passphrase)
+}
 
+// ImportAppDataBytes loads app data from a JSON bundle in memory.
+func (s *Store) ImportAppDataBytes(raw []byte, includeSecrets bool, passphrase string) (AppImportData, error) {
 	var appBundle models.AppBundle
 	if err := json.Unmarshal(raw, &appBundle); err == nil && appBundleHasPayload(appBundle) {
 		return s.decodeAppBundle(appBundle, includeSecrets, passphrase)
@@ -269,6 +345,7 @@ func (s *Store) decodeAppBundle(bundle models.AppBundle, includeSecrets bool, pa
 			Templates: decoded.Templates,
 			History:   decoded.History,
 			Logs:      decoded.Logs,
+			Sync:      decoded.Sync.Clone(),
 		}, nil
 	}
 	profiles := flattenProfiles(bundle.Profiles)
@@ -280,41 +357,84 @@ func (s *Store) decodeAppBundle(bundle models.AppBundle, includeSecrets bool, pa
 		Templates: append([]models.SQLTemplate(nil), bundle.Templates...),
 		History:   append([]models.ExportRecord(nil), bundle.History...),
 		Logs:      append([]models.LogEntry(nil), bundle.Logs...),
+		Sync:      bundle.Sync.Clone(),
 	}, nil
 }
 
 func (s *Store) ExportAppData(path string, data AppImportData, includeSecrets bool, passphrase string) error {
+	raw, err := s.MarshalAppDataBundle(data, includeSecrets, passphrase)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, raw, 0600)
+}
+
+func (s *Store) MarshalAppDataBundle(data AppImportData, includeSecrets bool, passphrase string) ([]byte, error) {
 	if includeSecrets && passphrase == "" {
-		return ErrIncludeSecretsNoPassphrase
+		return nil, ErrIncludeSecretsNoPassphrase
 	}
 	payload := AppImportData{
 		Profiles:  flattenProfiles(data.Profiles),
 		Templates: append([]models.SQLTemplate(nil), data.Templates...),
 		History:   append([]models.ExportRecord(nil), data.History...),
 		Logs:      append([]models.LogEntry(nil), data.Logs...),
+		Sync:      data.Sync.Clone(),
 	}
 	for i := range payload.Profiles {
 		payload.Profiles[i].ExportSettings = nil
 		payload.Profiles[i].ImportSettings = nil
 	}
 	if includeSecrets && passphrase != "" {
-		bundle, err := secrets.EncryptAppBundle(payload.Profiles, payload.Templates, payload.History, payload.Logs, passphrase)
+		bundle, err := secrets.EncryptAppBundle(payload.Profiles, payload.Templates, payload.History, payload.Logs, payload.Sync, passphrase)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return writeJSON(path, bundle)
+		return json.MarshalIndent(bundle, "", "  ")
 	}
 	if !includeSecrets {
 		payload.Profiles = stripSecrets(payload.Profiles)
+		if payload.Sync != nil {
+			payload.Sync = &models.SyncSettings{
+				Endpoint:    payload.Sync.Endpoint,
+				Region:      payload.Sync.Region,
+				Bucket:      payload.Sync.Bucket,
+				AccessKeyID: payload.Sync.AccessKeyID,
+				UseSSL:      payload.Sync.UseSSL,
+			}
+		}
 	}
-	return writeJSON(path, models.AppBundle{
+	bundle := models.AppBundle{
 		Version:    CurrentVersion,
 		ExportedAt: time.Now(),
 		Profiles:   payload.Profiles,
 		Templates:  payload.Templates,
 		History:    payload.History,
 		Logs:       payload.Logs,
-	})
+		Sync:       payload.Sync,
+	}
+	return json.MarshalIndent(bundle, "", "  ")
+}
+
+// MarshalAppDataBundleForSync encrypts the current app data with the cached master key.
+func (s *Store) MarshalAppDataBundleForSync(data AppImportData) ([]byte, error) {
+	s.mu.Lock()
+	passphrase, err := s.masterPassphraseLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return s.MarshalAppDataBundle(data, true, passphrase)
+}
+
+// ImportAppDataBundleForSync decrypts a sync bundle using the cached master key.
+func (s *Store) ImportAppDataBundleForSync(raw []byte) (AppImportData, error) {
+	s.mu.Lock()
+	passphrase, err := s.masterPassphraseLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return AppImportData{}, err
+	}
+	return s.ImportAppDataBytes(raw, true, passphrase)
 }
 
 func DetectTemplateConflicts(existing, imported []models.SQLTemplate) []TemplateConflict {

@@ -11,18 +11,31 @@ import (
 )
 
 func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	gtx.Constraints.Min = gtx.Constraints.Max
 	theme := u.theme
 	d := u.dialog
 
-	fillRect(gtx, gtx.Constraints.Max, theme.Overlay)
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			fillRect(gtx, gtx.Constraints.Max, theme.Overlay)
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min = gtx.Constraints.Max
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				maxW := unit.Dp(440)
+				if d.Kind == DialogTemplateReplace {
+					maxW = unit.Dp(520)
+				}
+				gtx.Constraints.Max.X = gtx.Dp(maxW)
+				return u.layoutDialogCard(gtx, th, theme, d)
+			})
+		}),
+	)
+}
 
-	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		maxW := unit.Dp(440)
-		if d.Kind == DialogTemplateReplace {
-			maxW = unit.Dp(520)
-		}
-		gtx.Constraints.Max.X = gtx.Dp(maxW)
-		return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+func (u *UI) layoutDialogCard(gtx layout.Context, th *material.Theme, theme *AppTheme, d DialogState) layout.Dimensions {
+	return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					lbl := material.H6(th, d.Title)
@@ -76,10 +89,13 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 					if d.Kind == DialogLoading {
 						return progressBar(gtx, theme, -1)
 					}
+					if !dialogHasActions(d.Kind) {
+						return layout.Dimensions{}
+					}
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if d.Kind != DialogConfirm && d.Kind != DialogPassword && d.Kind != DialogTemplateReplace {
+							if !dialogHasCancel(d.Kind) {
 								return layout.Dimensions{}
 							}
 							return secondaryButton(gtx, th, theme, &u.dialogCancelBtn, "Cancel", func() {
@@ -90,23 +106,14 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 								u.closeDialog()
 							})
 						}),
-						layout.Rigid(hgap(theme)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							label := "OK"
-							switch d.Kind {
-							case DialogConfirm:
-								label = "Confirm"
-							case DialogPassword:
-								label = "Continue"
-							case DialogTemplateReplace:
-								label = "Replace"
-							}
-							if d.OKLabel != "" {
-								label = d.OKLabel
-							}
-							if d.Kind != DialogConfirm && d.Kind != DialogPassword && d.Kind != DialogTemplateReplace {
+							if !dialogHasCancel(d.Kind) {
 								return layout.Dimensions{}
 							}
+							return hgap(theme)(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							label := dialogOKLabel(d.Kind, d.OKLabel)
 							return primaryButton(gtx, th, theme, &u.dialogOKBtn, label, func() {
 								if d.OnOK != nil {
 									d.OnOK()
@@ -119,7 +126,6 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 				}),
 			)
 		})
-	})
 }
 
 func (u *UI) showConfirm(title, message string, onOK func()) {
@@ -191,4 +197,40 @@ func (u *UI) showTemplateReplacePrompt(t models.SQLTemplate, oldBody string, usa
 			onSave()
 		},
 	})
+}
+
+func dialogHasActions(kind DialogKind) bool {
+	switch kind {
+	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogInfo, DialogError:
+		return true
+	default:
+		return false
+	}
+}
+
+func dialogHasCancel(kind DialogKind) bool {
+	switch kind {
+	case DialogConfirm, DialogPassword, DialogTemplateReplace:
+		return true
+	default:
+		return false
+	}
+}
+
+func dialogOKLabel(kind DialogKind, custom string) string {
+	if custom != "" {
+		return custom
+	}
+	switch kind {
+	case DialogConfirm:
+		return "Confirm"
+	case DialogPassword:
+		return "Continue"
+	case DialogTemplateReplace:
+		return "Replace"
+	case DialogInfo, DialogError:
+		return "OK"
+	default:
+		return "OK"
+	}
 }

@@ -3,6 +3,7 @@ package ui
 import (
 	"gioui.org/layout"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
 
@@ -23,7 +24,14 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 	}
 
 	submitLogin := func() {
-		u.tryUnlock(editorText(&u.loginPassword))
+		u.tryUnlockWithFeedback(editorText(&u.loginPassword))
+	}
+	trySilentLogin := func() {
+		u.loginError = ""
+		if u.tryUnlockSilent(editorText(&u.loginPassword)) {
+			return
+		}
+		u.invalidate()
 	}
 
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -51,7 +59,7 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 				}),
 				layout.Rigid(spacer(theme, unit.Dp(24))),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					consumeEditorSubmit(gtx, &u.loginPassword, submitLogin)
+					u.consumeLoginEditor(gtx, &u.loginPassword, trySilentLogin, submitLogin)
 					requestEditorFocus(gtx, &u.loginPassword, &u.loginFocusPending)
 					return labeledField(gtx, th, theme, "Master key", func(gtx layout.Context) layout.Dimensions {
 						return passwordField(gtx, th, theme, &u.loginPassword, "", &u.loginPasswordVisible, &u.loginPasswordToggle)
@@ -62,7 +70,7 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 					if u.core.HasVault() {
 						return layout.Dimensions{}
 					}
-					consumeEditorSubmit(gtx, &u.loginConfirmPassword, submitLogin)
+					u.consumeLoginEditor(gtx, &u.loginConfirmPassword, trySilentLogin, submitLogin)
 					return labeledField(gtx, th, theme, "Confirm master key", func(gtx layout.Context) layout.Dimensions {
 						return passwordField(gtx, th, theme, &u.loginConfirmPassword, "", &u.loginConfirmVisible, &u.loginConfirmToggle)
 					})
@@ -81,4 +89,19 @@ func (u *UI) layoutLogin(gtx layout.Context, th *material.Theme) layout.Dimensio
 			)
 		})
 	})
+}
+
+func (u *UI) consumeLoginEditor(gtx layout.Context, e *widget.Editor, onChange, onSubmit func()) {
+	if ev, ok := e.Update(gtx); ok {
+		switch ev.(type) {
+		case widget.ChangeEvent:
+			if onChange != nil {
+				onChange()
+			}
+		case widget.SubmitEvent:
+			if onSubmit != nil {
+				onSubmit()
+			}
+		}
+	}
 }

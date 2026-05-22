@@ -74,7 +74,31 @@ func unlockErrorMessage(err error) string {
 	}
 }
 
-func (u *UI) tryUnlock(passphrase string) {
+func (u *UI) tryUnlockSilent(passphrase string) bool {
+	if u.core == nil || u.unlocked {
+		return u.unlocked
+	}
+	passphrase = strings.TrimSpace(passphrase)
+	if !u.core.HasVault() && !u.core.HasLegacyPlaintext() {
+		confirm := strings.TrimSpace(editorText(&u.loginConfirmPassword))
+		if len(passphrase) < 8 || passphrase != confirm {
+			return false
+		}
+	}
+	var err error
+	if u.core.HasVault() || u.core.HasLegacyPlaintext() {
+		err = u.core.Unlock(passphrase)
+	} else {
+		err = u.core.CreateVault(passphrase)
+	}
+	if err != nil {
+		return false
+	}
+	u.completeUnlock()
+	return true
+}
+
+func (u *UI) tryUnlockWithFeedback(passphrase string) {
 	if u.core == nil {
 		return
 	}
@@ -103,6 +127,10 @@ func (u *UI) tryUnlock(passphrase string) {
 		u.invalidate()
 		return
 	}
+	u.completeUnlock()
+}
+
+func (u *UI) completeUnlock() {
 	u.unlocked = true
 	u.loginError = ""
 	u.loginPassword.SetText("")
