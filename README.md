@@ -2,7 +2,7 @@
 
 # DBack — DB Sync Manager
 
-**Linux desktop GUI for MySQL/MariaDB backup and restore over SSH, Jump Host, or Docker.**
+**Desktop GUI for MySQL/MariaDB backup and restore over SSH, Jump Host, or Docker.**
 
 DBack connects to remote Linux servers, streams database dumps to local files with compression, and restores backups to any saved host. Hosts, templates, history, and logs live in an encrypted local vault. Built with Go and [Gio](https://gioui.org).
 
@@ -16,7 +16,8 @@ DBack connects to remote Linux servers, streams database dumps to local files wi
 - **Encrypted vault** — profiles, templates, history, and logs stored in `app_data.vault.json`
 - **Remote sync** — push/pull encrypted app settings to S3-compatible storage (AWS S3, MinIO, etc.)
 - **SQL templates** — reusable snippets with placeholders for pre/post import queries
-- **Modern UI** — dark GitHub-style desktop interface with sidebar navigation
+- **Connection testing** — step-by-step SSH and database checks from the host editor
+- **Modern UI** — dark GitHub-style desktop interface with sidebar navigation and host overflow menus
 
 ## Screenshots
 
@@ -41,6 +42,7 @@ Configure pre-import SQL, append templates, and test queries before restore.
 - **SSH / Jump Host** — password or private key authentication
 - **Docker** — MySQL/MariaDB inside containers (`docker exec`)
 - **Databases** — MySQL and MariaDB only
+- **Connection test** — run a guided SSH + database check from the host editor with a live progress timeline
 
 ### Backup & Restore
 - **Preflight checks** — Linux OS, dump/client tools, compression, disk space, writable tmp paths, Docker container status
@@ -48,6 +50,7 @@ Configure pre-import SQL, append templates, and test queries before restore.
 - **Job center** — progress and cancel controls on the Backups screen
 
 ### Host Management
+- **Host cards** — green **Backup** action plus a **⋮** overflow menu for Edit, Duplicate, and Delete
 - **Duplicate** — clone a host with one click (`Production 1`, `Production 2`, …)
 - **Groups & search** — filter by group, search by name
 - **Legacy migration** — old export/import profiles are flattened on load
@@ -106,17 +109,27 @@ DBACK_DEBUG=1 ./run.sh
 ./build.sh linux
 ```
 
-Output: `dist/dback-linux`
+Output:
+- `dist/dback-linux`
+- `dist/dback` launcher wrapper (handles common EGL/GPU driver issues)
 
 Set the app version at build time:
 
 ```bash
-APP_VERSION=1.0.0 ./build.sh linux
+APP_VERSION=3.2.0 ./build.sh linux
 ```
 
 Version appears in **About** inside the app.
 
-### Build manually
+### Build (Windows)
+
+Requirements: **Go 1.21+** and a Windows development environment.
+
+```powershell
+go build -ldflags "-X main.appVersion=3.2.0" -o dist/dback-windows.exe .
+```
+
+### Build manually (Linux)
 
 Requirements: **Go 1.21+** and Gio development libraries.
 
@@ -132,7 +145,7 @@ sudo apt-get update && sudo apt-get install -y \
 Then:
 
 ```bash
-go build -ldflags "-X main.appVersion=1.0.0" -o dist/dback-linux .
+go build -ldflags "-X main.appVersion=3.2.0" -o dist/dback-linux .
 ```
 
 ### Docker alternative
@@ -142,6 +155,17 @@ If system dependencies are problematic:
 ```bash
 ./docker-run.sh
 ```
+
+### GitHub Releases
+
+Tagged releases (`v*`) are built automatically by GitHub Actions:
+
+| Platform | Artifact |
+|----------|----------|
+| Linux | `dback-linux` |
+| Windows | `dback-windows.exe` |
+
+Download the latest release from [GitHub Releases](https://github.com/devlifeX/dback/releases).
 
 ## Default Paths
 
@@ -172,7 +196,8 @@ Hosts, templates, backup history, and activity logs are stored inside the encryp
 2. Configure connection (SSH, Jump Host, or Docker)
 3. Set database credentials and backup destination
 4. Optional: configure pre/post import queries on the **Queries** tab
-5. Use **Backup** on the host card, or **Duplicate** to clone settings
+5. Use **Test Connection** in the host editor to verify SSH and database access
+6. On a host card, click **Backup** or open the **⋮** menu for Edit, Duplicate, or Delete
 
 ### Restore
 1. Open **Backups** → filter by host if needed
@@ -209,11 +234,15 @@ Created by **dariush vesal**.
 
 ## FAQ
 
-### Why does DBack require Vulkan/X11 libraries?
+### Why does DBack require Vulkan/X11 libraries on Linux?
 DBack uses **Gio**, a GPU-accelerated GUI toolkit. On Linux, Gio renders through Vulkan and creates windows via X11/Wayland, which requires development headers at build time.
 
 ### Which platforms are supported?
-**Linux desktop only.** macOS, Windows, and Android are not supported in this release.
+- **Linux desktop** — primary platform; use `./run.sh`, `./build.sh`, or download `dback-linux` from GitHub Releases
+- **Windows** — `dback-windows.exe` is built on tagged releases via GitHub Actions; build locally with `go build` on Windows
+- **macOS / Android** — not supported in this release
+
+Remote servers targeted for backup/restore must run **Linux** (SSH, Docker, or Jump Host workflows).
 
 ### What happened to PostgreSQL and CouchDB?
 Removed. DBack now supports **MySQL and MariaDB** only.
