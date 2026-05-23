@@ -67,7 +67,10 @@ func fallbackDataDir() string {
 	exe, err := os.Executable()
 	if err == nil {
 		dir := filepath.Dir(exe)
-		if !strings.Contains(dir, "go-build") && !strings.Contains(dir, "/tmp/") {
+		tmpDir := filepath.ToSlash(os.TempDir())
+		exeSlash := filepath.ToSlash(dir)
+		inTemp := strings.HasPrefix(exeSlash, tmpDir) || strings.Contains(exeSlash, "go-build")
+		if !inTemp {
 			return dir
 		}
 	}

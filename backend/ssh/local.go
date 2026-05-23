@@ -4,8 +4,18 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
 	"strings"
 )
+
+// localCmd returns an *exec.Cmd that executes cmd via bash.
+// On Windows, wsl.exe is used so the same POSIX command strings work.
+func localCmd(cmd string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("wsl.exe", "bash", "-c", cmd)
+	}
+	return exec.Command("bash", "-c", cmd)
+}
 
 // LocalClient runs database shell commands on the local machine (no SSH).
 type LocalClient struct{}
@@ -15,12 +25,12 @@ func (c *LocalClient) Close() error {
 }
 
 func (c *LocalClient) RunCommand(cmd string) (string, error) {
-	out, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+	out, err := localCmd(cmd).CombinedOutput()
 	return string(out), err
 }
 
 func (c *LocalClient) RunCommandStream(cmd string) (io.Reader, io.Reader, Session, error) {
-	command := exec.Command("bash", "-c", cmd)
+	command := localCmd(cmd)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return nil, nil, nil, err
@@ -36,7 +46,7 @@ func (c *LocalClient) RunCommandStream(cmd string) (io.Reader, io.Reader, Sessio
 }
 
 func (c *LocalClient) RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader, Session, error) {
-	command := exec.Command("bash", "-c", cmd)
+	command := localCmd(cmd)
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return nil, nil, nil, err

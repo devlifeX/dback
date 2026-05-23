@@ -1,20 +1,28 @@
 package transfer
 
 import (
+	"compress/gzip"
 	"fmt"
-	"os/exec"
+	"io"
+	"os"
 	"strings"
 )
 
 // validateBackupIntegrity ensures the backup file is a complete, valid gzip archive.
+// Uses pure Go to avoid requiring an external gzip binary on any platform.
 func validateBackupIntegrity(path string) error {
-	out, err := exec.Command("gzip", "-t", path).CombinedOutput()
+	f, err := os.Open(path)
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("backup file is corrupt or incomplete (gzip check failed): %s", msg)
+		return fmt.Errorf("backup file is corrupt or incomplete (gzip check failed): %s", err)
+	}
+	defer f.Close()
+	r, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("backup file is corrupt or incomplete (gzip check failed): %s", err)
+	}
+	defer r.Close()
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return fmt.Errorf("backup file is corrupt or incomplete (gzip check failed): %s", err)
 	}
 	return nil
 }
