@@ -10,6 +10,14 @@ import (
 	"dback/models"
 )
 
+// ProbeCheck records one preflight probe command and its result.
+type ProbeCheck struct {
+	Name string
+	Cmd  string
+	Exit string
+	Out  string
+}
+
 // Result holds preflight check output from remote host.
 type Result struct {
 	OSInfo         string
@@ -19,6 +27,7 @@ type Result struct {
 	DiskPaths      map[string]int64 // path -> free KB
 	RequiredKB     int64
 	SelectedTmpDir string
+	Checks         []ProbeCheck
 	RawOutput      string
 }
 
@@ -66,6 +75,7 @@ func Run(client ssh.Executor, p models.Profile, requiredBytes int64, operationID
 
 func parsePreflightOutput(out string, r *Result) {
 	section := ""
+	checkIndex := map[string]int{}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		switch line {
@@ -77,6 +87,8 @@ func parsePreflightOutput(out string, r *Result) {
 			section = "tools"
 		case "===DOCKER===":
 			section = "docker"
+		case "===CHECKS===":
+			section = "checks"
 		case "===DISK===":
 			section = "disk"
 		case "===REQUIRED_KB===":
@@ -96,6 +108,28 @@ func parsePreflightOutput(out string, r *Result) {
 				}
 			case "docker":
 				r.DockerStatus += line + "\n"
+			case "checks":
+				parts := strings.SplitN(line, "|", 4)
+				if len(parts) != 4 || parts[0] != "check" {
+					continue
+				}
+				name := parts[1]
+				field := parts[2]
+				value := parts[3]
+				idx, ok := checkIndex[name]
+				if !ok {
+					r.Checks = append(r.Checks, ProbeCheck{Name: name})
+					idx = len(r.Checks) - 1
+					checkIndex[name] = idx
+				}
+				switch field {
+				case "cmd":
+					r.Checks[idx].Cmd = value
+				case "exit":
+					r.Checks[idx].Exit = value
+				case "out":
+					r.Checks[idx].Out = value
+				}
 			case "disk":
 				parts := strings.Split(line, "|")
 				if len(parts) >= 3 {
@@ -145,5 +179,30 @@ func Summary(r Result) string {
 	}
 	b.WriteString(" | tmp: ")
 	b.WriteString(r.SelectedTmpDir)
+	return b.String()
+}
+
+// FailureDetails returns a verbose preflight summary including probe commands and outputs.
+func FailureDetails(r Result, err error) string {
+	var b strings.Builder
+	b.WriteString(Summary(r))
+	if err != nil {
+		b.WriteString(" | error: ")
+		b.WriteString(err.Error())
+	}
+	if len(r.Checks) > 0 {
+		b.WriteString(" | probes:")
+		for _, check := range r.Checks {
+			b.WriteString(" [")
+			b.WriteString(check.Name)
+			b.WriteString(" cmd=\"")
+			b.WriteString(check.Cmd)
+			b.WriteString("\" exit=")
+			b.WriteString(check.Exit)
+			b.WriteString(" out=\"")
+			b.WriteString(check.Out)
+			b.WriteString("\"]")
+		}
+	}
 	return b.String()
 }

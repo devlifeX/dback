@@ -59,7 +59,7 @@ func BackupSSH(ctx context.Context, req BackupRequest) (BackupResult, error) {
 
 	pf, pfErr := preflight.Run(client, p, 0, req.OperationID)
 	if pfErr != nil {
-		logReq(req, "preflight", "", 0, preflight.Summary(pf), "Failed", pfErr.Error())
+		logReq(req, "preflight", "", 0, preflight.FailureDetails(pf, pfErr), "Failed", pfErr.Error())
 		return BackupResult{}, pfErr
 	}
 	logReq(req, "preflight", "", 0, preflight.Summary(pf), "Succeeded", "")
@@ -347,7 +347,7 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 
 	pf, pfErr := preflight.Run(client, p, req.FileSize, req.OperationID)
 	if pfErr != nil {
-		logRestore(req, "preflight", "", 0, preflight.Summary(pf), "Failed", pfErr.Error())
+		logRestore(req, "preflight", "", 0, preflight.FailureDetails(pf, pfErr), "Failed", pfErr.Error())
 		return pfErr
 	}
 	logRestore(req, "preflight", "", 0, preflight.Summary(pf), "Succeeded", "")

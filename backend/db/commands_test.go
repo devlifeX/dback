@@ -202,9 +202,20 @@ func TestMysqlDumpArgs(t *testing.T) {
 			t.Fatalf("dump args missing %q: %s", want, args)
 		}
 	}
+	for _, absent := range []string{"--column-statistics=0", "--no-tablespaces"} {
+		if strings.Contains(args, absent) {
+			t.Fatalf("dump args must not always include MySQL 8 flag %q: %s", absent, args)
+		}
+	}
 	dump := mysqlDumpExec(p)
 	if !strings.Contains(dump, "--single-transaction") {
 		t.Fatalf("dump command missing flags: %s", dump)
+	}
+	if !strings.Contains(dump, "mysqldump --version") {
+		t.Fatalf("dump command should probe mysqldump version for MySQL 8 flags: %s", dump)
+	}
+	if !strings.Contains(dump, "--column-statistics=0") {
+		t.Fatalf("dump command should conditionally include MySQL 8 flags: %s", dump)
 	}
 }
 

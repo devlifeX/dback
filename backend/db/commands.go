@@ -85,13 +85,13 @@ func mysqlDumpArgs(p models.Profile) string {
 		"--skip-comments",
 	}
 	if p.DBType == models.DBTypeMySQL {
-		flags = append(flags,
-			"--set-gtid-purged=OFF",
-			"--column-statistics=0",
-			"--no-tablespaces",
-		)
+		flags = append(flags, "--set-gtid-purged=OFF")
 	}
 	return strings.Join(flags, " ")
+}
+
+func mysqlDumpMySQL8FlagSetup() string {
+	return `_mf=""; _mx=$(mysqldump --version 2>&1); case "$_mx" in *"Distrib 8."*|*"Distrib 9."*) _mf="--column-statistics=0 --no-tablespaces";; esac;`
 }
 
 func mysqlDumpExec(p models.Profile) string {
@@ -102,10 +102,14 @@ func mysqlDumpExec(p models.Profile) string {
 		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
 	dbArg := shellEscape(p.TargetDBName)
+	mysqlDump := fmt.Sprintf("mysqldump %s %s %s %s", hostArgs, authArgs, dumpArgs, dbArg)
+	if p.DBType == models.DBTypeMySQL {
+		mysqlDump = fmt.Sprintf("%s mysqldump %s %s %s $_mf %s", mysqlDumpMySQL8FlagSetup(), hostArgs, authArgs, dumpArgs, dbArg)
+	}
 	return fmt.Sprintf(
-		"if command -v mariadb-dump >/dev/null 2>&1; then mariadb-dump %s %s %s %s; elif command -v mysqldump >/dev/null 2>&1; then mysqldump %s %s %s %s; else echo 'no dump tool' >&2; exit 127; fi",
+		"if command -v mariadb-dump >/dev/null 2>&1; then mariadb-dump %s %s %s %s; elif command -v mysqldump >/dev/null 2>&1; then %s; else echo 'no dump tool' >&2; exit 127; fi",
 		hostArgs, authArgs, dumpArgs, dbArg,
-		hostArgs, authArgs, dumpArgs, dbArg,
+		mysqlDump,
 	)
 }
 
@@ -306,6 +310,25 @@ func BuildQueryCommand(p models.Profile, query string, connectDB bool) (string, 
 	return fmt.Sprintf("sh -c %s", shellEscape(pipe)), nil
 }
 
+func containerDumpProbe() string {
+	return "(command -v mysqldump >/dev/null 2>&1 && mysqldump --version) || (command -v mariadb-dump >/dev/null 2>&1 && mariadb-dump --version) || echo no-dump-tool"
+}
+
+func containerClientProbe() string {
+	return "(command -v mysql >/dev/null 2>&1 && mysql --version) || (command -v mariadb >/dev/null 2>&1 && mariadb --version) || echo no-mysql-client"
+}
+
+func recordPreflightCheck(name, cmd string) string {
+	displayCmd := strings.ReplaceAll(cmd, "|", "/")
+	return fmt.Sprintf(`
+echo "check|%s|cmd|%s"
+__rc=0
+__out=$(%s 2>&1) || __rc=$?
+echo "check|%s|exit|$__rc"
+echo "check|%s|out|$(printf '%%s' "$__out" | tr '\n' ' ' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//')"
+`, name, displayCmd, cmd, name, name)
+}
+
 // BuildPreflightScript returns a shell script that gathers server info and disk space.
 func BuildPreflightScript(p models.Profile, requiredBytes int64, candidatePaths []string) string {
 	paths := strings.Join(candidatePaths, " ")
@@ -314,28 +337,49 @@ func BuildPreflightScript(p models.Profile, requiredBytes int64, candidatePaths 
 		requiredKB = 512 * 1024 // 512MB minimum safe threshold
 	}
 	dockerBlock := ""
+	checksBlock := ""
 	preflightChecks := `if ! uname -s 2>/dev/null | grep -qi linux; then fail=1; msg="$msg not-linux;"; fi
 command -v sh >/dev/null 2>&1 || { fail=1; msg="$msg missing:sh;"; }
 command -v gzip >/dev/null 2>&1 || command -v zstd >/dev/null 2>&1 || { fail=1; msg="$msg missing:compression;"; }`
 	if p.IsDocker {
+		cid := shellEscape(p.ContainerID)
+		dumpProbe := shellEscape(containerDumpProbe())
+		clientProbe := shellEscape(containerClientProbe())
+		dumpExec := fmt.Sprintf("docker exec %s sh -c %s", cid, dumpProbe)
+		clientExec := fmt.Sprintf("docker exec %s sh -c %s", cid, clientProbe)
+		dumpPathExec := fmt.Sprintf("docker exec %s sh -c %s", cid, shellEscape("command -v mysqldump 2>/dev/null || command -v mariadb-dump 2>/dev/null"))
+		clientPathExec := fmt.Sprintf("docker exec %s sh -c %s", cid, shellEscape("command -v mysql 2>/dev/null || command -v mariadb 2>/dev/null"))
 		dockerBlock = fmt.Sprintf(`
 echo "===DOCKER==="
 command -v docker >/dev/null 2>&1 && docker --version 2>/dev/null || echo "docker missing"
 docker inspect -f '{{.State.Status}}' %s 2>/dev/null || echo "container not found"
-docker exec %s sh -c 'command -v mysql >/dev/null && mysql --version || command -v mariadb >/dev/null && mariadb --version || echo no mysql client' 2>/dev/null || true
-`, shellEscape(p.ContainerID), shellEscape(p.ContainerID))
+%s 2>/dev/null || true
+%s 2>/dev/null || true
+`, cid, dumpExec, clientExec)
+		checksBlock = strings.Join([]string{
+			recordPreflightCheck("container_dump_version", dumpExec),
+			recordPreflightCheck("container_client_version", clientExec),
+			recordPreflightCheck("container_dump_path", dumpPathExec),
+			recordPreflightCheck("container_client_path", clientPathExec),
+		}, "")
 		preflightChecks += fmt.Sprintf(`
 command -v docker >/dev/null 2>&1 || { fail=1; msg="$msg missing:docker;"; }
 docker inspect %s >/dev/null 2>&1 || { fail=1; msg="$msg container-not-found;"; }
 [ "$(docker inspect -f '{{.State.Status}}' %s 2>/dev/null)" = "running" ] || { fail=1; msg="$msg container-not-running;"; }
-docker exec %s sh -c 'command -v mysqldump >/dev/null || command -v mariadb-dump >/dev/null' >/dev/null 2>&1 || { fail=1; msg="$msg missing:container-dump-tool;"; }
-docker exec %s sh -c 'command -v mysql >/dev/null || command -v mariadb >/dev/null' >/dev/null 2>&1 || { fail=1; msg="$msg missing:container-mysql-client;"; }`,
-			shellEscape(p.ContainerID),
-			shellEscape(p.ContainerID),
-			shellEscape(p.ContainerID),
-			shellEscape(p.ContainerID),
+%s >/dev/null 2>&1 || { fail=1; msg="$msg missing:container-dump-tool;"; }
+%s >/dev/null 2>&1 || { fail=1; msg="$msg missing:container-mysql-client;"; }`,
+			cid,
+			cid,
+			dumpPathExec,
+			clientPathExec,
 		)
 	} else {
+		checksBlock = strings.Join([]string{
+			recordPreflightCheck("dump_version", "(command -v mysqldump >/dev/null 2>&1 && mysqldump --version) || (command -v mariadb-dump >/dev/null 2>&1 && mariadb-dump --version) || echo no-dump-tool"),
+			recordPreflightCheck("client_version", "(command -v mysql >/dev/null 2>&1 && mysql --version) || (command -v mariadb >/dev/null 2>&1 && mariadb --version) || echo no-mysql-client"),
+			recordPreflightCheck("dump_path", "command -v mysqldump 2>/dev/null || command -v mariadb-dump 2>/dev/null"),
+			recordPreflightCheck("client_path", "command -v mysql 2>/dev/null || command -v mariadb 2>/dev/null"),
+		}, "")
 		preflightChecks += `
 command -v mysqldump >/dev/null 2>&1 || command -v mariadb-dump >/dev/null 2>&1 || { fail=1; msg="$msg missing:dump-tool;"; }
 command -v mysql >/dev/null 2>&1 || command -v mariadb >/dev/null 2>&1 || { fail=1; msg="$msg missing:mysql-client;"; }`
@@ -359,6 +403,8 @@ command -v gzip >/dev/null && gzip --version 2>/dev/null | head -1
 command -v sha256sum >/dev/null && echo sha256sum ok
 command -v dd >/dev/null && echo dd ok
 %s
+echo "===CHECKS==="
+%s
 echo "===DISK==="
 for p in %s; do
   eval target="$p"
@@ -374,7 +420,7 @@ echo %d
 echo "===RESULT==="
 echo "fail=$fail"
 echo "msg=$msg"
-`, preflightChecks, dbCheck, dockerBlock, paths, paths, requiredKB)
+`, preflightChecks, dbCheck, dockerBlock, checksBlock, paths, paths, requiredKB)
 }
 
 // BuildRemoteTmpDir returns operation-specific tmp dir on remote host.

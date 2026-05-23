@@ -16,7 +16,8 @@ const (
 	DockerPermissionDenied
 	ContainerNotFound
 	ContainerNotRunning
-	ContainerToolMissing
+	ContainerClientMissing
+	ContainerDumpToolMissing
 )
 
 func (s DockerStatus) Error() string {
@@ -29,11 +30,32 @@ func (s DockerStatus) Error() string {
 		return "docker container not found"
 	case ContainerNotRunning:
 		return "docker container is not running"
-	case ContainerToolMissing:
-		return "required database tool missing inside container"
+	case ContainerClientMissing:
+		return "mysql or mariadb client missing inside container"
+	case ContainerDumpToolMissing:
+		return "mysqldump or mariadb-dump missing inside container"
 	default:
 		return ""
 	}
+}
+
+func lineHasDumpTool(line string) bool {
+	low := strings.ToLower(strings.TrimSpace(line))
+	if low == "no-dump-tool" || low == "no dump tool" {
+		return false
+	}
+	return strings.Contains(low, "mysqldump") || strings.Contains(low, "mariadb-dump")
+}
+
+func lineHasClient(line string) bool {
+	if lineHasDumpTool(line) {
+		return false
+	}
+	low := strings.ToLower(strings.TrimSpace(line))
+	if low == "no-mysql-client" || low == "no mysql client" {
+		return false
+	}
+	return strings.Contains(low, "mysql") || strings.Contains(low, "mariadb")
 }
 
 func validateParsedOutput(out string, p models.Profile, requiredKB int64) error {
@@ -76,11 +98,10 @@ func validateParsedOutput(out string, p models.Profile, requiredKB int64) error 
 					isLinux = true
 				}
 			case "db":
-				low := strings.ToLower(line)
-				if strings.Contains(low, "mysqldump") || strings.Contains(low, "mariadb-dump") {
+				if lineHasDumpTool(line) {
 					hasDumpTool = true
 				}
-				if strings.Contains(low, "mysql") || strings.Contains(low, "mariadb") {
+				if lineHasClient(line) {
 					hasClient = true
 				}
 			case "tools":
@@ -90,10 +111,10 @@ func validateParsedOutput(out string, p models.Profile, requiredKB int64) error 
 				}
 			case "docker":
 				low := strings.ToLower(line)
-				if strings.Contains(low, "mysqldump") || strings.Contains(low, "mariadb-dump") {
+				if lineHasDumpTool(line) {
 					hasDumpTool = true
 				}
-				if strings.Contains(low, "mysql") || strings.Contains(low, "mariadb") {
+				if lineHasClient(line) {
 					hasClient = true
 				}
 				if strings.Contains(low, "docker missing") || strings.Contains(low, "command not found") {
@@ -108,8 +129,11 @@ func validateParsedOutput(out string, p models.Profile, requiredKB int64) error 
 				if line == "running" {
 					dockerStatus = "running"
 				}
-				if strings.Contains(low, "no mysql client") || strings.Contains(low, "no dump tool") {
-					dockerStatus = "toolmissing"
+				if (line == "no-mysql-client" || line == "no mysql client") && !hasClient {
+					dockerStatus = "clientmissing"
+				}
+				if (line == "no-dump-tool" || line == "no dump tool") && !hasDumpTool {
+					dockerStatus = "dumpmissing"
 				}
 			case "disk":
 				parts := strings.Split(line, "|")
@@ -139,16 +163,18 @@ func validateParsedOutput(out string, p models.Profile, requiredKB int64) error 
 	if !isLinux {
 		fails = append(fails, "remote host is not Linux")
 	}
-	if !hasDumpTool {
+	clientReported := dockerStatus == "clientmissing"
+	dumpReported := dockerStatus == "dumpmissing"
+	if !hasDumpTool && !dumpReported {
 		if p.IsDocker {
-			fails = append(fails, "mysqldump or mariadb-dump not found inside container")
+			fails = append(fails, ContainerDumpToolMissing.Error())
 		} else {
 			fails = append(fails, "mysqldump or mariadb-dump not found")
 		}
 	}
-	if !hasClient {
+	if !hasClient && !clientReported {
 		if p.IsDocker {
-			fails = append(fails, "mysql or mariadb client not found inside container")
+			fails = append(fails, ContainerClientMissing.Error())
 		} else {
 			fails = append(fails, "mysql or mariadb client not found")
 		}
@@ -165,8 +191,14 @@ func validateParsedOutput(out string, p models.Profile, requiredKB int64) error 
 			fails = append(fails, DockerPermissionDenied.Error())
 		case "notfound":
 			fails = append(fails, ContainerNotFound.Error())
-		case "toolmissing":
-			fails = append(fails, ContainerToolMissing.Error())
+		case "clientmissing":
+			if !hasClient {
+				fails = append(fails, ContainerClientMissing.Error())
+			}
+		case "dumpmissing":
+			if !hasDumpTool {
+				fails = append(fails, ContainerDumpToolMissing.Error())
+			}
 		case "running":
 			// ok
 		default:
