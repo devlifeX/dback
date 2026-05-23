@@ -55,6 +55,25 @@ fi
 echo "Setting up environment..."
 export CGO_ENABLED=1
 
+# If NVIDIA EGL driver/library mismatch is detected (common after kernel/driver updates
+# without a reboot), force Mesa EGL to avoid eglInitialize failures.
+if [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES}" ]; then
+	if [ -f "/usr/share/glvnd/egl_vendor.d/10_nvidia.json" ]; then
+		# Check for NVIDIA driver/library version mismatch by probing nvidia-smi.
+		# If it fails with "version mismatch", bypass NVIDIA EGL entirely.
+		if nvidia-smi >/dev/null 2>&1; then
+			: # NVIDIA is healthy, use default vendor selection
+		else
+			MESA_VENDOR="/usr/share/glvnd/egl_vendor.d/50_mesa.json"
+			if [ -f "$MESA_VENDOR" ]; then
+				echo "WARNING: NVIDIA driver mismatch detected — falling back to Mesa EGL."
+				echo "         Reboot your system to restore full GPU acceleration."
+				export __EGL_VENDOR_LIBRARY_FILENAMES="$MESA_VENDOR"
+			fi
+		fi
+	fi
+fi
+
 echo "Tidying modules..."
 go mod tidy
 

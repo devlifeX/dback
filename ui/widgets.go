@@ -275,6 +275,60 @@ func dangerButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *
 	return actionButton(gtx, th, theme, btn, label, btnDanger, false, onClick)
 }
 
+func wideSuccessButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
+	if btn.Clicked(gtx) && onClick != nil {
+		onClick()
+	}
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		bg := theme.Success
+		fg := color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		radius := gtx.Dp(theme.RadiusSm)
+		macro := op.Record(gtx.Ops)
+		dims := layout.Inset{
+			Top: unit.Dp(14), Bottom: unit.Dp(14),
+			Left: unit.Dp(24), Right: unit.Dp(24),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Body1(th, label)
+				lbl.Color = fg
+				return lbl.Layout(gtx)
+			})
+		})
+		call := macro.Stop()
+		borderedRoundedRect(gtx, dims.Size, radius, bg, bg, 0)
+		call.Add(gtx.Ops)
+		return dims
+	})
+}
+
+func wideDangerButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
+	if btn.Clicked(gtx) && onClick != nil {
+		onClick()
+	}
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		bg := theme.Danger
+		fg := color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		radius := gtx.Dp(theme.RadiusSm)
+		macro := op.Record(gtx.Ops)
+		dims := layout.Inset{
+			Top: unit.Dp(12), Bottom: unit.Dp(12),
+			Left: unit.Dp(24), Right: unit.Dp(24),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Body2(th, label)
+				lbl.Color = fg
+				return lbl.Layout(gtx)
+			})
+		})
+		call := macro.Stop()
+		borderedRoundedRect(gtx, dims.Size, radius, bg, bg, 0)
+		call.Add(gtx.Ops)
+		return dims
+	})
+}
+
 func tabButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, active bool, onClick func()) layout.Dimensions {
 	return actionButton(gtx, th, theme, btn, label, btnTab, active, onClick)
 }
@@ -649,4 +703,42 @@ func emptyState(gtx layout.Context, th *material.Theme, theme *AppTheme, message
 			})
 		})
 	})
+}
+
+type stepDotStatus int
+
+const (
+	dotPending stepDotStatus = iota
+	dotRunning
+	dotOK
+	dotFailed
+)
+
+func statusDot(gtx layout.Context, theme *AppTheme, status stepDotStatus) layout.Dimensions {
+	sz := gtx.Dp(unit.Dp(10))
+	gtx.Constraints = layout.Exact(image.Pt(sz, sz))
+	var col color.NRGBA
+	switch status {
+	case dotPending:
+		col = theme.TextMuted
+		col.A = 140
+	case dotRunning:
+		col = theme.Accent
+	case dotOK:
+		col = theme.Success
+	case dotFailed:
+		col = theme.Danger
+	default:
+		col = theme.TextMuted
+	}
+	fillRoundedRect(gtx, image.Pt(sz, sz), sz/2, col)
+	return layout.Dimensions{Size: image.Pt(sz, sz)}
+}
+
+func timelineConnector(gtx layout.Context, theme *AppTheme) layout.Dimensions {
+	w := gtx.Dp(unit.Dp(2))
+	h := gtx.Dp(unit.Dp(22))
+	gtx.Constraints = layout.Exact(image.Pt(w, h))
+	fillRect(gtx, image.Pt(w, h), theme.Border)
+	return layout.Dimensions{Size: image.Pt(w, h)}
 }

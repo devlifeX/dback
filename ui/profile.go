@@ -151,15 +151,5 @@ func (u *UI) testProfileConnection() {
 	if strings.TrimSpace(p.Name) == "" {
 		p.Name = "Unsaved Host"
 	}
-	u.showLoading("Testing connection", "Connecting...")
-	go func() {
-		err := u.core.TestConnection(p)
-		u.invalidate()
-		u.closeDialog()
-		if err != nil {
-			u.showError(err)
-			return
-		}
-		u.showInfo("Connection OK", "Connection test succeeded.")
-	}()
+	u.startHostConnectionTest(p)
 }

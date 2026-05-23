@@ -2,6 +2,9 @@ package ui
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
 	"dback/internal/store"
 	"dback/models"
@@ -201,7 +204,7 @@ func (u *UI) layoutSettingsSync(gtx layout.Context, th *material.Theme, theme *A
 				if showPushPull {
 					actions = append(actions, layout.Rigid(hgap(theme)))
 					actions = append(actions, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return primaryButton(gtx, th, theme, &u.syncPushBtn, "Push", u.syncPush)
+						return dangerButton(gtx, th, theme, &u.syncPushBtn, "Push", u.syncPush)
 					}))
 					actions = append(actions, layout.Rigid(hgap(theme)))
 					actions = append(actions, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -266,8 +269,12 @@ func (u *UI) testSyncConnection() {
 		return
 	}
 	u.reloadSyncFormFromSaved()
-	u.showLoading("Testing connection", "Connecting to S3...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	u.showLoadingWithCancel("Testing connection", "Connecting to S3...", cancel)
+
 	go func() {
+		defer cancel()
 		saved, err := u.core.SyncSettings()
 		if err != nil {
 			u.closeDialog()
@@ -279,11 +286,18 @@ func (u *UI) testSyncConnection() {
 			u.showError(store.ErrSyncNotConfigured)
 			return
 		}
-		err = u.core.TestSyncConnection(context.Background(), *saved)
+		err = u.core.TestSyncConnection(ctx, *saved)
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		u.closeDialog()
 		if err != nil {
 			u.syncConnectionOK = false
 			u.invalidate()
+			if errors.Is(err, context.DeadlineExceeded) {
+				u.showError(fmt.Errorf("connection timed out after 10 seconds"))
+				return
+			}
 			u.showError(err)
 			return
 		}
@@ -299,7 +313,12 @@ func (u *UI) syncPush() {
 		return
 	}
 	u.reloadSyncFormFromSaved()
-	u.runSyncPush()
+	u.showSyncPushWarning()
+}
+
+func (u *UI) syncPullThenPush() {
+	u.syncPushPending = true
+	u.syncPull()
 }
 
 func (u *UI) runSyncPush() {
@@ -321,6 +340,7 @@ func (u *UI) runSyncPush() {
 
 func (u *UI) syncPull() {
 	if err := u.core.SaveSyncSettings(u.syncForm.settings()); err != nil {
+		u.syncPushPending = false
 		u.showError(err)
 		return
 	}
@@ -331,12 +351,21 @@ func (u *UI) syncPull() {
 		u.closeDialog()
 		u.invalidate()
 		if err != nil {
+			u.syncPushPending = false
 			u.syncConnectionOK = false
 			u.showError(err)
 			return
 		}
-		u.showConfirm("Load remote settings?", "Remote app settings were downloaded from S3. Load them into this device?", func() {
-			u.runSyncImport(raw)
+		u.showDialog(DialogState{
+			Kind:    DialogConfirm,
+			Title:   "Load remote settings?",
+			Message: "Remote app settings were downloaded from S3. Load them into this device?",
+			OnOK: func() {
+				u.runSyncImport(raw)
+			},
+			OnCancel: func() {
+				u.syncPushPending = false
+			},
 		})
 	}()
 }
@@ -348,6 +377,7 @@ func (u *UI) runSyncImport(raw []byte) {
 		u.closeDialog()
 		u.invalidate()
 		if err != nil {
+			u.syncPushPending = false
 			u.showError(err)
 			return
 		}
@@ -358,16 +388,23 @@ func (u *UI) runSyncImport(raw []byte) {
 func (u *UI) applySyncImport(imported store.AppImportData, profileConflicts []store.ProfileConflict, templateConflicts []store.TemplateConflict) {
 	apply := func() {
 		if err := u.core.ImportAppDataFromBundle(imported); err != nil {
+			u.syncPushPending = false
 			u.showError(err)
 			return
 		}
 		if err := u.core.RecordSyncPull(); err != nil {
+			u.syncPushPending = false
 			u.showError(err)
 			return
 		}
 		u.reloadSyncFormFromSaved()
 		u.refreshSyncActivity()
 		u.invalidate()
+		if u.syncPushPending {
+			u.syncPushPending = false
+			u.runSyncPush()
+			return
+		}
 		u.showInfo("Pull complete", summarizeAppImport(imported))
 	}
 
@@ -377,5 +414,13 @@ func (u *UI) applySyncImport(imported store.AppImportData, profileConflicts []st
 	}
 
 	msg := formatAppImportConflicts(profileConflicts, templateConflicts)
-	u.showConfirm("Sync conflicts", msg, apply)
+	u.showDialog(DialogState{
+		Kind:    DialogConfirm,
+		Title:   "Sync conflicts",
+		Message: msg,
+		OnOK:    apply,
+		OnCancel: func() {
+			u.syncPushPending = false
+		},
+	})
 }

@@ -2,14 +2,17 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	_ "image/png"
+	"log"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	coreapp "dback/internal/app"
+	"dback/internal/debug"
 	"dback/models"
 
 	"gioui.org/app"
@@ -96,6 +99,7 @@ type UI struct {
 	syncPullBtn         widget.Clickable
 	syncForm             *SyncForm
 	syncConnectionOK     bool
+	syncPushPending      bool
 	syncSavedBaseline    *models.SyncSettings
 	syncActivity         models.SyncActivity
 	settingsList         widget.List
@@ -109,7 +113,12 @@ type UI struct {
 	openBackupFolderBtn widget.Clickable
 	dialogOKBtn         widget.Clickable
 	dialogCancelBtn     widget.Clickable
+	dialogSyncPullBtn   widget.Clickable
+	dialogForcePushBtn  widget.Clickable
 	dialogHostList      widget.List
+	connectionTestCancelBtn widget.Clickable
+	connectionTestCloseBtn  widget.Clickable
+	connectionTestCopyBtn   widget.Clickable
 	deleteTemplateBtn   widget.Clickable
 	aboutProjectBtn     widget.Clickable
 
@@ -134,6 +143,7 @@ type UI struct {
 	passphraseToggle     widget.Clickable
 	templateCache        templateOptionCache
 	backupCache          backupViewCache
+	hostConnTest         hostConnectionTestState
 
 	invalidate func()
 }
@@ -174,15 +184,29 @@ func New(logoPNG []byte, version string) *UI {
 
 func (u *UI) Run() {
 	baseDir := u.platform.AppDataDir()
+	log.Printf("startup: app data dir = %q", baseDir)
+
+	if _, statErr := os.Stat(baseDir); os.IsNotExist(statErr) {
+		log.Printf("startup: data dir does not exist, will create")
+	}
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		log.Printf("startup: MkdirAll failed: %v", err)
 		panic(err)
 	}
+	log.Printf("startup: data dir ready")
+
 	var err error
 	u.core, err = coreapp.New(baseDir)
 	if err != nil {
+		log.Printf("startup: coreapp.New failed: %v", err)
 		panic(err)
 	}
+	log.Printf("startup: coreapp initialized (hasVault=%v hasLegacy=%v)", u.core.HasVault(), u.core.HasLegacyPlaintext())
+	if debug.Enabled {
+		debug.Log("INFO", "startup", "ready", fmt.Sprintf("baseDir=%q vault=%v legacy=%v", baseDir, u.core.HasVault(), u.core.HasLegacyPlaintext()), "", "", "")
+	}
 
+	log.Printf("startup: creating window")
 	u.window = new(app.Window)
 	u.window.Option(
 		app.Title("DBack - DB Sync Manager"),
@@ -192,10 +216,19 @@ func (u *UI) Run() {
 	u.explorer = explorer.NewExplorer(u.window)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("loop: PANIC: %v\n%s", r, debug.Stack())
+			}
+		}()
+		log.Printf("loop: starting event loop")
 		u.loop()
+		log.Printf("loop: event loop ended, exiting")
 		os.Exit(0)
 	}()
+	log.Printf("startup: calling app.Main()")
 	app.Main()
+	log.Printf("startup: app.Main() returned")
 }
 
 func (u *UI) loop() {
@@ -207,11 +240,29 @@ func (u *UI) loop() {
 		u.explorer.ListenEvents(e)
 		switch e := e.(type) {
 		case app.DestroyEvent:
+			if e.Err != nil {
+				log.Printf("loop: DestroyEvent err=%v", e.Err)
+				errMsg := e.Err.Error()
+				if strings.Contains(errMsg, "egl") || strings.Contains(errMsg, "EGL") || strings.Contains(errMsg, "opengl") || strings.Contains(errMsg, "GL") {
+					log.Printf("loop: GPU/EGL initialization failed. Try: LIBGL_ALWAYS_SOFTWARE=1 ./run.sh")
+					log.Printf("loop: Or reboot if you recently updated GPU drivers (driver/library version mismatch).")
+					_, _ = fmt.Fprintf(os.Stderr, "\n[FATAL] Cannot initialize display renderer: %v\n", e.Err)
+					_, _ = fmt.Fprintf(os.Stderr, "  Fix option 1: reboot your system (if GPU driver was recently updated)\n")
+					_, _ = fmt.Fprintf(os.Stderr, "  Fix option 2: LIBGL_ALWAYS_SOFTWARE=1 ./run.sh\n")
+					_, _ = fmt.Fprintf(os.Stderr, "  Fix option 3: __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json ./run.sh\n\n")
+				}
+			} else {
+				log.Printf("loop: DestroyEvent (clean exit)")
+			}
 			return
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
 			u.layout(gtx)
 			e.Frame(gtx.Ops)
+		default:
+			if debug.Enabled {
+				log.Printf("loop: event %T", e)
+			}
 		}
 	}
 }

@@ -27,7 +27,16 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 				if d.Kind == DialogTemplateReplace {
 					maxW = unit.Dp(520)
 				}
+				if d.Kind == DialogSyncPushWarning {
+					maxW = unit.Dp(480)
+				}
+				if d.Kind == DialogConnectionTest {
+					maxW = unit.Dp(420)
+				}
 				gtx.Constraints.Max.X = gtx.Dp(maxW)
+				if d.Kind == DialogConnectionTest {
+					return u.layoutConnectionTestCard(gtx, th, theme)
+				}
 				return u.layoutDialogCard(gtx, th, theme, d)
 			})
 		}),
@@ -87,7 +96,57 @@ func (u *UI) layoutDialogCard(gtx layout.Context, th *material.Theme, theme *App
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if d.Kind == DialogLoading {
-						return progressBar(gtx, theme, -1)
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return progressBar(gtx, theme, -1)
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if d.OnCancel == nil {
+									return layout.Dimensions{}
+								}
+								return vgap(theme)(gtx)
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if d.OnCancel == nil {
+									return layout.Dimensions{}
+								}
+								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return secondaryButton(gtx, th, theme, &u.dialogCancelBtn, "Cancel", func() {
+										if d.OnCancel != nil {
+											d.OnCancel()
+										}
+										u.closeDialog()
+									})
+								})
+							}),
+						)
+					}
+					if d.Kind == DialogSyncPushWarning {
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return wideSuccessButton(gtx, th, theme, &u.dialogSyncPullBtn, "Pull first, then Push", func() {
+									u.closeDialog()
+									u.syncPullThenPush()
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return wideDangerButton(gtx, th, theme, &u.dialogForcePushBtn, "Force Push", func() {
+									u.syncPushPending = false
+									u.closeDialog()
+									u.runSyncPush()
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return secondaryButton(gtx, th, theme, &u.dialogCancelBtn, "Cancel", func() {
+										u.syncPushPending = false
+										u.closeDialog()
+									})
+								})
+							}),
+						)
 					}
 					if !dialogHasActions(d.Kind) {
 						return layout.Dimensions{}
@@ -128,6 +187,14 @@ func (u *UI) layoutDialogCard(gtx layout.Context, th *material.Theme, theme *App
 		})
 }
 
+func (u *UI) showSyncPushWarning() {
+	u.showDialog(DialogState{
+		Kind:    DialogSyncPushWarning,
+		Title:   "Overwrite remote data?",
+		Message: "You are about to upload local settings to S3 and replace the remote copy at dback/app-data.json. Pull the latest remote data first to avoid losing changes from other devices.",
+	})
+}
+
 func (u *UI) showConfirm(title, message string, onOK func()) {
 	u.showDialog(DialogState{
 		Kind:     DialogConfirm,
@@ -162,6 +229,15 @@ func (u *UI) showLoading(title, message string) {
 		Kind:    DialogLoading,
 		Title:   title,
 		Message: message,
+	})
+}
+
+func (u *UI) showLoadingWithCancel(title, message string, onCancel func()) {
+	u.showDialog(DialogState{
+		Kind:     DialogLoading,
+		Title:    title,
+		Message:  message,
+		OnCancel: onCancel,
 	})
 }
 

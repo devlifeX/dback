@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,7 +27,7 @@ var (
 	ErrSyncNotConfigured          = errors.New("sync settings are not configured")
 )
 
-const minMasterKeyLen = 8
+const minMasterKeyLen = 4
 
 func (s *Store) VaultPath() string {
 	return filepath.Join(s.baseDir, vaultFileName)
@@ -73,6 +74,7 @@ func (s *Store) requireUnlocked() error {
 // CreateVault initializes a new encrypted vault with seed data.
 func (s *Store) CreateVault(passphrase string) error {
 	if err := validateMasterKey(passphrase); err != nil {
+		log.Printf("store.CreateVault: invalid master key: %v", err)
 		return err
 	}
 	s.mu.Lock()
@@ -81,9 +83,11 @@ func (s *Store) CreateVault(passphrase string) error {
 		return nil
 	}
 	if _, err := os.Stat(s.VaultPath()); err == nil {
+		log.Printf("store.CreateVault: vault already exists at %q", s.VaultPath())
 		return ErrVaultExists
 	}
 
+	log.Printf("store.CreateVault: creating new vault at %q", s.VaultPath())
 	payload := models.AppVaultPayload{
 		Version:   CurrentVersion,
 		Profiles:  []models.Profile{},
@@ -92,12 +96,14 @@ func (s *Store) CreateVault(passphrase string) error {
 		Logs:      []models.LogEntry{},
 	}
 	if err := s.writeVaultLocked(passphrase, payload); err != nil {
+		log.Printf("store.CreateVault: writeVaultLocked failed: %v", err)
 		return err
 	}
 	s.applyPayloadLocked(payload)
 	s.setMasterKeyLocked(passphrase)
 	s.unlocked = true
 	s.bumpRevisionLocked()
+	log.Printf("store.CreateVault: vault created successfully")
 	return nil
 }
 
@@ -113,13 +119,16 @@ func (s *Store) Unlock(passphrase string) error {
 	}
 
 	if _, err := os.Stat(s.VaultPath()); err == nil {
+		log.Printf("store.Unlock: vault found at %q", s.VaultPath())
 		if s.hasLegacyPlaintextLocked() {
+			log.Printf("store.Unlock: legacy plaintext files present alongside vault, removing them")
 			if err := s.removeLegacyPlaintextLocked(); err != nil {
 				return fmt.Errorf("%w: %v", ErrLegacyPlaintextWithVault, err)
 			}
 		}
 		payload, key, err := s.readVaultFileLocked(passphrase)
 		if err != nil {
+			log.Printf("store.Unlock: readVaultFileLocked failed: %v", err)
 			return err
 		}
 		s.dataKey = key
@@ -128,27 +137,34 @@ func (s *Store) Unlock(passphrase string) error {
 		s.unlocked = true
 		s.bumpRevisionLocked()
 		_ = s.removeLegacyPlaintextLocked()
+		log.Printf("store.Unlock: vault unlocked (profiles=%d templates=%d)", len(payload.Profiles), len(payload.Templates))
 		return nil
 	}
 
 	if s.hasLegacyPlaintextLocked() {
+		log.Printf("store.Unlock: no vault found, migrating from legacy plaintext at %q", s.baseDir)
 		payload, err := s.loadLegacyPayloadLocked()
 		if err != nil {
+			log.Printf("store.Unlock: loadLegacyPayloadLocked failed: %v", err)
 			return err
 		}
 		if err := s.writeVaultLocked(passphrase, payload); err != nil {
+			log.Printf("store.Unlock: writeVaultLocked (migrate) failed: %v", err)
 			return err
 		}
 		if err := s.removeLegacyPlaintextLocked(); err != nil {
+			log.Printf("store.Unlock: removeLegacyPlaintextLocked failed: %v", err)
 			return err
 		}
 		s.applyPayloadLocked(payload)
 		s.setMasterKeyLocked(passphrase)
 		s.unlocked = true
 		s.bumpRevisionLocked()
+		log.Printf("store.Unlock: legacy migration complete (profiles=%d templates=%d)", len(payload.Profiles), len(payload.Templates))
 		return nil
 	}
 
+	log.Printf("store.Unlock: no vault and no legacy plaintext found at %q", s.baseDir)
 	return ErrVaultNotFound
 }
 
@@ -203,11 +219,13 @@ func (s *Store) currentPayloadLocked() models.AppVaultPayload {
 func (s *Store) writeVaultLocked(passphrase string, payload models.AppVaultPayload) error {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
+		log.Printf("store.writeVaultLocked: rand.Read failed: %v", err)
 		return err
 	}
 	key := secrets.DeriveKey(passphrase, salt)
 	nonce, ciphertext, err := secrets.MarshalEncryptVault(key, payload)
 	if err != nil {
+		log.Printf("store.writeVaultLocked: encrypt failed: %v", err)
 		return err
 	}
 	file := models.AppVaultFile{
@@ -218,6 +236,7 @@ func (s *Store) writeVaultLocked(passphrase string, payload models.AppVaultPaylo
 		EncryptedPayload: base64.StdEncoding.EncodeToString(ciphertext),
 	}
 	if err := writeJSON(s.VaultPath(), file); err != nil {
+		log.Printf("store.writeVaultLocked: writeJSON to %q failed: %v", s.VaultPath(), err)
 		return err
 	}
 	s.dataKey = key
@@ -228,6 +247,7 @@ func (s *Store) writeVaultLocked(passphrase string, payload models.AppVaultPaylo
 func (s *Store) readVaultFileLocked(passphrase string) (models.AppVaultPayload, []byte, error) {
 	var file models.AppVaultFile
 	if err := readJSON(s.VaultPath(), &file); err != nil {
+		log.Printf("store.readVaultFileLocked: readJSON from %q failed: %v", s.VaultPath(), err)
 		return models.AppVaultPayload{}, nil, err
 	}
 	salt, err := base64.StdEncoding.DecodeString(file.Salt)
@@ -245,6 +265,7 @@ func (s *Store) readVaultFileLocked(passphrase string) (models.AppVaultPayload, 
 	key := secrets.DeriveKey(passphrase, salt)
 	payload, err := secrets.DecryptUnmarshalVault(key, nonce, ciphertext)
 	if err != nil {
+		log.Printf("store.readVaultFileLocked: decrypt failed (wrong key or corrupt vault): %v", err)
 		return models.AppVaultPayload{}, nil, ErrWrongMasterKey
 	}
 	s.vaultSalt = file.Salt

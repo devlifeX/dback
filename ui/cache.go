@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"log"
 	"strings"
 
 	coreapp "dback/internal/app"
@@ -78,20 +79,15 @@ func (u *UI) tryUnlockSilent(passphrase string) bool {
 	if u.core == nil || u.unlocked {
 		return u.unlocked
 	}
-	passphrase = strings.TrimSpace(passphrase)
+	// Silent auto-unlock only applies to existing vaults/legacy data.
+	// Vault creation always requires an explicit button press or Enter.
 	if !u.core.HasVault() && !u.core.HasLegacyPlaintext() {
-		confirm := strings.TrimSpace(editorText(&u.loginConfirmPassword))
-		if len(passphrase) < 8 || passphrase != confirm {
-			return false
-		}
+		return false
 	}
-	var err error
-	if u.core.HasVault() || u.core.HasLegacyPlaintext() {
-		err = u.core.Unlock(passphrase)
-	} else {
-		err = u.core.CreateVault(passphrase)
-	}
+	passphrase = strings.TrimSpace(passphrase)
+	err := u.core.Unlock(passphrase)
 	if err != nil {
+		log.Printf("tryUnlockSilent: failed (hasVault=%v hasLegacy=%v): %v", u.core.HasVault(), u.core.HasLegacyPlaintext(), err)
 		return false
 	}
 	u.completeUnlock()
@@ -105,8 +101,8 @@ func (u *UI) tryUnlockWithFeedback(passphrase string) {
 	passphrase = strings.TrimSpace(passphrase)
 	if !u.core.HasVault() && !u.core.HasLegacyPlaintext() {
 		confirm := strings.TrimSpace(editorText(&u.loginConfirmPassword))
-		if len(passphrase) < 8 {
-			u.loginError = "Master key must be at least 8 characters."
+		if len(passphrase) < 4 {
+			u.loginError = "Master key must be at least 4 characters."
 			u.invalidate()
 			return
 		}
@@ -123,6 +119,7 @@ func (u *UI) tryUnlockWithFeedback(passphrase string) {
 		err = u.core.CreateVault(passphrase)
 	}
 	if err != nil {
+		log.Printf("tryUnlockWithFeedback: failed (hasVault=%v hasLegacy=%v): %v", u.core.HasVault(), u.core.HasLegacyPlaintext(), err)
 		u.loginError = unlockErrorMessage(err)
 		u.invalidate()
 		return

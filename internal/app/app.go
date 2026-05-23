@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +32,9 @@ type App struct {
 }
 
 func New(baseDir string) (*App, error) {
-	ssh.SetKnownHostsFile(filepath.Join(baseDir, "ssh_known_hosts"))
+	knownHostsPath := filepath.Join(baseDir, "ssh_known_hosts")
+	log.Printf("app.New: baseDir=%q knownHostsFile=%q", baseDir, knownHostsPath)
+	ssh.SetKnownHostsFile(knownHostsPath)
 	return &App{store: store.New(baseDir)}, nil
 }
 
@@ -52,16 +55,22 @@ func (a *App) DataRevision() uint64 {
 }
 
 func (a *App) CreateVault(passphrase string) error {
+	log.Printf("app.CreateVault: creating vault")
 	if err := a.store.CreateVault(passphrase); err != nil {
+		log.Printf("app.CreateVault: store.CreateVault failed: %v", err)
 		return err
 	}
+	log.Printf("app.CreateVault: vault created, reloading")
 	return a.Reload()
 }
 
 func (a *App) Unlock(passphrase string) error {
+	log.Printf("app.Unlock: unlocking vault")
 	if err := a.store.Unlock(passphrase); err != nil {
+		log.Printf("app.Unlock: store.Unlock failed: %v", err)
 		return err
 	}
+	log.Printf("app.Unlock: vault unlocked, reloading")
 	return a.Reload()
 }
 
@@ -76,20 +85,28 @@ func (a *App) Lock() {
 }
 
 func (a *App) Reload() error {
+	log.Printf("app.Reload: loading profiles")
 	profiles, err := a.store.LoadProfiles()
 	if err != nil {
+		log.Printf("app.Reload: LoadProfiles failed: %v", err)
 		return err
 	}
+	log.Printf("app.Reload: loading templates")
 	templates, err := a.store.LoadTemplates()
 	if err != nil {
+		log.Printf("app.Reload: LoadTemplates failed: %v", err)
 		return err
 	}
+	log.Printf("app.Reload: loading history")
 	history, err := a.store.LoadHistory()
 	if err != nil {
+		log.Printf("app.Reload: LoadHistory failed: %v", err)
 		return err
 	}
+	log.Printf("app.Reload: loading logs")
 	logs, err := a.store.LoadLogs()
 	if err != nil {
+		log.Printf("app.Reload: LoadLogs failed: %v", err)
 		return err
 	}
 	a.mu.Lock()
@@ -447,22 +464,12 @@ func (a *App) Restore(ctx context.Context, record models.ExportRecord, destinati
 }
 
 func (a *App) TestConnection(profile models.Profile) error {
-	client, err := ssh.NewExecutor(profile)
-	if err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := a.TestServerConnection(ctx, profile); err != nil {
 		return err
 	}
-	defer client.Close()
-	if profile.IsLocalhost() {
-		out, err := client.RunCommand("echo dback-localhost-ok")
-		if err != nil {
-			return err
-		}
-		if !strings.Contains(out, "dback-localhost-ok") {
-			return fmt.Errorf("local shell check failed")
-		}
-		return nil
-	}
-	return nil
+	return a.TestDatabaseConnection(ctx, profile)
 }
 
 type opLogger struct {

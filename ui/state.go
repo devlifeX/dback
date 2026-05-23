@@ -48,6 +48,8 @@ const (
 	DialogLoading
 	DialogPassword
 	DialogTemplateReplace
+	DialogSyncPushWarning
+	DialogConnectionTest
 )
 
 type DialogState struct {

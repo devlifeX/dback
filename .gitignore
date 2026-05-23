@@ -10,3 +10,4 @@ export_history.json
 *.json
 *.log
 .cursor/plans*
+dist/dback

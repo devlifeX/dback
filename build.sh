@@ -105,6 +105,33 @@ build_linux() {
     ldflags="-X main.appVersion=${APP_VERSION}"
     if CGO_ENABLED=1 go build -ldflags "$ldflags" -o "$DIST_DIR/${APP_NAME}-linux" .; then
         print_success "Linux build: ./$DIST_DIR/${APP_NAME}-linux"
+
+        # Create a launcher wrapper that handles EGL/GPU driver issues automatically.
+        local launcher="$DIST_DIR/${APP_NAME}"
+        cat > "$launcher" << 'LAUNCHER_EOF'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BINARY="$SCRIPT_DIR/dback-linux"
+
+# Detect NVIDIA driver/library version mismatch (common after updates without reboot).
+# If detected, force Mesa EGL to avoid eglInitialize failures.
+if [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES}" ]; then
+    if [ -f "/usr/share/glvnd/egl_vendor.d/10_nvidia.json" ]; then
+        if ! nvidia-smi >/dev/null 2>&1; then
+            MESA_VENDOR="/usr/share/glvnd/egl_vendor.d/50_mesa.json"
+            if [ -f "$MESA_VENDOR" ]; then
+                echo "WARNING: NVIDIA driver mismatch — using Mesa EGL. Reboot for full GPU acceleration." >&2
+                export __EGL_VENDOR_LIBRARY_FILENAMES="$MESA_VENDOR"
+            fi
+        fi
+    fi
+fi
+
+exec "$BINARY" "$@"
+LAUNCHER_EOF
+        chmod +x "$launcher"
+        print_success "Launcher script:  ./$DIST_DIR/${APP_NAME}"
+        echo "  Run the app with: ./$DIST_DIR/${APP_NAME}"
         return 0
     fi
 
