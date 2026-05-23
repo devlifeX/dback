@@ -60,9 +60,33 @@ jobs:
           name: dback-linux
           path: dist/dback-linux
 
+  windows-build:
+    name: Build Windows
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          go build -v -o dist/dback-windows.exe .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dback-windows
+          path: dist/dback-windows.exe
+
   release:
     needs:
       - linux-build
+      - windows-build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -79,3 +103,4 @@ jobs:
         with:
           files: |
             release-assets/dback-linux
+            release-assets/dback-windows.exe

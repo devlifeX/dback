@@ -98,7 +98,7 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return labeledEnumField(gtx, th, theme, &u.backupHostSelect, "Host filter", hostValues, hostLabels)
+			return labeledEnumDropdownField(gtx, th, theme, &u.backupHostSelect, "Host filter", hostValues, hostLabels, &u.backupHostDropdown)
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -323,7 +323,7 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if canImport {
-				return labeledEnumField(gtx, th, theme, &u.destSelect, "Destination Host", values, labels)
+				return labeledEnumDropdownField(gtx, th, theme, &u.destSelect, "Destination Host", values, labels, &u.destHostDropdown)
 			}
 			return mutedLabel(gtx, th, theme, "No import destinations available. All hosts are protected from import, or no hosts exist.")
 		}),

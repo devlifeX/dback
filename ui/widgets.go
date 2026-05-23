@@ -459,6 +459,14 @@ type DropdownOptions struct {
 	Labels []string
 }
 
+// DropdownState holds open/close UI state for a dropdownField.
+type DropdownState struct {
+	Open     bool
+	Toggle   widget.Clickable
+	List     widget.List
+	ItemBtns map[string]*widget.Clickable
+}
+
 func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, label string, opts DropdownOptions, selected *string, open *bool, toggle *widget.Clickable, list *widget.List, itemBtns map[string]*widget.Clickable) layout.Dimensions {
 	values := opts.Values
 	labels := opts.Labels
@@ -618,6 +626,17 @@ func checkboxField(gtx layout.Context, th *material.Theme, theme *AppTheme, c *w
 	return ch.Layout(gtx)
 }
 
+func labeledEnumDropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values, labels []string, dd *DropdownState) layout.Dimensions {
+	e.Update(gtx)
+	if e.Value == "" && len(values) > 0 {
+		e.Value = values[0]
+	}
+	if dd.ItemBtns == nil {
+		dd.ItemBtns = make(map[string]*widget.Clickable)
+	}
+	return dropdownField(gtx, th, theme, label, DropdownOptions{Values: values, Labels: labels}, &e.Value, &dd.Open, &dd.Toggle, &dd.List, dd.ItemBtns)
+}
+
 func labeledEnumField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values, labels []string) layout.Dimensions {
 	e.Update(gtx)
 	if e.Value == "" && len(values) > 0 {
@@ -733,6 +752,78 @@ func statusDot(gtx layout.Context, theme *AppTheme, status stepDotStatus) layout
 	}
 	fillRoundedRect(gtx, image.Pt(sz, sz), sz/2, col)
 	return layout.Dimensions{Size: image.Pt(sz, sz)}
+}
+
+// menuPopupItem describes a single item in a floating context menu.
+type menuPopupItem struct {
+	label   string
+	danger  bool
+	btn     *widget.Clickable
+	onClick func()
+}
+
+// menuPopup renders a floating context-menu card containing the given items.
+// It must be called inside an op.Defer macro so it draws on top of everything.
+// popupW is the width of the popup in dp. The caller is responsible for
+// op.Offsetting to the desired anchor position before calling this.
+func menuPopup(gtx layout.Context, th *material.Theme, theme *AppTheme, items []menuPopupItem) layout.Dimensions {
+	popupW := gtx.Dp(unit.Dp(160))
+	gtx.Constraints.Max.X = popupW
+	gtx.Constraints.Min.X = popupW
+
+	macro := op.Record(gtx.Ops)
+	var rows []layout.FlexChild
+	for i, item := range items {
+		item := item
+		if i > 0 {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{Size: image.Pt(0, gtx.Dp(unit.Dp(2)))}
+			}))
+		}
+		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if item.btn.Clicked(gtx) && item.onClick != nil {
+				item.onClick()
+			}
+			return item.btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				fg := theme.Text
+				if item.danger {
+					fg = theme.Danger
+				}
+				hovered := item.btn.Hovered()
+				bg := theme.Surface
+				if hovered {
+					bg = theme.SurfaceAlt
+				}
+				radius := gtx.Dp(theme.RadiusSm)
+				menuMacro := op.Record(gtx.Ops)
+				dims := layout.Inset{
+					Top: unit.Dp(9), Bottom: unit.Dp(9),
+					Left: unit.Dp(14), Right: unit.Dp(14),
+				}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Body2(th, item.label)
+					lbl.Color = fg
+					return lbl.Layout(gtx)
+				})
+				call := menuMacro.Stop()
+				fillRoundedRect(gtx, dims.Size, radius, bg)
+				call.Add(gtx.Ops)
+				return dims
+			})
+		}))
+	}
+	dims := layout.Inset{
+		Top: unit.Dp(6), Bottom: unit.Dp(6),
+		Left: unit.Dp(4), Right: unit.Dp(4),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+	})
+	call := macro.Stop()
+
+	radius := gtx.Dp(theme.Radius)
+	borderedRoundedRect(gtx, dims.Size, radius, theme.Surface, theme.Border, gtx.Dp(unit.Dp(1)))
+	call.Add(gtx.Ops)
+	return dims
 }
 
 func timelineConnector(gtx layout.Context, theme *AppTheme) layout.Dimensions {

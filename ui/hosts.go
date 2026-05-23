@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"dback/models"
 
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -138,6 +141,7 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 				edit:      new(widget.Clickable),
 				duplicate: new(widget.Clickable),
 				delete:    new(widget.Clickable),
+				more:      new(widget.Clickable),
 			}
 			u.profileCards[p.ID] = cards
 		}
@@ -165,6 +169,10 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return badge(gtx, th, theme, normalizeGroup(p.Group))
 							}),
+							layout.Rigid(hgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return u.layoutCardMoreButton(gtx, th, theme, p, cards)
+							}),
 						)
 					}),
 					layout.Rigid(vgap(theme)),
@@ -179,34 +187,8 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return secondaryButton(gtx, th, theme, cards.backup, "Backup", func() {
+								return successButton(gtx, th, theme, cards.backup, "Backup", func() {
 									u.runBackup(p)
-								})
-							}),
-							layout.Rigid(hgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return secondaryButton(gtx, th, theme, cards.edit, "Edit", func() {
-									u.openProfileEditor(p)
-								})
-							}),
-							layout.Rigid(hgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return secondaryButton(gtx, th, theme, cards.duplicate, "Duplicate", func() {
-									u.duplicateProfile(p)
-								})
-							}),
-							layout.Rigid(hgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return dangerButton(gtx, th, theme, cards.delete, "Delete", func() {
-									profile := p
-									u.showConfirm("Delete host", "Delete "+profile.Name+"?", func() {
-										if err := u.core.DeleteProfile(profile.ID); err != nil {
-											u.showError(err)
-											return
-										}
-										delete(u.profileCards, profile.ID)
-										u.openHosts()
-									})
 								})
 							}),
 						)
@@ -217,6 +199,92 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 		rows = append(rows, layout.Rigid(vgap(theme)))
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+}
+
+func (u *UI) layoutCardMoreButton(gtx layout.Context, th *material.Theme, theme *AppTheme, p models.Profile, cards profileCardWidgets) layout.Dimensions {
+	if cards.more.Clicked(gtx) {
+		if u.menuOpenID == p.ID {
+			u.menuOpenID = ""
+		} else {
+			u.menuOpenID = p.ID
+		}
+		u.invalidate()
+	}
+
+	btnDims := renderButton(gtx, th, theme, cards.more, "⋮", btnSecondary, false)
+
+	if u.menuOpenID != p.ID {
+		return btnDims
+	}
+
+	items := []menuPopupItem{
+		{
+			label: "Edit",
+			btn:   cards.edit,
+			onClick: func() {
+				u.menuOpenID = ""
+				u.openProfileEditor(p)
+			},
+		},
+		{
+			label: "Duplicate",
+			btn:   cards.duplicate,
+			onClick: func() {
+				u.menuOpenID = ""
+				u.duplicateProfile(p)
+			},
+		},
+		{
+			label:  "Delete",
+			danger: true,
+			btn:    cards.delete,
+			onClick: func() {
+				u.menuOpenID = ""
+				profile := p
+				u.showConfirm("Delete host", "Delete "+profile.Name+"?", func() {
+					if err := u.core.DeleteProfile(profile.ID); err != nil {
+						u.showError(err)
+						return
+					}
+					delete(u.profileCards, profile.ID)
+					u.openHosts()
+				})
+			},
+		},
+	}
+
+	// Dismiss menu when backdrop is clicked
+	if u.menuCloseArea.Clicked(gtx) {
+		u.menuOpenID = ""
+		u.invalidate()
+	}
+
+	// Record the entire overlay (backdrop + popup) to be deferred.
+	// op.Defer saves the current transform stack, so the popup is
+	// correctly positioned relative to the ⋮ button on screen.
+	popupW := gtx.Dp(unit.Dp(160))
+	popupOffX := btnDims.Size.X - popupW // right-align popup edge with button right edge
+	popupOffY := btnDims.Size.Y + gtx.Dp(unit.Dp(4))
+
+	macro := op.Record(gtx.Ops)
+
+	// Full-screen transparent backdrop to catch outside clicks
+	backdropStack := op.Offset(image.Pt(-9999, -9999)).Push(gtx.Ops)
+	backdropClip := clip.Rect{Max: image.Pt(99999, 99999)}.Push(gtx.Ops)
+	u.menuCloseArea.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: image.Pt(99999, 99999)}
+	})
+	backdropClip.Pop()
+	backdropStack.Pop()
+
+	// Popup menu card
+	popupStack := op.Offset(image.Pt(popupOffX, popupOffY)).Push(gtx.Ops)
+	menuPopup(gtx, th, theme, items)
+	popupStack.Pop()
+
+	op.Defer(gtx.Ops, macro.Stop())
+
+	return btnDims
 }
 
 func (u *UI) duplicateProfile(profile models.Profile) {
@@ -235,6 +303,7 @@ func (u *UI) duplicateProfile(profile models.Profile) {
 		edit:      new(widget.Clickable),
 		duplicate: new(widget.Clickable),
 		delete:    new(widget.Clickable),
+		more:      new(widget.Clickable),
 	}
 	u.openHosts()
 }

@@ -59,7 +59,9 @@ type UI struct {
 	selectedBackupID string
 	backupHostFilter string
 	backupHostSelect widget.Enum
+	backupHostDropdown DropdownState
 	destSelect       widget.Enum
+	destHostDropdown   DropdownState
 	backupList       widget.List
 	jobsList         widget.List
 
@@ -122,6 +124,9 @@ type UI struct {
 	deleteTemplateBtn   widget.Clickable
 	aboutProjectBtn     widget.Clickable
 
+	menuOpenID   string
+	menuCloseArea widget.Clickable
+
 	profileCards     map[string]profileCardWidgets
 	groupChips       map[string]*widget.Clickable
 	templateRows     map[string]*widget.Clickable
@@ -153,6 +158,7 @@ type profileCardWidgets struct {
 	edit      *widget.Clickable
 	duplicate *widget.Clickable
 	delete    *widget.Clickable
+	more      *widget.Clickable
 }
 
 func New(logoPNG []byte, version string) *UI {
