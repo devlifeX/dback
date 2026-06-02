@@ -230,21 +230,49 @@ Build در Launchpad: Go ≥ 1.25 (در صورت نیاز `debian/prepare-go.sh`
 
 ### یک‌بار — Secrets در GitHub
 
-Repo → **Settings → Secrets and variables → Actions → New repository secret**
+دو روش — **یکی** کافی است:
 
-| Secret | مقدار |
-|--------|--------|
-| `PPA_GPG_PRIVATE_KEY` | کلید خصوصی armored (کل فایل) |
-| `PPA_GPG_PASSPHRASE` | passphrase کلید GPG |
+#### روش A — Repository secrets (ساده‌تر)
+
+Repo → **Settings → Secrets and variables → Actions** → **Repository secrets** → **New repository secret**
+
+| Secret | نام دقیق | مقدار |
+|--------|----------|--------|
+| کلید خصوصی | **`PPA_GPG_PRIVATE_KEY`** | کل فایل armored |
+| passphrase | **`PPA_GPG_PASSPHRASE`** | رمز کلید؛ اگر ندارد یک فاصله ` ` |
+
+اگر از این روش استفاده می‌کنی، خط `environment:` را از [`.github/workflows/ppa.yml`](.github/workflows/ppa.yml) حذف کن.
+
+#### روش B — Environment secrets (همان setup فعلی تو)
+
+Secrets را زیر **Environment** به نام **`PPA_GPG_PASSPHRASE`** گذاشتی — workflow الان با این environment کار می‌کند:
+
+```yaml
+environment: PPA_GPG_PASSPHRASE
+```
+
+| Secret | Environment |
+|--------|-------------|
+| `PPA_GPG_PRIVATE_KEY` | `PPA_GPG_PASSPHRASE` |
+| `PPA_GPG_PASSPHRASE` | `PPA_GPG_PASSPHRASE` |
+
+> **Repository secrets** و **Environment secrets** جدا هستند. اگر فقط Environment پر باشد و workflow `environment:` نداشته باشد، secret خالی دیده می‌شود.
 
 استخراج کلید خصوصی:
 
 ```bash
 gpg --armor --export-secret-keys E00C906928B7599C > ppa-private-key.asc
+cat ppa-private-key.asc
 ```
 
-محتوای `ppa-private-key.asc` را در secret `PPA_GPG_PRIVATE_KEY` paste کن.  
-**هرگز** این فایل را commit نکن.
+**همه** خروجی `cat` را paste کن. **هرگز** commit نکن.
+
+### خطا: `PPA_GPG_PRIVATE_KEY is missing`
+
+- secret در **Repository** است ولی workflow `environment:` دارد → یا environment را پر کن یا `environment:` را حذف کن
+- secret فقط در **Environment** است ولی workflow `environment:` ندارد → `environment: PPA_GPG_PASSPHRASE` اضافه کن (الان fix شده)
+- نام secret دقیقاً `PPA_GPG_PRIVATE_KEY` باشد
+- بعد از fix، workflow را **Re-run** کن
 
 > توصیه امنیتی: برای CI می‌توانی یک **subkey** فقط-sign بسازی؛ فعلاً همان کلید اصلی هم کار می‌کند.
 

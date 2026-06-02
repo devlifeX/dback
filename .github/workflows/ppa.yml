@@ -9,6 +9,8 @@ jobs:
   ppa:
     name: Upload to Launchpad PPA
     runs-on: ubuntu-latest
+    # Secrets are stored as Environment secrets (see ppa.md).
+    environment: PPA_GPG_PASSPHRASE
     steps:
       - uses: actions/checkout@v4
 
@@ -27,11 +29,10 @@ jobs:
         run: ./packaging/sync-debian-changelog.sh
 
       - name: Import GPG signing key
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.PPA_GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.PPA_GPG_PASSPHRASE }}
-          fingerprint: E8B25AD68688EC024359E03FE00C906928B7599C
+        env:
+          PPA_GPG_PRIVATE_KEY: ${{ secrets.PPA_GPG_PRIVATE_KEY }}
+          PPA_GPG_PASSPHRASE: ${{ secrets.PPA_GPG_PASSPHRASE }}
+        run: ./packaging/ci-import-gpg.sh
 
       - name: Build, sign, and upload source package
         env:
