@@ -43,4 +43,6 @@ jobs:
           DEBSIGN_KEYID: E8B25AD68688EC024359E03FE00C906928B7599C
           SIGN: "1"
           UPLOAD: "1"
-        run: ./packaging/build-ppa.sh
+        run: |
+          unset GPG_TTY
+          ./packaging/build-ppa.sh

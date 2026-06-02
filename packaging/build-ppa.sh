@@ -271,7 +271,21 @@ upload_from_staging() {
 	trap - EXIT
 }
 
-export GPG_TTY="${GPG_TTY:-$(tty 2>/dev/null || true)}"
+configure_gpg_for_environment() {
+	# GitHub Actions has no TTY; GPG_TTY=/dev/tty makes debsign fail.
+	if [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${CI:-}" ]; then
+		unset GPG_TTY
+		return
+	fi
+	local tty_path
+	if tty_path="$(tty 2>/dev/null)" && [ -c "$tty_path" ]; then
+		export GPG_TTY="$tty_path"
+	else
+		unset GPG_TTY
+	fi
+}
+
+configure_gpg_for_environment
 export DEBFULLNAME="${DEBFULLNAME:-Dariush Vesal}"
 export DEBEMAIL="${DEBEMAIL:-dvworkmail2017@gmail.com}"
 export DEBSIGN_KEYID="${DEBSIGN_KEYID:-$GPG_KEY_ID}"

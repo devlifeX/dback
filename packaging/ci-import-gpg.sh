@@ -29,6 +29,9 @@ chmod 700 ~/.gnupg
 
 cat > ~/.gnupg/gpg.conf <<'EOF'
 default-key E8B25AD68688EC024359E03FE00C906928B7599C
+batch
+yes
+no-tty
 pinentry-mode loopback
 EOF
 
@@ -66,6 +69,14 @@ gpgconf --reload gpg-agent 2>/dev/null || true
 
 if ! gpg --list-secret-keys --keyid-format LONG dvworkmail2017@gmail.com 2>/dev/null | grep -q '^sec'; then
 	echo "ERROR: GPG secret key import failed." >&2
+	exit 1
+fi
+
+# Verify non-interactive signing works before debuild/debsign (no /dev/tty in CI).
+unset GPG_TTY
+if ! echo "ci-import test" | gpg --batch --yes --pinentry-mode loopback \
+	--passphrase "${PPA_GPG_PASSPHRASE:-}" --clearsign >/dev/null 2>&1; then
+	echo "ERROR: GPG non-interactive signing test failed (check PPA_GPG_PASSPHRASE secret)." >&2
 	exit 1
 fi
 
