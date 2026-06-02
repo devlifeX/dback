@@ -510,7 +510,7 @@ Also linked from **Plugins → DBack DB Tools → Status & Logs / Diagnostics**.
 
 Sections:
 
-1. **Status & Diagnostics** — REST availability, registered routes, internal ping test, endpoint URLs, permalink warning, auth mode
+1. **Status & Diagnostics** — REST availability, registered routes, internal ping test, endpoint URLs, permalink warning, auth mode, active plugin list (for conflict diagnostics)
 2. API key display + regenerate (hardcoded DBack token status shown separately)
 3. Export button
 4. Import file picker
@@ -530,6 +530,7 @@ Rendered server-side on page load (works even when browser REST calls fail):
 - REST index URL and `dback/v1` namespace URL
 - Pretty permalinks enabled or plain
 - List of registered `/dback/v1/*` routes
+- List of active plugins with version and plugin file path (including network-active plugins on multisite)
 - Internal `rest_do_request()` tests for `/ping` and `/preflight`
   - `rest_no_route` → routes not registered (plugin inactive or bootstrap failed)
   - `dback_forbidden` → routes OK, auth required (expected without key in internal test)
@@ -707,7 +708,7 @@ New classes must be `require_once` in `dback-db-tools.php` **before** classes th
 
 ## Versioning
 
-Plugin header version and `DBACK_DB_TOOLS_VERSION` must stay in sync (currently **1.1.2**).
+Plugin header version and `DBACK_DB_TOOLS_VERSION` must stay in sync (currently **1.1.3**).
 
 ### Required on every plugin change
 
@@ -729,7 +730,7 @@ Use semantic-ish increments:
 
 When making breaking REST changes, document migration. Prefer backward-compatible additions (new optional JSON fields, new routes) over breaking existing `dback/v1` contract.
 
-**Last aligned with:** v1.1.1 — admin notice when routes missing, Go REST index diagnostic on rest_no_route, diagnostics page, stable DBack token, zip root folder matching download filename.
+**Last aligned with:** v1.1.3 — diagnostics now include active plugin inventory (name/version/file) to speed up REST route conflict debugging.
 
 ---
 

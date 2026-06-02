@@ -26,6 +26,7 @@ class DBack_Diagnostics {
         $route_tests = self::test_internal_routes();
         $rest_disabled = self::rest_api_disabled_reason();
         $issues = self::detect_issues($registered, $route_tests, $rest_disabled);
+        $active_plugins = self::active_plugins_report();
 
         return array(
             'generated_at' => gmdate('c'),
@@ -51,10 +52,50 @@ class DBack_Diagnostics {
             'registered_routes' => $registered,
             'expected_routes' => self::$expected_routes,
             'route_tests' => $route_tests,
+            'active_plugins' => $active_plugins,
+            'active_plugins_count' => count($active_plugins),
             'issues' => $issues,
             'log_file' => basename(DBack_Error_Logger::log_file_path()),
             'log_file_writable' => is_writable(dirname(DBack_Error_Logger::log_file_path())),
         );
+    }
+
+    /**
+     * @return array<int,array<string,string>>
+     */
+    private static function active_plugins_report() {
+        if (!function_exists('get_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $all_plugins = get_plugins();
+        $active_entries = array();
+
+        foreach ((array) get_option('active_plugins', array()) as $plugin_file) {
+            $plugin_data = isset($all_plugins[$plugin_file]) ? $all_plugins[$plugin_file] : array();
+            $active_entries[] = array(
+                'file' => (string) $plugin_file,
+                'name' => isset($plugin_data['Name']) && '' !== $plugin_data['Name'] ? (string) $plugin_data['Name'] : (string) $plugin_file,
+                'version' => isset($plugin_data['Version']) ? (string) $plugin_data['Version'] : '',
+            );
+        }
+
+        if (is_multisite()) {
+            foreach ((array) get_site_option('active_sitewide_plugins', array()) as $plugin_file => $active_at) {
+                $plugin_data = isset($all_plugins[$plugin_file]) ? $all_plugins[$plugin_file] : array();
+                $active_entries[] = array(
+                    'file' => (string) $plugin_file,
+                    'name' => isset($plugin_data['Name']) && '' !== $plugin_data['Name'] ? (string) $plugin_data['Name'] : (string) $plugin_file,
+                    'version' => isset($plugin_data['Version']) ? (string) $plugin_data['Version'] : '',
+                );
+            }
+        }
+
+        usort($active_entries, static function ($a, $b) {
+            return strcasecmp($a['name'], $b['name']);
+        });
+
+        return $active_entries;
     }
 
     /**
@@ -361,6 +402,10 @@ class DBack_Diagnostics {
                     <td><?php echo esc_html((string) count($report['registered_routes'])); ?></td>
                 </tr>
                 <tr>
+                    <th scope="row"><?php esc_html_e('Active plugins', 'dback-db-tools'); ?></th>
+                    <td><?php echo esc_html((string) $report['active_plugins_count']); ?></td>
+                </tr>
+                <tr>
                     <th scope="row"><?php esc_html_e('Internal route test', 'dback-db-tools'); ?></th>
                     <td>
                         <?php foreach ($report['route_tests'] as $route => $result) : ?>
@@ -408,6 +453,28 @@ class DBack_Diagnostics {
                         <tr>
                             <td><code><?php echo esc_html($route['path']); ?></code></td>
                             <td><code><?php echo esc_html(implode(', ', $route['methods'])); ?></code></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
+        <?php if (!empty($report['active_plugins'])) : ?>
+            <h3><?php esc_html_e('Active plugins', 'dback-db-tools'); ?></h3>
+            <table class="widefat striped" style="max-width:960px;">
+                <thead>
+                    <tr>
+                        <th scope="col"><?php esc_html_e('Plugin', 'dback-db-tools'); ?></th>
+                        <th scope="col"><?php esc_html_e('Version', 'dback-db-tools'); ?></th>
+                        <th scope="col"><?php esc_html_e('File', 'dback-db-tools'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($report['active_plugins'] as $plugin) : ?>
+                        <tr>
+                            <td><?php echo esc_html($plugin['name']); ?></td>
+                            <td><code><?php echo esc_html($plugin['version'] !== '' ? $plugin['version'] : '-'); ?></code></td>
+                            <td><code><?php echo esc_html($plugin['file']); ?></code></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

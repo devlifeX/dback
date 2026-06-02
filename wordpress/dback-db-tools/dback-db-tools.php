@@ -2,7 +2,7 @@
 /**
  * Plugin Name: DBack DB Tools
  * Description: Pure-PHP database export, import, and SQL query tools for DBack. No shell commands required.
- * Version: 1.1.2
+ * Version: 1.1.3
  * Author: DBack
  * Requires PHP: 7.4
  * Requires at least: 5.8
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DBACK_DB_TOOLS_VERSION', '1.1.2');
+define('DBACK_DB_TOOLS_VERSION', '1.1.3');
 define('DBACK_DB_TOOLS_FILE', __FILE__);
 define('DBACK_DB_TOOLS_PATH', plugin_dir_path(__FILE__));
 define('DBACK_DB_TOOLS_URL', plugin_dir_url(__FILE__));
