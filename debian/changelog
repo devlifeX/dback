@@ -1,3 +1,9 @@
+dback (3.6.6-1) noble; urgency=medium
+
+  * Release 3.6.6.
+
+ -- Dariush Vesal <dvworkmail2017@gmail.com>  Tue, 02 Jun 2026 23:00:00 +0000
+
 dback (3.6.5-3) noble; urgency=medium
 
   * Fix PPA upload integrity (flock lock, staged artifacts for dput).
