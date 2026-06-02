@@ -2,6 +2,8 @@
 
 This document is the **AI roadmap** for the DBack Go desktop application (`dback` module). Use it before exploring the whole repository. For the WordPress plugin REST agent, see [`wordpress/dback-db-tools/wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md).
 
+**Agent rule — version on every change:** After **any** code or build change to the Go app, you **must** bump the app version in [`main.go`](main.go) and [`build.sh`](build.sh), update **Current app version** in [Versioning](#versioning) below, and tell the user which **git tag** to push for release (see [Build and embed](#build-and-embed)). Never finish a change set without syncing version + tag instructions.
+
 ---
 
 ## Purpose
@@ -593,13 +595,46 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 | Item | Location |
 |------|----------|
 | Logo | `main.go` — `//go:embed logo.png` |
-| Version | `-ldflags "-X main.appVersion=..."` — `build.sh`; default `3.2.0` |
+| Version | `main.go` default + `build.sh` `APP_VERSION`; must match release git tag |
 | Linux `.deb` | `packaging/nfpm.yaml` + `build.sh` → `dist/dback_${VERSION}_amd64.deb` |
 | Desktop icon (deb) | `packaging/dback.desktop` + `packaging/icons/hicolor/*/apps/dback.png` |
 | In-app updater | `internal/update/` + `internal/app/update.go`; About → Check for updates |
 | Plugin embed | `wordpress/dback-db-tools/embed.go` |
 | Linux build | `build.sh` — CGO + Gio/EGL + nfpm deb |
 | Windows build | GitHub Actions + `go build` — see `README.md` |
+| CI release | [`.github/workflows/go.yml`](.github/workflows/go.yml) — runs on tag push `v*` |
+
+**Current app version in repo:** `3.6.3` → About screen and local `./build.sh` use this until you bump again.
+
+### Local build
+
+```bash
+./build.sh linux
+# or explicitly:
+APP_VERSION=3.6.3 ./build.sh linux
+```
+
+Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.6.3_amd64.deb`.  
+`build.sh` prints the **release git tag** to push when the build succeeds.
+
+### GitHub Release (after merging to `master`)
+
+Tag **must** match `main.go` / `build.sh` version (`3.6.3` → tag `v3.6.3`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
+
+```bash
+git tag v3.6.3
+git push origin v3.6.3
+```
+
+GitHub Actions then publishes:
+
+| Asset | Name |
+|-------|------|
+| Linux binary | `dback-linux` |
+| Windows binary | `dback-windows.exe` |
+| Debian package | `dback_3.6.3_amd64.deb` |
+
+**When you bump the app version**, update this table’s examples and the tag commands to the new `v{x.y.z}`.
 
 **Cross-platform:** all embedded assets and zip/download logic must work on both targets — see **Cross-platform requirement** above.
 
@@ -639,6 +674,7 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 - Pass **`X-DBACK-DATABASE`** for WordPress import and query when `TargetDBName` is set.
 - Sanitize **download filenames** and handle **save dialog errors** on Linux and Windows.
 - Run **`go test ./...`**; add tests for path/filename/zip logic when touching I/O.
+- **Bump app version** in `main.go` and `build.sh` on every change set (see **Versioning**).
 
 ### Don't
 
@@ -685,6 +721,53 @@ Key test locations:
 
 ---
 
+## Versioning
+
+**Current app version:** `3.6.3`
+
+The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DBACK_DB_TOOLS_VERSION`) — see [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Do not confuse the two.
+
+### Required on every DBack app change (mandatory)
+
+When you modify Go app code, UI, build/CI, updater, or user-visible behavior:
+
+1. **Bump the app version** (patch by default: `3.6.3` → `3.6.4`):
+   - [`main.go`](main.go) — `var appVersion = "…"` (local/`go run` default)
+   - [`build.sh`](build.sh) — `APP_VERSION="${APP_VERSION:-…}"`
+2. Update examples in [`README.md`](README.md) if they show a pinned version.
+3. Update **Current app version** here and in [Build and embed](#build-and-embed).
+4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.6.3`** for app version `3.6.3`).
+
+```bash
+git tag v3.6.3
+git push origin v3.6.3
+```
+
+CI reads the tag (`v3.6.3` → `APP_VERSION=3.6.3`); tag and `main.go`/`build.sh` must always match.
+
+### Agent checklist before finishing
+
+- [ ] `main.go` `appVersion` bumped
+- [ ] `build.sh` default `APP_VERSION` bumped
+- [ ] `agent.md` **Current app version** + Build section tag examples updated
+- [ ] User told: **`git tag vX.Y.Z`** and **`git push origin vX.Y.Z`**
+
+### Bump guide
+
+| Change type | Example bump |
+|-------------|--------------|
+| Bug fix, CI/packaging, docs tied to app behavior | `3.6.2` → `3.6.3` |
+| New user-facing feature (backward compatible) | `3.6.x` → `3.7.0` |
+| Breaking profile/vault/sync contract | `3.x` → `4.0.0` |
+
+### Do not
+
+- Leave `main.go` / `build.sh` defaults on an old version after shipping a newer tag.
+- Commit `dist/` binaries or `.deb` files (see `.gitignore`).
+- Bump only the Git tag without updating `main.go` and `build.sh` defaults.
+
+---
+
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with WordPress host support, cross-platform (Linux + Windows) guidelines, plugin zip sanitization, and pre-import query abort on failure.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.6.3 — in-app updater, Debian packaging, release single-deb CI, and mandatory app version bumps on changes.

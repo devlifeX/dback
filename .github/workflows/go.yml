@@ -62,6 +62,7 @@ jobs:
         env:
           APP_VERSION: ${{ steps.version.outputs.app_version }}
         run: |
+          rm -rf dist
           mkdir -p dist
           CGO_ENABLED=1 go build -v -ldflags "-X main.appVersion=${APP_VERSION}" -o dist/dback-linux .
 
@@ -82,7 +83,7 @@ jobs:
           name: dback-linux
           path: |
             dist/dback-linux
-            dist/dback_*_amd64.deb
+            dist/dback_${{ steps.version.outputs.app_version }}_amd64.deb
 
   windows-build:
     name: Build Windows
@@ -126,6 +127,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Resolve app version
+        id: version
+        run: echo "app_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -138,4 +143,4 @@ jobs:
           files: |
             release-assets/dback-linux
             release-assets/dback-windows.exe
-            release-assets/dback_*_amd64.deb
+            release-assets/dback_${{ steps.version.outputs.app_version }}_amd64.deb

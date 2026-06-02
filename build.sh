@@ -5,7 +5,7 @@ set -u
 APP_NAME="dback"
 DIST_DIR="dist"
 ICON_PATH="logo.png"
-APP_VERSION="${APP_VERSION:-3.2.0}"
+APP_VERSION="${APP_VERSION:-3.6.3}"
 NFPM_VERSION="${NFPM_VERSION:-v2.44.1}"
 
 export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
@@ -153,6 +153,7 @@ pack_deb() {
 
     echo ""
     echo "Building Debian package..."
+    rm -f "$DIST_DIR"/dback_*_amd64.deb
     export APP_VERSION
     if APP_VERSION="$APP_VERSION" nfpm package -f packaging/nfpm.yaml -p deb --target "$DIST_DIR"; then
         local deb_file="$DIST_DIR/dback_${APP_VERSION}_amd64.deb"
@@ -170,6 +171,15 @@ pack_deb() {
 
     print_error "Debian package build failed."
     return 1
+}
+
+print_release_hint() {
+    echo ""
+    echo "Release tag for GitHub (version ${APP_VERSION}):"
+    echo "  git tag v${APP_VERSION}"
+    echo "  git push origin v${APP_VERSION}"
+    echo ""
+    echo "CI will publish: dback-linux, dback-windows.exe, dback_${APP_VERSION}_amd64.deb"
 }
 
 build_linux() {
@@ -210,6 +220,7 @@ LAUNCHER_EOF
         print_success "Launcher script:  ./$DIST_DIR/${APP_NAME}"
         echo "  Run the app with: ./$DIST_DIR/${APP_NAME}"
         pack_deb || return 1
+        print_release_hint
         return 0
     fi
 
