@@ -118,6 +118,8 @@ export GPG_TTY=$(tty)
 UPLOAD=1 ./packaging/build-ppa.sh
 ```
 
+> **مهم:** اسکریپت را بدون `| tail` اجرا کن — در غیر این صورت خروجی و promptهای GPG دیده نمی‌شوند و build «گیر کرده» به نظر می‌رسد.
+
 این کارها را انجام می‌دهد:
 
 1. ساخت source package (`debuild -S -sa -d -us -uc`)
@@ -249,6 +251,50 @@ dput dback-ppa ../dback_3.6.4-1_source.changes
 export GPG_TTY=$(tty)
 debsign -k E8B25AD68688EC024359E03FE00C906928B7599C ../dback_3.6.3_source.changes
 ```
+
+### GPG verification failed on .dsc (`No data`)
+
+```
+GPG verification of ... dback_X.dsc failed: (7, 58, 'No data')
+```
+
+علت: فایل `.dsc` **بدون امضای معتبر** upload شده — معمولاً در CI وقتی `debsign` بعد از build درست کار نمی‌کند.
+
+**راه‌حل:** اسکریپت الان با `debuild -k FINGERPRINT` یک‌جا sign می‌کند و قبل از upload `gpg --verify` روی `.dsc` و `.changes` می‌زند.
+
+```bash
+rm -f ../dback_*
+export GPG_TTY=$(tty)
+UPLOAD=1 ./packaging/build-ppa.sh
+```
+
+اگر `GPG signature verification passed` دیدی، upload کن. نسخه جدید: `3.6.5-2`.
+
+### MD5 mismatch (Launchpad rejection)
+
+```
+File dback_X.tar.xz mentioned in the changes has a MD5 mismatch
+```
+
+علت: فایل `.changes` / `.dsc` با `tar.xz` واقعی که Launchpad خوانده **هم‌خوان نیست** — معمولاً وقتی چند build همزمان artifactهای هم‌نام در `../dback_*` را overwrite کرده‌اند. **کلید GPG فعال بودن کافی نیست**؛ این خطا از قاطی شدن فایل‌هاست.
+
+**راه‌حل:**
+
+1. revision جدید بزن (مثلاً `3.6.5-3`، نه retry همان `3.6.5-2`):
+
+```bash
+dch -i -D noble
+```
+
+2. فقط از اسکریپت با lock و staging upload کن (همزمان دو terminal اجرا نکن):
+
+```bash
+cd ~/dev/backend/dback
+export GPG_TTY=$(tty)
+SIGN=1 UPLOAD=1 ./packaging/build-ppa.sh
+```
+
+اسکریپت قبل از `dput` checksum و GPG را verify می‌کند، سپس یک **کپی ایزوله** در `.dback-upload-stage.*` می‌سازد و فقط همان را upload می‌کند.
 
 ### `Connection reset by peer` در dput
 

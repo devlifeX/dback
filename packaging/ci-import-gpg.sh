@@ -27,14 +27,16 @@ fi
 mkdir -p ~/.gnupg
 chmod 700 ~/.gnupg
 
-cat >> ~/.gnupg/gpg.conf <<'EOF'
+cat > ~/.gnupg/gpg.conf <<'EOF'
 default-key E8B25AD68688EC024359E03FE00C906928B7599C
 pinentry-mode loopback
 EOF
 
-cat >> ~/.gnupg/gpg-agent.conf <<'EOF'
+cat > ~/.gnupg/gpg-agent.conf <<'EOF'
 allow-loopback-pinentry
 allow-preset-passphrase
+default-cache-ttl 600
+max-cache-ttl 7200
 EOF
 
 gpgconf --kill gpg-agent 2>/dev/null || true
@@ -49,6 +51,12 @@ KEYGRIP="$(gpg --with-keygrip --list-secret-keys E8B25AD68688EC024359E03FE00C906
 if [ -n "${PPA_GPG_PASSPHRASE:-}" ] && [ -n "$KEYGRIP" ]; then
 	if [ -x /usr/lib/gnupg2/gpg-preset-passphrases ]; then
 		echo "$PPA_GPG_PASSPHRASE" | /usr/lib/gnupg2/gpg-preset-passphrases --passphrase-fd 0 --preset "$KEYGRIP"
+		# Subkey used for signing (ssb)
+		SUBGRIP="$(gpg --with-keygrip --list-secret-keys E8B25AD68688EC024359E03FE00C906928B7599C 2>/dev/null \
+			| awk '/Keygrip =/ { if (++n == 2) { print $3; exit } }')"
+		if [ -n "${SUBGRIP:-}" ]; then
+			echo "$PPA_GPG_PASSPHRASE" | /usr/lib/gnupg2/gpg-preset-passphrases --passphrase-fd 0 --preset "$SUBGRIP"
+		fi
 	elif [ -x /usr/lib/gnupg/gpg-preset-passphrases ]; then
 		echo "$PPA_GPG_PASSPHRASE" | /usr/lib/gnupg/gpg-preset-passphrases --passphrase-fd 0 --preset "$KEYGRIP"
 	fi

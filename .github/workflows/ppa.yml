@@ -37,9 +37,10 @@ jobs:
 
       - name: Build, sign, and upload source package
         env:
-          DEBFULLNAME: Dariush Vesal
           DEBEMAIL: dvworkmail2017@gmail.com
+          DEBFULLNAME: Dariush Vesal
           GPG_KEY_ID: E8B25AD68688EC024359E03FE00C906928B7599C
+          DEBSIGN_KEYID: E8B25AD68688EC024359E03FE00C906928B7599C
           SIGN: "1"
           UPLOAD: "1"
         run: ./packaging/build-ppa.sh

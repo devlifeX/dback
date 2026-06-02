@@ -31,5 +31,6 @@ if [ "$base_version" = "$APP_VERSION" ] && [ "$current_dist" = "$PPA_DIST" ]; th
 	exit 0
 fi
 
-echo "Updating debian/changelog -> ${APP_VERSION} (${PPA_DIST})"
-dch -v "${APP_VERSION}" -D "${PPA_DIST}" --force-bad-version "Release ${APP_VERSION}."
+# Always use Debian revision (-1); bare APP_VERSION breaks native packaging and re-uploads.
+echo "Updating debian/changelog -> ${APP_VERSION}-1 (${PPA_DIST})"
+dch -v "${APP_VERSION}-1" -D "${PPA_DIST}" --force-bad-version "Release ${APP_VERSION}."
