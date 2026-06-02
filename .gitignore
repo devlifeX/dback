@@ -21,3 +21,4 @@ export_history.json
 .cursor/plans*
 HANDOFF.md
 .ppa-build.lock
+vendor/

@@ -350,7 +350,7 @@ gpg --keyserver hkp://keyserver.ubuntu.com:80 --send-keys E00C906928B7599C
 | `/usr/share/applications/dback.desktop` | منوی برنامه |
 | `/usr/share/icons/hicolor/*/apps/dback.png` | آیکون |
 
-Build در Launchpad: Go ≥ 1.25 (در صورت نیاز `debian/prepare-go.sh` دانلود می‌کند).
+Build در Launchpad: از **Go سیستم** (`golang-go` در نوبل، 1.22) و **`vendor/`** استفاده می‌شود — بدون دانلود از اینترنت (`GOPROXY=off`, `GOTOOLCHAIN=local`). بعد از تغییر وابستگی‌ها: `go mod vendor` را commit کن.
 
 ---
 

@@ -48,7 +48,7 @@ gpg_signing_fingerprint() {
 clean_workspace() {
 	echo "Cleaning local build artifacts..."
 	rm -f dback-linux dist/dback-linux
-	rm -rf debian/go debian/dback debian/.debhelper debian/debhelper-build-stamp debian/files
+	rm -rf debian/dback debian/.debhelper debian/debhelper-build-stamp debian/files
 	if [ -f debian/rules ]; then
 		fakeroot debian/rules clean >/dev/null 2>&1 || true
 	fi
