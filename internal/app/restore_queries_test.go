@@ -53,18 +53,18 @@ func TestRestoreWordPressRunsPreImportBeforeImport(t *testing.T) {
 		defer mu.Unlock()
 
 		switch r.URL.Path {
-		case "/wp-json/dback/v1/preflight":
+		case "/wp-json/dback/v1/preflight/":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": true,
 				"checks":  []map[string]string{{"name": "database", "status": "ok"}},
 			})
-		case "/wp-json/dback/v1/query":
+		case "/wp-json/dback/v1/query/":
 			order = append(order, "query")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": true,
 				"type":    "command",
 			})
-		case "/wp-json/dback/v1/import":
+		case "/wp-json/dback/v1/import/":
 			order = append(order, "import")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"success":             true,
@@ -121,9 +121,9 @@ func TestRestoreWordPressSkipsImportWhenPreImportFails(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/wp-json/dback/v1/preflight":
+		case "/wp-json/dback/v1/preflight/":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
-		case "/wp-json/dback/v1/query":
+		case "/wp-json/dback/v1/query/":
 			mu.Lock()
 			order = append(order, "query")
 			mu.Unlock()
@@ -132,7 +132,7 @@ func TestRestoreWordPressSkipsImportWhenPreImportFails(t *testing.T) {
 				"code":    "dback_query_failed",
 				"message": "query failed",
 			})
-		case "/wp-json/dback/v1/import":
+		case "/wp-json/dback/v1/import/":
 			mu.Lock()
 			order = append(order, "import")
 			mu.Unlock()
