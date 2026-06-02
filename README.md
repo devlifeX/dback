@@ -8,6 +8,44 @@ DBack connects to remote Linux servers or WordPress sites, streams database dump
 
 **Repository:** [github.com/devlifeX/dback](https://github.com/devlifeX/dback/)
 
+## Install
+
+### Ubuntu / Debian (PPA — recommended)
+
+Install from the [Launchpad PPA](https://launchpad.net/~devlifex/+archive/ubuntu/dback) (Ubuntu 24.04 **noble** and other enabled series):
+
+```bash
+sudo add-apt-repository ppa:devlifex/dback
+sudo apt update
+sudo apt install dback
+```
+
+Then run **dback** from the application menu or:
+
+```bash
+dback
+```
+
+Updates arrive with `sudo apt update && sudo apt upgrade` after new PPA builds are published.
+
+### Ubuntu / Debian (.deb from GitHub Releases)
+
+Download `dback_*_amd64.deb` from [GitHub Releases](https://github.com/devlifeX/dback/releases), then:
+
+```bash
+sudo apt install ./dback_*_amd64.deb
+```
+
+### Windows
+
+Download `dback-windows.exe` from [GitHub Releases](https://github.com/devlifeX/dback/releases) and run it.
+
+### Build from source
+
+See [Quick Start](#quick-start) below (`./run.sh` or `./build.sh`).
+
+Maintainers: PPA upload and packaging — [`ppa.md`](ppa.md).
+
 ## Highlights
 
 - **Streaming backups** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
@@ -127,7 +165,7 @@ Output:
 Set the app version at build time:
 
 ```bash
-APP_VERSION=3.6.5 ./build.sh linux
+APP_VERSION=3.6.6 ./build.sh linux
 ```
 
 Version appears in **About** inside the app. Use **Check for updates** on the About screen to compare against [GitHub Releases](https://github.com/devlifeX/dback/releases); when a newer version exists, DBack downloads the matching asset and installs it (Linux `.deb` via `pkexec` + `apt`, Windows `.exe` with restart helper).
@@ -137,7 +175,7 @@ Version appears in **About** inside the app. Use **Check for updates** on the Ab
 Requirements: **Go 1.21+** and a Windows development environment.
 
 ```powershell
-go build -ldflags "-X main.appVersion=3.6.5" -o dist/dback-windows.exe .
+go build -ldflags "-X main.appVersion=3.6.6" -o dist/dback-windows.exe .
 ```
 
 ### Build manually (Linux)
@@ -156,7 +194,7 @@ sudo apt-get update && sudo apt-get install -y \
 Then:
 
 ```bash
-go build -ldflags "-X main.appVersion=3.6.5" -o dist/dback-linux .
+go build -ldflags "-X main.appVersion=3.6.6" -o dist/dback-linux .
 ```
 
 ### Docker alternative
@@ -176,21 +214,7 @@ Tagged releases (`v*`) are built automatically by GitHub Actions:
 | Linux | `dback-linux`, `dback_{version}_amd64.deb` |
 | Windows | `dback-windows.exe` |
 
-Install on Ubuntu/Debian:
-
-```bash
-sudo apt install ./dback_3.6.5_amd64.deb
-```
-
-**Launchpad PPA** (after published):
-
-```bash
-sudo add-apt-repository ppa:devlifex/dback
-sudo apt update
-sudo apt install dback
-```
-
-Setup and upload: [`ppa.md`](ppa.md).
+Install on Ubuntu/Debian: use the [PPA](#install) or `sudo apt install ./dback_*_amd64.deb` from the release assets.
 
 Or use **About → Check for updates** inside the running app.
 
