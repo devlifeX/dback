@@ -14,6 +14,7 @@ import (
 	"dback/backend/db"
 	"dback/backend/ssh"
 	"dback/backend/transfer"
+	"dback/backend/wordpress"
 	"dback/internal/debug"
 	"dback/internal/store"
 	"dback/models"
@@ -305,13 +306,25 @@ func (a *App) Backup(ctx context.Context, profile models.Profile, progress Progr
 	var size int64
 	var err error
 
-	result, backupErr := transfer.BackupSSH(ctx, transfer.BackupRequest{
-		Profile:     profile,
-		OperationID: operationID,
-		Destination: dest,
-		Logger:      logger,
-		Progress:    progress,
-	})
+	var result transfer.BackupResult
+	var backupErr error
+	if profile.UsesWordPress() {
+		result, backupErr = transfer.BackupWordPress(ctx, transfer.BackupRequest{
+			Profile:     profile,
+			OperationID: operationID,
+			Destination: dest,
+			Logger:      logger,
+			Progress:    progress,
+		})
+	} else {
+		result, backupErr = transfer.BackupSSH(ctx, transfer.BackupRequest{
+			Profile:     profile,
+			OperationID: operationID,
+			Destination: dest,
+			Logger:      logger,
+			Progress:    progress,
+		})
+	}
 	fullPath, size, err = result.Path, result.Size, backupErr
 
 	if err != nil {
@@ -361,8 +374,26 @@ func (a *App) RunImportQuery(ctx context.Context, profile models.Profile, query 
 		return db.QueryResult{}, err
 	}
 	if !profile.SupportsSQLQuery() {
-		return db.QueryResult{}, fmt.Errorf("SQL query requires SSH/Jump Host with MySQL or MariaDB")
+		return db.QueryResult{}, fmt.Errorf("SQL query is not supported for this host")
 	}
+
+	if profile.UsesWordPress() {
+		client, err := wordpress.NewClient(profile)
+		if err != nil {
+			return db.QueryResult{}, err
+		}
+		_ = connectDB
+		result, err := client.Query(ctx, query, db.WordPressImportDatabase(profile))
+		if err != nil {
+			return db.QueryResult{
+				Columns: []string{"Error"},
+				Rows:    [][]string{{truncateTestOutput(err.Error())}},
+				Message: err.Error(),
+			}, err
+		}
+		return result, nil
+	}
+
 	cmd, err := db.BuildQueryCommand(profile, query, connectDB)
 	if err != nil {
 		return db.QueryResult{}, err
@@ -429,14 +460,25 @@ func (a *App) Restore(ctx context.Context, record models.ExportRecord, destinati
 	}
 
 	var err error
-	err = transfer.RestoreSSH(ctx, transfer.RestoreRequest{
-		Profile:     destination,
-		OperationID: operationID,
-		LocalPath:   record.FilePath,
-		FileSize:    record.FileSizeBytes,
-		Logger:      logger,
-		Progress:    progress,
-	})
+	if destination.UsesWordPress() {
+		err = transfer.RestoreWordPress(ctx, transfer.RestoreRequest{
+			Profile:     destination,
+			OperationID: operationID,
+			LocalPath:   record.FilePath,
+			FileSize:    record.FileSizeBytes,
+			Logger:      logger,
+			Progress:    progress,
+		})
+	} else {
+		err = transfer.RestoreSSH(ctx, transfer.RestoreRequest{
+			Profile:     destination,
+			OperationID: operationID,
+			LocalPath:   record.FilePath,
+			FileSize:    record.FileSizeBytes,
+			Logger:      logger,
+			Progress:    progress,
+		})
+	}
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

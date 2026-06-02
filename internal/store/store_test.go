@@ -98,6 +98,7 @@ func TestExportProfilesStripsSecretsByDefault(t *testing.T) {
 		Name:        "Production",
 		SSHPassword: "ssh-secret",
 		DBPassword:  "db-secret",
+		WPKey:       "wp-secret",
 	}}
 
 	if err := New(dir).ExportProfiles(path, profiles, false, ""); err != nil {
@@ -108,7 +109,7 @@ func TestExportProfilesStripsSecretsByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := imported[0]
-	if got.SSHPassword != "" || got.DBPassword != "" {
+	if got.SSHPassword != "" || got.DBPassword != "" || got.WPKey != "" {
 		t.Fatalf("secrets were not stripped: %#v", got)
 	}
 }
@@ -179,14 +180,17 @@ func TestMergeProfilesByIDAndName(t *testing.T) {
 	}
 }
 
-func TestFlattenProfilesDropsWordPress(t *testing.T) {
+func TestFlattenProfilesKeepsWordPress(t *testing.T) {
 	profiles := []models.Profile{
-		{ID: "wp", Name: "WP Site", ConnectionType: "WordPress"},
+		{ID: "wp", Name: "WP Site", ConnectionType: models.ConnectionTypeWordPress, WPUrl: "https://example.com", WPKey: "secret"},
 		{ID: "ssh", Name: "SSH Host", ConnectionType: models.ConnectionTypeSSH, Host: "10.0.0.1"},
 	}
 	out := flattenProfiles(profiles)
-	if len(out) != 1 || out[0].ID != "ssh" {
-		t.Fatalf("expected wordpress host to be dropped, got %#v", out)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 profiles, got %#v", out)
+	}
+	if out[0].ConnectionType != models.ConnectionTypeWordPress {
+		t.Fatalf("expected wordpress host to be kept, got %#v", out[0])
 	}
 }
 

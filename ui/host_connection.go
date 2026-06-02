@@ -96,6 +96,9 @@ func serverConnectionStepLabel(p models.Profile) string {
 	if p.IsLocalhost() {
 		return "Local shell"
 	}
+	if p.UsesWordPress() {
+		return "WordPress REST API"
+	}
 	return "Server connection"
 }
 

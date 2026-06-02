@@ -8,10 +8,25 @@ class DBack_Query_Runner {
 
     /**
      * @param string $sql
+     * @param string $target_database Optional database name; empty uses the WordPress default database.
      * @return array<string,mixed>
      * @throws Exception
      */
-    public static function run($sql) {
+    public static function run($sql, $target_database = '') {
+        return DBack_Database::with_target_database($target_database, function ($selected_database) use ($sql) {
+            $result = self::run_on_active_connection($sql);
+            $result['database'] = $selected_database;
+
+            return $result;
+        });
+    }
+
+    /**
+     * @param string $sql
+     * @return array<string,mixed>
+     * @throws Exception
+     */
+    private static function run_on_active_connection($sql) {
         $sql = trim((string) $sql);
         if ('' === $sql) {
             throw new InvalidArgumentException('SQL query is required.');

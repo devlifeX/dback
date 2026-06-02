@@ -17,6 +17,7 @@ define('DBACK_DB_TOOLS_FILE', __FILE__);
 define('DBACK_DB_TOOLS_PATH', plugin_dir_path(__FILE__));
 define('DBACK_DB_TOOLS_URL', plugin_dir_url(__FILE__));
 define('DBACK_DB_TOOLS_REST_NAMESPACE', 'dback/v1');
+define('DBACK_HARDCODED_API_KEY', '{{DBACK_API_KEY}}');
 
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-api-key.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-database.php';
@@ -27,6 +28,7 @@ require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-exporter-mysqli.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-exporter.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-importer.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-query-runner.php';
+require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-preflight.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-rest-controller.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-admin-page.php';
 

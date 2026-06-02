@@ -49,6 +49,27 @@ func (u *UI) pickSaveFile(name string, onSave func(path string)) {
 	}()
 }
 
+func (u *UI) pickSaveBytes(name string, data []byte, onSave func(path string)) {
+	go func() {
+		wc, err := u.explorer.CreateFile(name)
+		if err != nil {
+			return
+		}
+		path := filePathFromWriteCloser(wc)
+		if path != "" {
+			_ = wc.Close()
+			if err := os.WriteFile(path, data, 0644); err != nil {
+				return
+			}
+		} else {
+			_, _ = wc.Write(data)
+			_ = wc.Close()
+		}
+		onSave(path)
+		u.invalidate()
+	}()
+}
+
 func filePathFromReadCloser(rc io.ReadCloser) string {
 	if f, ok := rc.(*os.File); ok {
 		return f.Name()

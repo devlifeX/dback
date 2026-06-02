@@ -2,17 +2,38 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"dback/backend/db"
 	"dback/backend/ssh"
+	"dback/backend/wordpress"
 	"dback/models"
 )
 
 const serverProbeMarker = "dback-server-ok"
 
 func (a *App) TestServerConnection(ctx context.Context, profile models.Profile) error {
+	if profile.UsesWordPress() {
+		client, err := wordpress.NewClient(profile)
+		if err != nil {
+			return err
+		}
+		data, err := client.Ping(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			return err
+		}
+		if success, ok := data["success"].(bool); ok && !success {
+			return fmt.Errorf("wordpress ping failed")
+		}
+		return nil
+	}
+
 	return a.withExecutor(ctx, profile, func(client ssh.Executor) error {
 		out, err := client.RunCommand("echo " + serverProbeMarker)
 		if ctx.Err() != nil {
@@ -29,6 +50,27 @@ func (a *App) TestServerConnection(ctx context.Context, profile models.Profile) 
 }
 
 func (a *App) TestDatabaseConnection(ctx context.Context, profile models.Profile) error {
+	if profile.UsesWordPress() {
+		if err := db.ValidateProfileForWordPress(profile); err != nil {
+			return err
+		}
+		client, err := wordpress.NewClient(profile)
+		if err != nil {
+			return err
+		}
+		result, err := client.Query(ctx, "SELECT 1", db.WordPressImportDatabase(profile))
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			return err
+		}
+		if len(result.Rows) == 0 && result.Message == "" {
+			return fmt.Errorf("database returned no output")
+		}
+		return nil
+	}
+
 	if !profile.SupportsSQLQuery() {
 		return fmt.Errorf("database test requires MySQL or MariaDB")
 	}
@@ -96,4 +138,16 @@ func truncateTestOutput(s string) string {
 		return s
 	}
 	return s[:300] + "…"
+}
+
+func (a *App) GenerateWPKey() (string, error) {
+	return GenerateWPAPIKey()
+}
+
+func GenerateWPAPIKey() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }

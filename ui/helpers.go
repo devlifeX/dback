@@ -86,6 +86,12 @@ func hostConnectionSubtitle(p models.Profile) string {
 	switch p.ConnectionType {
 	case models.ConnectionTypeLocalhost:
 		conn = "Localhost"
+	case models.ConnectionTypeWordPress:
+		site := strings.TrimSpace(p.WPUrl)
+		if site == "" {
+			site = p.Host
+		}
+		conn = site
 	case models.ConnectionTypeJumpHost:
 		conn = fmt.Sprintf("%s@%s:%s (via %s)", p.SSHUser, p.Host, p.Port, p.JumpHost)
 	default:

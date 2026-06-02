@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 class DBack_Api_Key {
 
     const OPTION_NAME = 'dback_api_key';
+    const PLACEHOLDER = '{{DBACK_API_KEY}}';
 
     public static function activate() {
         if (!self::get()) {
@@ -25,11 +26,34 @@ class DBack_Api_Key {
         return $key;
     }
 
+    public static function hardcoded_key() {
+        if (!defined('DBACK_HARDCODED_API_KEY')) {
+            return '';
+        }
+
+        $key = DBACK_HARDCODED_API_KEY;
+        if (!is_string($key) || '' === $key || self::PLACEHOLDER === $key) {
+            return '';
+        }
+
+        return $key;
+    }
+
     public static function is_valid($candidate) {
         if (!is_string($candidate) || '' === $candidate) {
             return false;
         }
 
-        return hash_equals(self::get(), $candidate);
+        $hardcoded = self::hardcoded_key();
+        if ('' !== $hardcoded && hash_equals($hardcoded, $candidate)) {
+            return true;
+        }
+
+        $stored = self::get();
+        if ('' !== $stored && hash_equals($stored, $candidate)) {
+            return true;
+        }
+
+        return false;
     }
 }

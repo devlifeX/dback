@@ -628,9 +628,6 @@ func writeJSON(path string, value any) error {
 func flattenProfiles(profiles []models.Profile) []models.Profile {
 	var out []models.Profile
 	for _, p := range profiles {
-		if p.ConnectionType == "WordPress" {
-			continue
-		}
 		out = append(out, flattenProfile(p)...)
 	}
 	return out
@@ -692,6 +689,18 @@ func normalizeProfile(p models.Profile) models.Profile {
 	if p.Group == "" {
 		p.Group = "Default"
 	}
+	if p.ConnectionType == models.ConnectionTypeWordPress {
+		if p.WPUrl != "" && p.Host == "" {
+			p.Host = p.WPUrl
+		}
+		if p.WPUrl == "" && p.Host != "" {
+			p.WPUrl = p.Host
+		}
+		if p.DBType == "" {
+			p.DBType = models.DBTypeMySQL
+		}
+		return p
+	}
 	if p.Port == "" {
 		p.Port = "22"
 	}
@@ -736,6 +745,7 @@ func stripSecrets(profiles []models.Profile) []models.Profile {
 		profiles[i].DBPassword = ""
 		profiles[i].AuthKeyPEM = ""
 		profiles[i].JumpAuthKeyPEM = ""
+		profiles[i].WPKey = ""
 	}
 	return profiles
 }

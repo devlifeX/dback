@@ -114,6 +114,11 @@ func (u *UI) profileFromEditors() models.Profile {
 	p.JumpAuthType = host.JumpAuthType
 	p.JumpAuthKeyPath = host.JumpAuthKeyPath
 	p.JumpAuthKeyPEM = host.JumpAuthKeyPEM
+	p.WPUrl = host.WPUrl
+	p.WPKey = host.WPKey
+	if p.UsesWordPress() {
+		p.Host = host.WPUrl
+	}
 	p.DBHost = host.DBHost
 	p.DBPort = host.DBPort
 	p.DBUser = host.DBUser

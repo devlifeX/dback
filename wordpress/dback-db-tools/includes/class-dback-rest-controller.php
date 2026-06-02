@@ -7,6 +7,18 @@ if (!defined('ABSPATH')) {
 class DBack_Rest_Controller {
 
     public function register_routes() {
+        register_rest_route(DBACK_DB_TOOLS_REST_NAMESPACE, '/ping', array(
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => array($this, 'handle_ping'),
+            'permission_callback' => array($this, 'check_permission'),
+        ));
+
+        register_rest_route(DBACK_DB_TOOLS_REST_NAMESPACE, '/preflight', array(
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => array($this, 'handle_preflight'),
+            'permission_callback' => array($this, 'check_permission'),
+        ));
+
         register_rest_route(DBACK_DB_TOOLS_REST_NAMESPACE, '/export', array(
             'methods' => WP_REST_Server::READABLE,
             'callback' => array($this, 'handle_export'),
@@ -17,6 +29,13 @@ class DBack_Rest_Controller {
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => array($this, 'handle_import'),
             'permission_callback' => array($this, 'check_permission'),
+            'args' => array(
+                'database' => array(
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => array($this, 'sanitize_database_param'),
+                ),
+            ),
         ));
 
         register_rest_route(DBACK_DB_TOOLS_REST_NAMESPACE, '/query', array(
@@ -27,7 +46,12 @@ class DBack_Rest_Controller {
                 'sql' => array(
                     'required' => true,
                     'type' => 'string',
-                    'sanitize_callback' => 'sanitize_textarea_field',
+                    'sanitize_callback' => array($this, 'sanitize_sql_param'),
+                ),
+                'database' => array(
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => array($this, 'sanitize_database_param'),
                 ),
             ),
         ));
@@ -44,6 +68,32 @@ class DBack_Rest_Controller {
                 'permission_callback' => array($this, 'check_admin_permission'),
             ),
         ));
+    }
+
+    /**
+     * Preserve SQL payloads while trimming obvious whitespace.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    public function sanitize_sql_param($value) {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        return trim($value);
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    public function sanitize_database_param($value) {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        return trim($value);
     }
 
     /**
@@ -85,6 +135,28 @@ class DBack_Rest_Controller {
 
     /**
      * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     */
+    public function handle_ping($request) {
+        return rest_ensure_response(array(
+            'success' => true,
+            'message' => 'pong',
+            'plugin_version' => DBACK_DB_TOOLS_VERSION,
+            'site_url' => site_url(),
+            'driver' => DBack_Database::driver(),
+        ));
+    }
+
+    /**
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     */
+    public function handle_preflight($request) {
+        return rest_ensure_response(DBack_Preflight::run());
+    }
+
+    /**
+     * @param WP_REST_Request $request
      * @return void|WP_Error
      */
     public function handle_export($request) {
@@ -101,11 +173,13 @@ class DBack_Rest_Controller {
      */
     public function handle_import($request) {
         try {
-            $result = DBack_Importer::import_request_body();
+            $result = DBack_Importer::import_rest_request($request);
             return rest_ensure_response(array(
                 'success' => true,
                 'message' => __('Database imported successfully.', 'dback-db-tools'),
                 'statements_executed' => $result['statements_executed'],
+                'bytes_received' => isset($result['bytes_received']) ? (int) $result['bytes_received'] : 0,
+                'database' => isset($result['database']) ? $result['database'] : DB_NAME,
             ));
         } catch (Throwable $exception) {
             return DBack_Error_Logger::to_wp_error('import', 'dback_import_failed', $exception);
@@ -120,11 +194,24 @@ class DBack_Rest_Controller {
         $sql = $request->get_param('sql');
 
         try {
-            $result = DBack_Query_Runner::run($sql);
+            $result = DBack_Query_Runner::run($sql, $this->requested_database($request));
             return rest_ensure_response($result);
         } catch (Throwable $exception) {
             return DBack_Error_Logger::to_wp_error('query', 'dback_query_failed', $exception);
         }
+    }
+
+    /**
+     * @param WP_REST_Request $request
+     * @return string
+     */
+    private function requested_database($request) {
+        $database = (string) $request->get_header('X-DBACK-DATABASE');
+        if ('' === $database) {
+            $database = (string) $request->get_param('database');
+        }
+
+        return $database;
     }
 
     /**

@@ -17,13 +17,11 @@ const (
 type ConnectionType string
 
 const (
-	ConnectionTypeSSH       ConnectionType = "SSH"
-	ConnectionTypeJumpHost  ConnectionType = "JumpHost"
-	ConnectionTypeLocalhost ConnectionType = "Localhost"
+	ConnectionTypeSSH        ConnectionType = "SSH"
+	ConnectionTypeJumpHost   ConnectionType = "JumpHost"
+	ConnectionTypeLocalhost  ConnectionType = "Localhost"
+	ConnectionTypeWordPress  ConnectionType = "WordPress"
 )
-
-// legacyConnectionWordPress is filtered out on load; not supported in the UI.
-const legacyConnectionWordPress ConnectionType = "WordPress"
 
 // DBType defines the database type (MySQL/MariaDB only)
 type DBType string
@@ -55,6 +53,9 @@ type Profile struct {
 	JumpAuthType    AuthType `json:"jump_auth_type,omitempty"`
 	JumpAuthKeyPath string   `json:"jump_auth_key_path,omitempty"`
 	JumpAuthKeyPEM  string   `json:"jump_auth_key_pem,omitempty"`
+
+	WPUrl string `json:"wp_url,omitempty"`
+	WPKey string `json:"wp_key,omitempty"`
 
 	DBHost      string `json:"db_host"`
 	DBPort      string `json:"db_port"`
@@ -277,6 +278,8 @@ func SettingsFromProfile(p Profile) TransferSettings {
 		JumpAuthType:         p.JumpAuthType,
 		JumpAuthKeyPath:      p.JumpAuthKeyPath,
 		JumpAuthKeyPEM:       p.JumpAuthKeyPEM,
+		WPUrl:                p.WPUrl,
+		WPKey:                p.WPKey,
 		DBHost:               p.DBHost,
 		DBPort:               p.DBPort,
 		DBUser:               p.DBUser,
@@ -316,6 +319,12 @@ func (p Profile) withSettings(s *TransferSettings) Profile {
 	p.JumpAuthType = s.JumpAuthType
 	p.JumpAuthKeyPath = s.JumpAuthKeyPath
 	p.JumpAuthKeyPEM = s.JumpAuthKeyPEM
+	if s.WPUrl != "" {
+		p.WPUrl = s.WPUrl
+	}
+	if s.WPKey != "" {
+		p.WPKey = s.WPKey
+	}
 	p.DBHost = s.DBHost
 	p.DBPort = s.DBPort
 	p.DBUser = s.DBUser
@@ -376,11 +385,18 @@ func (p Profile) QueryVars() QueryVars {
 }
 
 func (p Profile) SupportsSQLQuery() bool {
+	if p.UsesWordPress() {
+		return true
+	}
 	return mysqlOrMariaDB(p)
 }
 
 func (p Profile) UsesSSH() bool {
 	return p.ConnectionType == ConnectionTypeSSH || p.ConnectionType == ConnectionTypeJumpHost
+}
+
+func (p Profile) UsesWordPress() bool {
+	return p.ConnectionType == ConnectionTypeWordPress
 }
 
 func (p Profile) IsLocalhost() bool {
@@ -417,10 +433,12 @@ func SettingsEqual(a, b *TransferSettings) bool {
 	aa.AuthKeyPEM = ""
 	aa.JumpPassword = ""
 	aa.JumpAuthKeyPEM = ""
+	aa.WPKey = ""
 	bb.SSHPassword = ""
 	bb.DBPassword = ""
 	bb.AuthKeyPEM = ""
 	bb.JumpPassword = ""
 	bb.JumpAuthKeyPEM = ""
+	bb.WPKey = ""
 	return aa == bb
 }

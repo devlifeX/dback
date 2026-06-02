@@ -6,6 +6,9 @@ if (!defined('ABSPATH')) {
 
 class DBack_Database {
 
+    /** @var string|null */
+    private static $active_database = null;
+
     /**
      * @return array{host:string,port:?int,socket:?string,name:string,user:string,pass:string,charset:string}
      */
@@ -14,11 +17,212 @@ class DBack_Database {
             'host' => DB_HOST,
             'port' => null,
             'socket' => null,
-            'name' => DB_NAME,
+            'name' => self::active_database_name(),
             'user' => DB_USER,
             'pass' => DB_PASSWORD,
             'charset' => defined('DB_CHARSET') && DB_CHARSET ? DB_CHARSET : 'utf8mb4',
         );
+    }
+
+    /**
+     * @return string
+     */
+    public static function active_database_name() {
+        if (is_string(self::$active_database) && '' !== self::$active_database) {
+            return self::$active_database;
+        }
+
+        return DB_NAME;
+    }
+
+    /**
+     * @param mixed $requested
+     * @return string
+     */
+    public static function resolve_import_database($requested) {
+        $requested = trim((string) $requested);
+        if ('' === $requested) {
+            return DB_NAME;
+        }
+
+        self::validate_database_name($requested);
+
+        return $requested;
+    }
+
+    /**
+     * @param string $name
+     */
+    public static function validate_database_name($name) {
+        if (!preg_match('/^[A-Za-z0-9_]{1,64}$/', $name)) {
+            throw new InvalidArgumentException('Invalid database name.');
+        }
+    }
+
+    /**
+     * @param string $name
+     * @return string
+     */
+    public static function quote_identifier($name) {
+        return '`' . str_replace('`', '``', $name) . '`';
+    }
+
+    /**
+     * Select the database used for a restore/import operation.
+     *
+     * @param mixed $requested Empty string means the WordPress default database.
+     * @return string
+     */
+    public static function prepare_import_target($requested) {
+        $target = self::resolve_import_database($requested);
+        if ($target !== DB_NAME) {
+            self::create_database_if_missing($target);
+        }
+        self::activate_database($target);
+
+        return $target;
+    }
+
+    /**
+     * Run a callback while connected to the requested import/query database.
+     *
+     * @param mixed $requested
+     * @param callable(string):mixed $callback
+     * @return mixed
+     */
+    public static function with_target_database($requested, $callback) {
+        $target = self::prepare_import_target($requested);
+
+        try {
+            return $callback($target);
+        } finally {
+            self::reset_import_target();
+        }
+    }
+
+    public static function reset_import_target() {
+        self::$active_database = null;
+        if (self::has_pdo_mysql()) {
+            return;
+        }
+
+        $wpdb = self::wpdb();
+        $wpdb->select(DB_NAME);
+        if ($wpdb->ready) {
+            $wpdb->dbname = DB_NAME;
+        }
+    }
+
+    /**
+     * @param string $name
+     */
+    private static function activate_database($name) {
+        self::$active_database = $name;
+
+        if (self::has_pdo_mysql()) {
+            return;
+        }
+
+        $wpdb = self::wpdb();
+        $wpdb->select($name);
+
+        if (!$wpdb->ready) {
+            throw new RuntimeException(self::select_database_error($name, $wpdb));
+        }
+
+        $current = (string) $wpdb->get_var('SELECT DATABASE()');
+        if ($current !== $name) {
+            throw new RuntimeException(
+                sprintf(
+                    'Unable to select database "%s". Active connection is using "%s".',
+                    $name,
+                    $current
+                )
+            );
+        }
+
+        $wpdb->dbname = $name;
+    }
+
+    /**
+     * @param string $name
+     * @param wpdb $wpdb
+     * @return string
+     */
+    private static function select_database_error($name, $wpdb) {
+        $detail = trim((string) $wpdb->last_error);
+        if ('' !== $detail) {
+            return sprintf('Unable to select database "%s": %s', $name, $detail);
+        }
+
+        return sprintf(
+            'Unable to select database "%s". The WordPress database user may lack privileges on this database.',
+            $name
+        );
+    }
+
+    /**
+     * @param string $name
+     */
+    private static function create_database_if_missing($name) {
+        if (self::database_exists($name)) {
+            return;
+        }
+
+        $quoted = self::quote_identifier($name);
+        $saved = self::$active_database;
+        self::$active_database = null;
+
+        try {
+            if (self::has_pdo_mysql()) {
+                self::pdo()->exec('CREATE DATABASE IF NOT EXISTS ' . $quoted);
+                return;
+            }
+
+            $wpdb = self::wpdb();
+            $wpdb->query('CREATE DATABASE IF NOT EXISTS ' . $quoted);
+            self::assert_no_db_error($wpdb);
+        } finally {
+            self::$active_database = $saved;
+        }
+    }
+
+    /**
+     * @param string $name
+     * @return bool
+     */
+    private static function database_exists($name) {
+        $saved = self::$active_database;
+        self::$active_database = null;
+
+        try {
+            if (self::has_pdo_mysql()) {
+                $statement = self::pdo()->query('SHOW DATABASES LIKE ' . self::quote_sql_string($name));
+                if (false === $statement) {
+                    return false;
+                }
+
+                return (bool) $statement->fetch();
+            }
+
+            $wpdb = self::wpdb();
+            $found = $wpdb->get_var('SHOW DATABASES LIKE ' . self::quote_sql_string($name));
+            self::assert_no_db_error($wpdb);
+
+            return is_string($found) && $found === $name;
+        } catch (Throwable $exception) {
+            return false;
+        } finally {
+            self::$active_database = $saved;
+        }
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private static function quote_sql_string($value) {
+        return "'" . str_replace("'", "''", $value) . "'";
     }
 
     /**

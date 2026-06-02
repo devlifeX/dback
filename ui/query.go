@@ -148,7 +148,7 @@ func (q *QuerySection) layoutSection(gtx layout.Context, th *material.Theme, the
 						return
 					}
 					if !profile.SupportsSQLQuery() {
-						u.showError(fmt.Errorf("query requires SSH/Jump Host with MySQL or MariaDB"))
+						u.showError(fmt.Errorf("query is not supported for this host"))
 						return
 					}
 					query = models.SubstituteQuery(query, profile.QueryVars())
