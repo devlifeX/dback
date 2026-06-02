@@ -88,7 +88,7 @@ Ubuntu series پیشنهادی: **22.04 jammy**, **24.04 noble**
 |------|------|
 | `main.go` | `appVersion` |
 | `build.sh` | `APP_VERSION` |
-| `debian/changelog` | خط اول، مثلاً `dback (3.6.4-1) noble` |
+| `debian/changelog` | خط اول، مثلاً `dback (3.6.5-1) noble` |
 
 ### به‌روز کردن changelog
 
@@ -366,9 +366,9 @@ cat ppa-private-key.asc
 # 1. نسخه را در main.go و build.sh هماهنگ کن
 # 2. debian/changelog را به‌روز کن (CI خودش هم sync می‌کند اگر فرق داشت)
 git add main.go build.sh debian/changelog
-git commit -m "Release 3.6.4"
-git tag v3.6.4
-git push origin master v3.6.4
+git commit -m "Release 3.6.5"
+git tag v3.6.5
+git push origin master v3.6.5
 ```
 
 بعد از push tag:
@@ -387,9 +387,9 @@ dch -v 3.6.4 "New upstream release."
 
 # 2. commit + tag (اختیاری، برای GitHub Release)
 git add main.go build.sh debian/changelog
-git commit -m "Release 3.6.4"
-git tag v3.6.4
-git push origin master v3.6.4
+git commit -m "Release 3.6.5"
+git tag v3.6.5
+git push origin master v3.6.5
 
 # 3. PPA upload
 export GPG_TTY=$(tty)

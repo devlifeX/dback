@@ -605,26 +605,26 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 | Windows build | GitHub Actions + `go build` — see `README.md` |
 | CI release | [`.github/workflows/go.yml`](.github/workflows/go.yml) — runs on tag push `v*` |
 
-**Current app version in repo:** `3.6.4` → About screen and local `./build.sh` use this until you bump again.
+**Current app version in repo:** `3.6.5` → About screen and local `./build.sh` use this until you bump again.
 
 ### Local build
 
 ```bash
 ./build.sh linux
 # or explicitly:
-APP_VERSION=3.6.4 ./build.sh linux
+APP_VERSION=3.6.5 ./build.sh linux
 ```
 
-Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.6.4_amd64.deb`.  
+Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.6.5_amd64.deb`.  
 `build.sh` prints the **release git tag** to push when the build succeeds.
 
 ### GitHub Release (after merging to `master`)
 
-Tag **must** match `main.go` / `build.sh` version (`3.6.4` → tag `v3.6.4`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
+Tag **must** match `main.go` / `build.sh` version (`3.6.5` → tag `v3.6.5`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
 
 ```bash
-git tag v3.6.4
-git push origin v3.6.4
+git tag v3.6.5
+git push origin v3.6.5
 ```
 
 GitHub Actions then publishes:
@@ -633,7 +633,7 @@ GitHub Actions then publishes:
 |-------|------|
 | Linux binary | `dback-linux` |
 | Windows binary | `dback-windows.exe` |
-| Debian package | `dback_3.6.4_amd64.deb` |
+| Debian package | `dback_3.6.5_amd64.deb` |
 
 **When you bump the app version**, update this table’s examples and the tag commands to the new `v{x.y.z}`.
 
@@ -724,7 +724,7 @@ Key test locations:
 
 ## Versioning
 
-**Current app version:** `3.6.4`
+**Current app version:** `3.6.5`
 
 The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DBACK_DB_TOOLS_VERSION`) — see [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Do not confuse the two.
 
@@ -732,19 +732,19 @@ The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DB
 
 When you modify Go app code, UI, build/CI, updater, or user-visible behavior:
 
-1. **Bump the app version** (patch by default: `3.6.4` → `3.6.5`):
+1. **Bump the app version** (patch by default: `3.6.5` → `3.6.6`):
    - [`main.go`](main.go) — `var appVersion = "…"` (local/`go run` default)
    - [`build.sh`](build.sh) — `APP_VERSION="${APP_VERSION:-…}"`
 2. Update examples in [`README.md`](README.md) if they show a pinned version.
 3. Update **Current app version** here and in [Build and embed](#build-and-embed).
-4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.6.4`** for app version `3.6.4`).
+4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.6.5`** for app version `3.6.5`).
 
 ```bash
-git tag v3.6.4
-git push origin v3.6.4
+git tag v3.6.5
+git push origin v3.6.5
 ```
 
-CI reads the tag (`v3.6.4` → `APP_VERSION=3.6.4`); tag and `main.go`/`build.sh` must always match.
+CI reads the tag (`v3.6.5` → `APP_VERSION=3.6.5`); tag and `main.go`/`build.sh` must always match.
 
 ### Agent checklist before finishing
 
@@ -757,7 +757,7 @@ CI reads the tag (`v3.6.4` → `APP_VERSION=3.6.4`); tag and `main.go`/`build.sh
 
 | Change type | Example bump |
 |-------------|--------------|
-| Bug fix, CI/packaging, docs tied to app behavior | `3.6.3` → `3.6.4` |
+| Bug fix, CI/packaging, docs tied to app behavior | `3.6.4` → `3.6.5` |
 | New user-facing feature (backward compatible) | `3.6.x` → `3.7.0` |
 | Breaking profile/vault/sync contract | `3.x` → `4.0.0` |
 
@@ -771,4 +771,4 @@ CI reads the tag (`v3.6.4` → `APP_VERSION=3.6.4`); tag and `main.go`/`build.sh
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.6.4 — in-app updater, Debian packaging, PPA CI, and mandatory app version bumps on changes.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.6.5 — in-app updater, Debian packaging, PPA CI, and mandatory app version bumps on changes.
