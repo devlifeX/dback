@@ -241,6 +241,9 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 										return
 									}
 									u.pickSaveBytes(filename, data, func(path string) {
+										if path == "" {
+											return
+										}
 										u.showInfo("Plugin downloaded", path)
 									})
 								})

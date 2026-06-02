@@ -306,6 +306,42 @@ func TestHostnameFromSiteURL(t *testing.T) {
 	}
 }
 
+func TestSanitizeDownloadFilenameWindowsSafe(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"dback-example.com-1.1.2.zip": "dback-example.com-1.1.2.zip",
+		"con.zip":                     "dback-con.zip",
+		"bad:name|?.zip":              "bad-name--.zip",
+		"":                            "dback-plugin.zip",
+	}
+	for input, want := range cases {
+		got := sanitizeDownloadFilename(input)
+		if got != want {
+			t.Fatalf("sanitizeDownloadFilename(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestBuildPluginZipFolderMatchesFilename(t *testing.T) {
+	t.Parallel()
+
+	data, filename, err := BuildPluginZip("https://shop.example.com", "token")
+	if err != nil {
+		t.Fatalf("BuildPluginZip: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+	root := strings.TrimSuffix(filename, ".zip")
+	for _, f := range zr.File {
+		if !strings.HasPrefix(f.Name, root+"/") {
+			t.Fatalf("zip entry %q not under folder %q/", f.Name, root)
+		}
+	}
+}
+
 func TestPingEnrichesRestNoRouteError(t *testing.T) {
 	t.Parallel()
 

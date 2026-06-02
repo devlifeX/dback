@@ -10,6 +10,8 @@ DBack is a **Gio desktop app** (not a web server) for MySQL/MariaDB **backup, re
 
 **Stack:** Go 1.25 · [Gio](https://gioui.org) UI · SSH/shell transport · WordPress REST plugin transport · MinIO S3 sync · Argon2id + AES-GCM vault.
 
+**Supported desktop targets:** **Linux** and **Windows** (primary release platforms). All new and changed Go/UI code **must** work correctly on both — not Linux-only.
+
 ---
 
 ## Repository map
@@ -487,8 +489,9 @@ spacer(theme, unit.Dp(n)) // fixed vertical space
 
 ### Platform
 
-- `ui/platform.go` — `Platform` interface (`AppDataDir`, `OpenFolder`, `IsMobile`).
-- File picks: `ui/explorer.go` — `pickOpenFile`, `pickSaveFile`, `pickSaveBytes`, `pickFolder`.
+- `ui/platform.go` — `Platform` interface (`AppDataDir`, `OpenFolder`, `IsMobile`); **Windows** uses `explorer`/`start`, **Linux** uses `xdg-open`/`explorer` fallbacks.
+- File picks: `ui/explorer.go` — `pickOpenFile`, `pickSaveFile`, `pickSaveBytes`, `pickFolder` (Gio explorer on both desktop OSes).
+- See **Cross-platform requirement** — mandatory for all file I/O and download flows.
 
 ### UI do's and don'ts
 
@@ -509,6 +512,82 @@ spacer(theme, unit.Dp(n)) // fixed vertical space
 
 ---
 
+## Cross-platform requirement (Linux + Windows) — mandatory
+
+DBack ships on **Linux and Windows**. Every feature you add or change **must** work correctly on **both** platforms before merge. Treat Linux-only or Windows-only shortcuts as bugs unless explicitly documented and approved.
+
+### Scope
+
+| Layer | Must be cross-platform |
+|-------|-------------------------|
+| Go app (`internal/`, `backend/`, `models/`) | Yes — paths, filenames, I/O, zip, crypto |
+| Gio UI (`ui/`) | Yes — file dialogs, folders, errors, async saves |
+| WordPress plugin zip download | Yes — Windows save dialog + filename rules |
+| Remote SSH targets | Linux servers only (expected); **the desktop app** still runs on Win/Linux |
+
+### Path and filesystem rules
+
+- Use **`filepath.Join`**, **`filepath.ToSlash`**, **`os.UserHomeDir`**, **`os.UserConfigDir`** for OS paths — never hardcode `/` for local disk paths.
+- Use **`path.Join`** only inside **zip archive** entry names (always forward slashes).
+- Do not assume `~/.config/dback` literally — use `ui.DesktopPlatform.AppDataDir()` / store paths.
+- **`0644` / `0755` permissions** on `os.WriteFile` / `MkdirAll` are fine (Windows ignores Unix mode bits).
+- Avoid shelling out without **`runtime.GOOS`** branching — see `backend/ssh/local.go` (Windows → WSL when needed).
+
+### Filenames and downloads
+
+- Any user-facing download name (plugin zip, exports) **must** pass through sanitizers — see `sanitizeDownloadFilename` / `sanitizeFilename` in `backend/wordpress/pluginzip.go`.
+- Strip or replace Windows-forbidden characters: `\ / : * ? " < > |`
+- Avoid Windows reserved basenames: `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`
+- Trim trailing `.` and spaces; cap length (~200 chars for suggested save names).
+- Plugin zip internal folder name **must** match the zip basename (without `.zip`).
+
+### UI / file dialogs (`ui/explorer.go`)
+
+- Use **`gioui.org/x/explorer`** — `CreateFile` / `ChooseFile` — not hand-rolled paths per OS except where already wrapped (`chooseFolderDialog`).
+- **`pickSaveBytes` pattern:** write with `wc.Write(data)` then `wc.Close()`; surface errors via `showError`; treat `explorer.ErrUserDecline` as cancel (no error toast).
+- Never fail silently when save/write fails — user must see **`showError`**.
+- Folder open: `ui/platform.go` — `explorer` on Linux, `start` on Windows.
+
+### Shell / SSH (remote vs local)
+
+- Remote backup commands assume **bash on Linux servers** — unchanged.
+- **Localhost on Windows** uses WSL when available (`local.go`) — do not assume `/bin/bash` on the desktop OS.
+- Do not use Unix-only tools in code paths that run **on the Windows desktop** without a `GOOS` guard.
+
+### WordPress / HTTP
+
+- REST client is OS-agnostic; keep JSON, streaming, and zip building in memory (`bytes.Buffer` + `archive/zip`).
+- Hardcoded plugin token uses base64url — safe in PHP single-quoted strings.
+
+### Testing checklist (required for UI / I/O changes)
+
+Before finishing a task that touches paths, files, dialogs, or zip:
+
+1. Run **`go test ./...`** (CI runs on Linux; catches logic regressions).
+2. Mentally verify **Windows** paths: save dialog, filename with dots, cancel vs error.
+3. For plugin zip: assert folder name matches filename stem (`TestBuildPluginZipFolderMatchesFilename`).
+4. For explorer changes: verify both code paths — `*os.File` from Gio and error handling.
+
+If you cannot run Windows locally, document assumptions and add unit tests for sanitizers and pure logic.
+
+### Cross-platform do's
+
+- Branch with **`runtime.GOOS == "windows"`** when OS behavior differs.
+- Return clear errors to the UI — never swallow I/O failures in goroutines.
+- Keep business logic free of OS tests when possible (sanitize in `backend/`, call from UI).
+- Match existing patterns in `explorer.go`, `platform.go`, `pluginzip.go`.
+
+### Cross-platform don'ts
+
+- Don't hardcode **`/tmp`**, **`/home`**, or **`~`** in desktop code.
+- Don't use **`path.Join`** for local filesystem paths.
+- Don't assume Gio **`CreateFile`** always succeeds without handling write/close errors.
+- Don't ship download filenames with `:` or `\` from raw URLs.
+- Don't add **`zenity`/`kdialog`** requirements for core features — Windows has no equivalent; use Gio explorer first.
+- Don't merge file-save or plugin-zip changes without filename safety tests.
+
+---
+
 ## Build and embed
 
 | Item | Location |
@@ -517,6 +596,9 @@ spacer(theme, unit.Dp(n)) // fixed vertical space
 | Version | `-ldflags "-X main.appVersion=..."` — `build.sh`; default `3.2.0` |
 | Plugin embed | `wordpress/dback-db-tools/embed.go` |
 | Linux build | `build.sh` — CGO + Gio/EGL |
+| Windows build | GitHub Actions + `go build` — see `README.md` |
+
+**Cross-platform:** all embedded assets and zip/download logic must work on both targets — see **Cross-platform requirement** above.
 
 ---
 
@@ -551,12 +633,16 @@ spacer(theme, unit.Dp(n)) // fixed vertical space
 - Use **tmp-file-first** for Jump Host backups.
 - Keep **vault locked** checks on all store access.
 - Pass **`X-DBACK-DATABASE`** for WordPress import and query when `TargetDBName` is set.
+- Sanitize **download filenames** and handle **save dialog errors** on Linux and Windows.
+- Run **`go test ./...`**; add tests for path/filename/zip logic when touching I/O.
 
 ### Don't
 
 - Don't call `ssh.NewClient` directly from app code — use `NewExecutor`.
 - Don't write `ExportSettings`/`ImportSettings` on save (migration only).
-- Don't **abort restore** on pre-import query failure.
+- Don't **continue restore** if pre-import query fails — abort and show error.
+- Don't ship **Linux-only** desktop code without `GOOS` handling or documented exception.
+- Don't **swallow file save errors** in `pickSaveBytes` / export flows.
 - Don't include **backup files** in app bundles or S3 sync.
 - Don't include **SyncActivity** in remote sync payload.
 - Don't skip **`ImportProtected`** check before restore.
@@ -596,4 +682,4 @@ Key test locations:
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with WordPress host support, `X-DBACK-DATABASE`, and embedded plugin zip flow.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with WordPress host support, cross-platform (Linux + Windows) guidelines, plugin zip sanitization, and pre-import query abort on failure.

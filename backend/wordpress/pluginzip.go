@@ -10,6 +10,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"dback/wordpress/dback-db-tools"
 )
@@ -29,8 +30,9 @@ func BuildPluginZip(siteURL, apiKey string) ([]byte, string, error) {
 	}
 
 	hostLabel := hostnameFromSiteURL(siteURL)
-	zipRoot := fmt.Sprintf("dback-%s-%s", hostLabel, version)
-	filename := zipRoot + ".zip"
+	zipRoot := sanitizeZipRootFolder(fmt.Sprintf("dback-%s-%s", hostLabel, version))
+	filename := sanitizeDownloadFilename(zipRoot + ".zip")
+	zipRoot = strings.TrimSuffix(filename, ".zip")
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -116,6 +118,12 @@ func sanitizeFilename(s string) string {
 		"\\", "-",
 		":", "-",
 		" ", "-",
+		"*", "-",
+		"?", "-",
+		"\"", "-",
+		"<", "-",
+		">", "-",
+		"|", "-",
 	)
 	s = replacer.Replace(s)
 	s = regexp.MustCompile(`[^a-z0-9._-]+`).ReplaceAllString(s, "-")
@@ -123,5 +131,74 @@ func sanitizeFilename(s string) string {
 	if s == "" {
 		return "site"
 	}
+	if len(s) > 120 {
+		s = strings.Trim(s[:120], "-.")
+	}
+	if isWindowsReservedName(s) {
+		s = "site-" + s
+	}
 	return s
+}
+
+var windowsReservedNames = map[string]struct{}{
+	"con": {}, "prn": {}, "aux": {}, "nul": {},
+	"com1": {}, "com2": {}, "com3": {}, "com4": {}, "com5": {}, "com6": {}, "com7": {}, "com8": {}, "com9": {},
+	"lpt1": {}, "lpt2": {}, "lpt3": {}, "lpt4": {}, "lpt5": {}, "lpt6": {}, "lpt7": {}, "lpt8": {}, "lpt9": {},
+}
+
+func isWindowsReservedName(name string) bool {
+	base := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
+	if i := strings.Index(base, "."); i >= 0 {
+		base = base[:i]
+	}
+	_, ok := windowsReservedNames[base]
+	return ok
+}
+
+// sanitizeDownloadFilename makes a suggested save-as name safe on Windows/macOS/Linux.
+func sanitizeDownloadFilename(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "dback-plugin.zip"
+	}
+	name = strings.Map(func(r rune) rune {
+		if r < 32 || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, name)
+	name = strings.ReplaceAll(name, "\\", "-")
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, ":", "-")
+	name = strings.ReplaceAll(name, "*", "-")
+	name = strings.ReplaceAll(name, "?", "-")
+	name = strings.ReplaceAll(name, "\"", "-")
+	name = strings.ReplaceAll(name, "<", "-")
+	name = strings.ReplaceAll(name, ">", "-")
+	name = strings.ReplaceAll(name, "|", "-")
+	name = strings.TrimRight(name, ". ")
+	if !strings.HasSuffix(strings.ToLower(name), ".zip") {
+		name += ".zip"
+	}
+	if len(name) > 200 {
+		ext := ".zip"
+		name = strings.TrimRight(name[:200-len(ext)], ". ") + ext
+	}
+	base := strings.TrimSuffix(strings.ToLower(name), ".zip")
+	if isWindowsReservedName(base) {
+		name = "dback-" + name
+	}
+	return name
+}
+
+func sanitizeZipRootFolder(folder string) string {
+	folder = strings.TrimSpace(folder)
+	folder = strings.TrimRight(folder, ". ")
+	if folder == "" {
+		return "dback-plugin"
+	}
+	if isWindowsReservedName(folder) {
+		return "dback-" + folder
+	}
+	return folder
 }

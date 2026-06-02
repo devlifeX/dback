@@ -1,11 +1,15 @@
 package ui
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"gioui.org/x/explorer"
 )
 
 func (u *UI) pickOpenFile(onFile func(path string, data []byte)) {
@@ -40,6 +44,9 @@ func (u *UI) pickSaveFile(name string, onSave func(path string)) {
 	go func() {
 		wc, err := u.explorer.CreateFile(name)
 		if err != nil {
+			if !errors.Is(err, explorer.ErrUserDecline) {
+				u.showError(fmt.Errorf("save file: %w", err))
+			}
 			return
 		}
 		path := filePathFromWriteCloser(wc)
@@ -53,18 +60,28 @@ func (u *UI) pickSaveBytes(name string, data []byte, onSave func(path string)) {
 	go func() {
 		wc, err := u.explorer.CreateFile(name)
 		if err != nil {
+			if !errors.Is(err, explorer.ErrUserDecline) {
+				u.showError(fmt.Errorf("save file: %w", err))
+			}
 			return
 		}
-		path := filePathFromWriteCloser(wc)
-		if path != "" {
+
+		if _, err := wc.Write(data); err != nil {
 			_ = wc.Close()
-			if err := os.WriteFile(path, data, 0644); err != nil {
-				return
-			}
-		} else {
-			_, _ = wc.Write(data)
-			_ = wc.Close()
+			u.showError(fmt.Errorf("write file: %w", err))
+			return
 		}
+		if err := wc.Close(); err != nil {
+			u.showError(fmt.Errorf("save file: %w", err))
+			return
+		}
+
+		path := filePathFromWriteCloser(wc)
+		if path == "" {
+			u.showError(fmt.Errorf("save file: destination path unavailable"))
+			return
+		}
+
 		onSave(path)
 		u.invalidate()
 	}()
