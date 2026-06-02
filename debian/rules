@@ -13,7 +13,8 @@ APP_VERSION := $(shell dpkg-parsechangelog -SVersion | sed 's/-.*//')
 
 override_dh_auto_build:
 	debian/prepare-go.sh
-	go build -mod=vendor -ldflags "-X main.appVersion=$(APP_VERSION)" -o dback-linux .
+	go build -mod=vendor -buildvcs=false \
+		-ldflags "-X main.appVersion=$(APP_VERSION)" -o dback-linux .
 
 override_dh_auto_install:
 	install -d debian/dback/usr/lib/dback

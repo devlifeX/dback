@@ -350,7 +350,7 @@ gpg --keyserver hkp://keyserver.ubuntu.com:80 --send-keys E00C906928B7599C
 | `/usr/share/applications/dback.desktop` | منوی برنامه |
 | `/usr/share/icons/hicolor/*/apps/dback.png` | آیکون |
 
-Build در Launchpad: از **Go سیستم** (`golang-go` در نوبل، 1.22) و **`vendor/`** استفاده می‌شود — بدون دانلود از اینترنت (`GOPROXY=off`, `GOTOOLCHAIN=local`). بعد از تغییر وابستگی‌ها: `go mod vendor` را commit کن.
+Build در Launchpad: از **Go سیستم** نوبل (1.22) و **`vendor/` داخل source tarball** استفاده می‌شود — بدون اینترنت روی builder (`GOPROXY=off`, `GOTOOLCHAIN=local`). پوشه `vendor/` در git نیست؛ `./packaging/build-ppa.sh` قبل از `debuild` با `go mod vendor` می‌سازد (نیاز به شبکه فقط روی ماشین build/upload).
 
 ---
 

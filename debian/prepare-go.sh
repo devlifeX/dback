@@ -23,7 +23,8 @@ if ! dpkg --compare-versions "$ver" ge "$MIN_GO" 2>/dev/null; then
 fi
 
 if [ ! -f vendor/modules.txt ]; then
-	echo "prepare-go: vendor/modules.txt missing; run 'go mod vendor' before building." >&2
+	echo "prepare-go: vendor/modules.txt missing in source tree." >&2
+	echo "prepare-go: run ./packaging/build-ppa.sh (vendors deps into tarball, not git)." >&2
 	exit 1
 fi
 

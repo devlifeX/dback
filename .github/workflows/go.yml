@@ -19,7 +19,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version: "1.22"
+          cache: true
 
       - name: Install Linux dependencies
         run: |
@@ -27,6 +28,8 @@ jobs:
           sudo apt-get install -y build-essential pkg-config libvulkan-dev xorg-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev libxfixes-dev libegl-dev
 
       - name: Test
+        env:
+          GOTOOLCHAIN: local
         run: go test -v ./...
 
   linux-build:
@@ -39,7 +42,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version: "1.22"
+          cache: true
 
       - name: Install Linux dependencies
         run: |
@@ -61,6 +65,7 @@ jobs:
       - name: Build Linux binary
         env:
           APP_VERSION: ${{ steps.version.outputs.app_version }}
+          GOTOOLCHAIN: local
         run: |
           rm -rf dist
           mkdir -p dist
@@ -75,6 +80,8 @@ jobs:
           APP_VERSION="${APP_VERSION}" ./nfpm package -f packaging/nfpm.yaml -p deb --target dist
 
       - name: Test
+        env:
+          GOTOOLCHAIN: local
         run: go test -v ./...
 
       - name: Upload artifacts
@@ -95,7 +102,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version: "1.22"
+          cache: true
 
       - name: Resolve app version
         id: version
@@ -108,6 +116,7 @@ jobs:
         shell: bash
         env:
           APP_VERSION: ${{ steps.version.outputs.app_version }}
+          GOTOOLCHAIN: local
         run: |
           mkdir -p dist
           go build -v -ldflags "-X main.appVersion=${APP_VERSION}" -o dist/dback-windows.exe .

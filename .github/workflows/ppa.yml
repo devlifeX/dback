@@ -17,7 +17,7 @@ jobs:
       - name: Install packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y devscripts debhelper dput gnupg
+          sudo apt-get install -y devscripts debhelper dput gnupg golang-go
 
       - name: Resolve app version
         id: version
@@ -41,6 +41,7 @@ jobs:
           DEBFULLNAME: Dariush Vesal
           GPG_KEY_ID: E8B25AD68688EC024359E03FE00C906928B7599C
           DEBSIGN_KEYID: E8B25AD68688EC024359E03FE00C906928B7599C
+          GOTOOLCHAIN: local
           SIGN: "1"
           UPLOAD: "1"
         run: |

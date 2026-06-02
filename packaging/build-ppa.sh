@@ -48,10 +48,26 @@ gpg_signing_fingerprint() {
 clean_workspace() {
 	echo "Cleaning local build artifacts..."
 	rm -f dback-linux dist/dback-linux
-	rm -rf debian/dback debian/.debhelper debian/debhelper-build-stamp debian/files
+	rm -rf vendor debian/dback debian/.debhelper debian/debhelper-build-stamp debian/files
 	if [ -f debian/rules ]; then
 		fakeroot debian/rules clean >/dev/null 2>&1 || true
 	fi
+}
+
+# Vendor is NOT committed to git (.gitignore). It is generated here (needs network)
+# and included only in the source tarball for offline Launchpad builds.
+vendor_for_source_package() {
+	need_cmd go
+	export GOTOOLCHAIN=local
+	echo "Vendoring Go modules for PPA source package (not stored in git)..."
+	rm -rf vendor
+	go mod tidy
+	go mod vendor
+	if [ ! -f vendor/modules.txt ]; then
+		echo "ERROR: go mod vendor failed — vendor/modules.txt missing." >&2
+		exit 1
+	fi
+	echo "Vendor tree ready ($(wc -l < vendor/modules.txt) modules)."
 }
 
 cleanup_staging() {
@@ -181,6 +197,7 @@ run_build() {
 	rm -f "${parent}"/dback_"${version}"*.upload 2>/dev/null || true
 	rm -rf "${parent}"/.dback-upload-stage.* 2>/dev/null || true
 	clean_workspace
+	vendor_for_source_package
 
 	local debuild_args=(-S -sa -d)
 
