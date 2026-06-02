@@ -4,7 +4,7 @@ platform: linux
 version: "${APP_VERSION}"
 section: utils
 priority: optional
-maintainer: "dariush vesal <dariush.vesal@gmail.com>"
+maintainer: "Dariush Vesal <dvworkmail2017@gmail.com>"
 description: |
   Desktop app for MySQL/MariaDB backup and restore over SSH, Docker, or WordPress.
 depends:

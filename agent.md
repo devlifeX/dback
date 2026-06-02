@@ -597,6 +597,7 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 | Logo | `main.go` — `//go:embed logo.png` |
 | Version | `main.go` default + `build.sh` `APP_VERSION`; must match release git tag |
 | Linux `.deb` | `packaging/nfpm.yaml` + `build.sh` → `dist/dback_${VERSION}_amd64.deb` |
+| Launchpad PPA | `debian/` + `packaging/build-ppa.sh`; CI: [`.github/workflows/ppa.yml`](.github/workflows/ppa.yml); see [`ppa.md`](ppa.md) |
 | Desktop icon (deb) | `packaging/dback.desktop` + `packaging/icons/hicolor/*/apps/dback.png` |
 | In-app updater | `internal/update/` + `internal/app/update.go`; About → Check for updates |
 | Plugin embed | `wordpress/dback-db-tools/embed.go` |

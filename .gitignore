@@ -3,6 +3,13 @@ profiles.json
 dback-linux
 dback-windows.exe
 *.deb
+debian/.debhelper/
+debian/dback/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/*.debhelper.log
+debian/go/
 dist/
 *.zip
 *.tar.gz

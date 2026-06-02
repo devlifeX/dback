@@ -54,7 +54,7 @@ func (u *UI) layoutAbout(gtx layout.Context, th *material.Theme) layout.Dimensio
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, "dariush.vesal@gmail.com")
+						return mutedLabel(gtx, th, theme, "dvworkmail2017@gmail.com")
 					})
 				}),
 				layout.Rigid(vgap(theme)),

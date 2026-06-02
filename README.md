@@ -182,6 +182,16 @@ Install on Ubuntu/Debian:
 sudo apt install ./dback_3.6.3_amd64.deb
 ```
 
+**Launchpad PPA** (after published):
+
+```bash
+sudo add-apt-repository ppa:devlifex/dback
+sudo apt update
+sudo apt install dback
+```
+
+Setup and upload: [`ppa.md`](ppa.md).
+
 Or use **About → Check for updates** inside the running app.
 
 ## Default Paths
@@ -258,7 +268,7 @@ For plugin and REST details, see [`wordpress/dback-db-tools/wordpress_agent.md`]
 
 Created by **dariush vesal**.
 
-- Email: `dariush.vesal@gmail.com`
+- Email: `dvworkmail2017@gmail.com`
 - GitHub: [github.com/devlifeX/dback](https://github.com/devlifeX/dback/)
 
 ## FAQ

@@ -1,0 +1,43 @@
+Source: dback
+Section: utils
+Priority: optional
+Maintainer: Dariush Vesal <dvworkmail2017@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               ca-certificates,
+               curl,
+               build-essential,
+               pkg-config,
+               libvulkan-dev,
+               xorg-dev,
+               libwayland-dev,
+               libxkbcommon-dev,
+               libxkbcommon-x11-dev,
+               libx11-xcb-dev,
+               libxcursor-dev,
+               libxfixes-dev,
+               libegl-dev,
+               golang-go (>= 2:1.21~) | golang-any,
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/devlifeX/dback
+Vcs-Browser: https://github.com/devlifeX/dback
+Vcs-Git: https://github.com/devlifeX/dback.git
+
+Package: dback
+Architecture: amd64
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         libegl1,
+         libvulkan1,
+         libwayland-client0,
+         libxkbcommon0,
+         libx11-6,
+         libxcursor1,
+         libxfixes3,
+         libxcb1,
+         libglib2.0-0
+Description: MySQL/MariaDB backup and restore desktop app
+ DBack connects to remote Linux servers or WordPress sites, streams database
+ dumps to local files with compression, and restores backups to any saved host.
+ Hosts, templates, history, and logs live in an encrypted local vault.
+ Built with Go and Gio.

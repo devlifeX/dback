@@ -1,0 +1,4 @@
+extend-diff-ignore = "^\.git/"
+extend-diff-ignore = "^\.github/"
+extend-diff-ignore = "^dist/"
+extend-diff-ignore = "^\.cursor/"
