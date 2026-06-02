@@ -2,9 +2,9 @@
 
 # DBack — DB Sync Manager
 
-**Desktop GUI for MySQL/MariaDB backup and restore over SSH, Jump Host, or Docker.**
+**Desktop GUI for MySQL/MariaDB backup and restore over SSH, Jump Host, Docker, or WordPress.**
 
-DBack connects to remote Linux servers, streams database dumps to local files with compression, and restores backups to any saved host. Hosts, templates, history, and logs live in an encrypted local vault. Built with Go and [Gio](https://gioui.org).
+DBack connects to remote Linux servers or WordPress sites, streams database dumps to local files with compression, and restores backups to any saved host. Hosts, templates, history, and logs live in an encrypted local vault. Built with Go and [Gio](https://gioui.org).
 
 **Repository:** [github.com/devlifeX/dback](https://github.com/devlifeX/dback/)
 
@@ -13,10 +13,11 @@ DBack connects to remote Linux servers, streams database dumps to local files wi
 - **Streaming backups** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
 - **Smart fallback** — retries with a remote tmp-file when SSH streams fail; supports resume and checksum validation
 - **Unified hosts** — one connection, backup folder, and import queries per host
+- **WordPress hosts** — backup/import/query via the embedded **DBack DB Tools** plugin (pure PHP, no shell on the server)
 - **Encrypted vault** — profiles, templates, history, and logs stored in `app_data.vault.json`
 - **Remote sync** — push/pull encrypted app settings to S3-compatible storage (AWS S3, MinIO, etc.)
 - **SQL templates** — reusable snippets with placeholders for pre/post import queries
-- **Connection testing** — step-by-step SSH and database checks from the host editor
+- **Connection testing** — step-by-step checks from the host editor (SSH + DB, or WordPress REST + preflight)
 - **Modern UI** — dark GitHub-style desktop interface with sidebar navigation and host overflow menus
 
 ## Screenshots
@@ -41,13 +42,22 @@ Configure pre-import SQL, append templates, and test queries before restore.
 ### Connectivity
 - **SSH / Jump Host** — password or private key authentication
 - **Docker** — MySQL/MariaDB inside containers (`docker exec`)
+- **WordPress** — REST API via the **DBack DB Tools** plugin (`dback/v1`); download a site-specific plugin zip from the host editor
 - **Databases** — MySQL and MariaDB only
-- **Connection test** — run a guided SSH + database check from the host editor with a live progress timeline
+- **Connection test** — guided SSH + database check, or WordPress ping + preflight + `SELECT 1`
 
 ### Backup & Restore
-- **Preflight checks** — Linux OS, dump/client tools, compression, disk space, writable tmp paths, Docker container status
-- **Restore flow** — select a backup, pick a destination host, run import with that host's pre/post queries
+- **Preflight checks** — SSH: OS, dump/client tools, disk space, Docker status; WordPress: PHP, zlib, DB, uploads via plugin `/preflight`
+- **Restore flow** — select a backup, pick a destination host, run pre-import SQL, import, then optional post-import SQL
+- **Pre/post import queries** — run before restore starts; failures abort the import and show an error in the app
 - **Job center** — progress and cancel controls on the Backups screen
+
+### WordPress plugin (DBack DB Tools)
+- Embedded in the desktop app; **Download Plugin** builds a zip with a per-host API token hardcoded in the plugin
+- Plugin lives in [`wordpress/dback-db-tools/`](wordpress/dback-db-tools/) — pure PHP export/import/query (no `exec` / shell on shared hosting)
+- Install on the site via **Plugins → Upload Plugin**; match **Site URL** in DBack to WordPress **Settings → General**
+- Optional **Target database** on the host — empty uses `wp-config.php` default; set a name to create/select that DB on import and post-import queries
+- Dev-only files (e.g. `wordpress_agent.md`, `*.md`) are excluded from the downloadable zip — see `release_zip.go`
 
 ### Host Management
 - **Host cards** — green **Backup** action plus a **⋮** overflow menu for Edit, Duplicate, and Delete
@@ -193,11 +203,22 @@ Hosts, templates, backup history, and activity logs are stored inside the encryp
 
 ### Hosts
 1. Open **Hosts** → **+ Host**
-2. Configure connection (SSH, Jump Host, or Docker)
-3. Set database credentials and backup destination
-4. Optional: configure pre/post import queries on the **Queries** tab
-5. Use **Test Connection** in the host editor to verify SSH and database access
-6. On a host card, click **Backup** or open the **⋮** menu for Edit, Duplicate, or Delete
+2. Choose connection type: **SSH**, **Jump Host**, **Localhost**, or **WordPress**
+3. For SSH/Docker: configure server access, database credentials, and backup destination
+4. For **WordPress**: set **Site URL**, generate or reuse an **API key**, click **Download Plugin**, upload the zip on the WordPress site, then activate the plugin
+5. Optional: configure pre/post import queries on the **Queries** tab
+6. Use **Test Connection** in the host editor (SSH + DB, or WordPress REST)
+7. On a host card, click **Backup** or open the **⋮** menu for Edit, Duplicate, or Delete
+
+### WordPress host (quick path)
+1. **+ Host** → connection type **WordPress**
+2. **Site URL** — e.g. `https://example.com` (must match the live site URL)
+3. **Generate Token** (once) → **Download Plugin** → upload `.zip` in WordPress admin
+4. **Save Host** so the token is stored in the vault (re-download uses the same token)
+5. **Test Connection** — should pass ping, preflight, and database query
+6. **Backup** / **Import** work like other hosts; credentials come from `wp-config.php` on the site
+
+For plugin and REST details, see [`wordpress/dback-db-tools/wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md).
 
 ### Restore
 1. Open **Backups** → filter by host if needed
@@ -221,9 +242,10 @@ Hosts, templates, backup history, and activity logs are stored inside the encryp
 ## Why is it fast?
 
 - **Direct streaming** — data flows from database to file without intermediate storage
-- **Native tools** — uses `mysqldump` / `mariadb-dump` on the server
-- **Smart compression** — prefers Zstandard (`zstd`) when available
-- **No temp files by default** — tmp-file fallback only when streaming fails
+- **SSH path** — uses `mysqldump` / `mariadb-dump` on the server when available
+- **WordPress path** — plugin streams gzip SQL over HTTP (PDO or mysqli fallback; no full-file buffering)
+- **Smart compression** — prefers Zstandard (`zstd`) when available on SSH hosts
+- **No temp files by default** — SSH tmp-file fallback only when streaming fails
 
 ## About
 
@@ -242,7 +264,9 @@ DBack uses **Gio**, a GPU-accelerated GUI toolkit. On Linux, Gio renders through
 - **Windows** — `dback-windows.exe` is built on tagged releases via GitHub Actions; build locally with `go build` on Windows
 - **macOS / Android** — not supported in this release
 
-Remote servers targeted for backup/restore must run **Linux** (SSH, Docker, or Jump Host workflows).
+Remote **SSH/Docker/Jump** targets must run **Linux**.
+
+**WordPress** hosts only need a WordPress site with the DBack DB Tools plugin installed (any PHP/MySQL hosting; no SSH required on the server).
 
 ### What happened to PostgreSQL and CouchDB?
 Removed. DBack now supports **MySQL and MariaDB** only.
@@ -255,3 +279,9 @@ The same data as **Export App Data**: hosts, templates, backup history metadata,
 
 ### Can I use MinIO or a self-hosted S3 endpoint?
 Yes. Enter the host (with or without `https://`) and port, set **Use SSL** as needed, and provide bucket credentials. The remote object path is always `dback/app-data.json` inside your bucket.
+
+### How does WordPress backup work?
+DBack embeds the **DBack DB Tools** plugin, injects your host API token into the zip, and talks to `https://your-site/wp-json/dback/v1` for export, import, query, ping, and preflight. The plugin uses pure PHP (no shell commands), suitable for shared hosting.
+
+### Where is the WordPress plugin source?
+[`wordpress/dback-db-tools/`](wordpress/dback-db-tools/). Developer docs: [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Go app architecture: [`agent.md`](agent.md).
