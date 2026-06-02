@@ -150,6 +150,11 @@ func (a *App) SaveProfile(profile models.Profile) error {
 	if profile.Group == "" {
 		profile.Group = "Default"
 	}
+	if profile.UsesWordPress() {
+		if err := ensureWordPressAPIKey(&profile); err != nil {
+			return err
+		}
+	}
 	profile.ExportSettings = nil
 	profile.ImportSettings = nil
 
@@ -382,8 +387,11 @@ func (a *App) RunImportQuery(ctx context.Context, profile models.Profile, query 
 		if err != nil {
 			return db.QueryResult{}, err
 		}
-		_ = connectDB
-		result, err := client.Query(ctx, query, db.WordPressImportDatabase(profile))
+		database := ""
+		if connectDB {
+			database = db.WordPressImportDatabase(profile)
+		}
+		result, err := client.Query(ctx, query, database)
 		if err != nil {
 			return db.QueryResult{
 				Columns: []string{"Error"},
@@ -447,16 +455,8 @@ func (a *App) Restore(ctx context.Context, record models.ExportRecord, destinati
 	logger := a.newOpLogger(operationID, &destination)
 	a.logPhaseWithFile(operationID, destination, "Import", "start", "", 0, "Starting restore", "Info", "Started", "", record.FilePath, record.FileSizeBytes)
 
-	if destination.RunQueryBeforeImport && strings.TrimSpace(destination.PreImportQuery) != "" && destination.SupportsSQLQuery() {
-		query := models.SubstituteQuery(destination.PreImportQuery, destination.QueryVars())
-		if progress != nil {
-			progress("Running pre-import query", 0, record.FileSizeBytes)
-		}
-		if result, err := a.RunImportQuery(ctx, destination, query, false); err != nil {
-			a.logPhase(operationID, &destination, "Pre-import query", "query", "", 0, err.Error(), "Warning", "Failed", err.Error())
-		} else {
-			a.logPhase(operationID, &destination, "Pre-import query", "query", "", 0, formatQueryResultSummary(result), "Info", "Succeeded", "")
-		}
+	if err := a.runPreImportQueryPhase(ctx, operationID, destination, record.FileSizeBytes, progress); err != nil {
+		return err
 	}
 
 	var err error
@@ -494,13 +494,8 @@ func (a *App) Restore(ctx context.Context, record models.ExportRecord, destinati
 		progress("Restore completed", record.FileSizeBytes, record.FileSizeBytes)
 	}
 
-	if destination.RunQueryAfterImport && strings.TrimSpace(destination.PostImportQuery) != "" && destination.SupportsSQLQuery() {
-		query := models.SubstituteQuery(destination.PostImportQuery, destination.QueryVars())
-		if result, err := a.RunImportQuery(ctx, destination, query, true); err != nil {
-			a.logPhase(operationID, &destination, "Post-import query", "query", "", 0, err.Error(), "Warning", "Failed", err.Error())
-		} else {
-			a.logPhase(operationID, &destination, "Post-import query", "query", "", 0, formatQueryResultSummary(result), "Info", "Succeeded", "")
-		}
+	if err := a.runPostImportQueryPhase(ctx, operationID, destination); err != nil {
+		return err
 	}
 	return nil
 }
@@ -577,6 +572,9 @@ func formatQueryResultSummary(result db.QueryResult) string {
 	}
 	if len(result.Rows) == 0 {
 		return "Query executed successfully"
+	}
+	if len(result.Columns) == 1 && result.Columns[0] == "Statements" && len(result.Rows) == 1 {
+		return result.Message
 	}
 	return fmt.Sprintf("%d row(s) returned", len(result.Rows))
 }

@@ -151,6 +151,22 @@ func TestClientQueryWithDatabaseHeader(t *testing.T) {
 	}
 }
 
+func TestQueryResultFromJSONBatch(t *testing.T) {
+	t.Parallel()
+
+	result := queryResultFromJSON(map[string]interface{}{
+		"success":               true,
+		"type":                  "batch",
+		"statements_executed": float64(2),
+	})
+	if result.Message != "2 SQL statement(s) executed" {
+		t.Fatalf("unexpected message: %q", result.Message)
+	}
+	if len(result.Rows) != 1 || result.Rows[0][0] != "2" {
+		t.Fatalf("unexpected rows: %#v", result.Rows)
+	}
+}
+
 func TestClientImport(t *testing.T) {
 	t.Parallel()
 
@@ -247,8 +263,9 @@ func TestBuildPluginZip(t *testing.T) {
 		t.Fatalf("NewReader: %v", err)
 	}
 	var mainPHP string
+	mainPath := strings.TrimSuffix(filename, ".zip") + "/dback-db-tools.php"
 	for _, f := range zr.File {
-		if f.Name == "dback-db-tools/dback-db-tools.php" {
+		if f.Name == mainPath {
 			rc, err := f.Open()
 			if err != nil {
 				t.Fatalf("open plugin main file: %v", err)
@@ -265,11 +282,69 @@ func TestBuildPluginZip(t *testing.T) {
 	if !strings.Contains(mainPHP, "generated-token") {
 		t.Fatalf("expected generated token in plugin main file")
 	}
+	if mainPHP == "" {
+		t.Fatalf("main plugin file %q not found in zip", mainPath)
+	}
+	for _, f := range zr.File {
+		if strings.HasPrefix(f.Name, "dback-db-tools/") {
+			t.Fatalf("unexpected nested plugin folder in zip: %q", f.Name)
+		}
+		lower := strings.ToLower(f.Name)
+		if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".go") {
+			t.Fatalf("release zip must not contain dev/doc file: %q", f.Name)
+		}
+		if strings.Contains(lower, "wordpress_agent.md") {
+			t.Fatalf("wordpress_agent.md must not be in release zip")
+		}
+	}
 }
 
 func TestHostnameFromSiteURL(t *testing.T) {
 	t.Parallel()
 	if got := hostnameFromSiteURL("https://My.Site.com/wp"); got != "my.site.com" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestPingEnrichesRestNoRouteError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/wp-json/":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"namespaces": []string{"wp/v2"},
+			})
+		case "/wp-json/dback/v1/ping":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"code":    "rest_no_route",
+				"message": "No route was found matching the URL and request method.",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(models.Profile{
+		ConnectionType: models.ConnectionTypeWordPress,
+		WPUrl:          server.URL,
+		WPKey:          "secret-key",
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	_, err = client.Ping(context.Background())
+	if err == nil {
+		t.Fatal("expected ping error")
+	}
+	if !strings.Contains(err.Error(), "rest_no_route") {
+		t.Fatalf("expected rest_no_route in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "dback/v1 namespace missing") {
+		t.Fatalf("expected namespace hint in error, got: %v", err)
 	}
 }

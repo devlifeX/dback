@@ -33,7 +33,7 @@ class DBack_Admin_Page {
             'dback-db-tools-admin',
             'dbackDbTools',
             array(
-                'restRoot' => esc_url_raw(rest_url(DBACK_DB_TOOLS_REST_NAMESPACE)),
+                'restRoot' => esc_url_raw(untrailingslashit(rest_url(DBACK_DB_TOOLS_REST_NAMESPACE))),
                 'nonce' => wp_create_nonce('wp_rest'),
                 'apiKey' => DBack_Api_Key::get(),
                 'database' => DB_NAME,
@@ -45,6 +45,7 @@ class DBack_Admin_Page {
                     'queryRunning' => __('Running query...', 'dback-db-tools'),
                     'queryDone' => __('Query completed.', 'dback-db-tools'),
                     'genericError' => __('Something went wrong.', 'dback-db-tools'),
+                    'restNoRouteHint' => __('rest_no_route usually means the plugin is inactive, routes failed to register, or the Site URL in DBack does not match this WordPress site. Open Status & Diagnostics on the Plugins page.', 'dback-db-tools'),
                     'fileRequired' => __('Please choose a .sql.gz file.', 'dback-db-tools'),
                     'sqlRequired' => __('Please enter a SQL query.', 'dback-db-tools'),
                     'logsLoading' => __('Loading error log...', 'dback-db-tools'),
@@ -72,10 +73,17 @@ class DBack_Admin_Page {
         }
 
         $api_key = DBack_Api_Key::get();
+        $hardcoded = DBack_Api_Key::hardcoded_key();
+        $diagnostics = DBack_Diagnostics::collect_report();
+        DBack_Diagnostics::log_report_snapshot($diagnostics);
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('DBack DB Tools', 'dback-db-tools'); ?></h1>
             <p><?php esc_html_e('Pure-PHP database tools for export, import, and SQL queries. No shell commands are used.', 'dback-db-tools'); ?></p>
+
+            <?php DBack_Diagnostics::render_admin_section($diagnostics); ?>
+
+            <hr />
 
             <div class="notice notice-info inline">
                 <p>
@@ -85,6 +93,14 @@ class DBack_Admin_Page {
                 <p>
                     <?php esc_html_e('REST API key:', 'dback-db-tools'); ?>
                     <code id="dback-api-key"><?php echo esc_html($api_key); ?></code>
+                </p>
+                <p>
+                    <?php esc_html_e('DBack hardcoded token:', 'dback-db-tools'); ?>
+                    <?php if ('' !== $hardcoded) : ?>
+                        <span><?php esc_html_e('Configured (matches DBack download)', 'dback-db-tools'); ?></span>
+                    <?php else : ?>
+                        <span><?php esc_html_e('Not configured — download the plugin from DBack or use the key below.', 'dback-db-tools'); ?></span>
+                    <?php endif; ?>
                 </p>
                 <form method="post" style="margin-top:8px;">
                     <?php wp_nonce_field('dback_regenerate_key'); ?>
@@ -150,8 +166,8 @@ class DBack_Admin_Page {
 
             <hr />
 
-            <h2><?php esc_html_e('Error Log', 'dback-db-tools'); ?></h2>
-            <p><?php esc_html_e('Recent plugin errors from export, import, and query operations.', 'dback-db-tools'); ?></p>
+            <h2><?php esc_html_e('Debug Log', 'dback-db-tools'); ?></h2>
+            <p><?php esc_html_e('Recent plugin events, diagnostics snapshots, and errors from export, import, and query operations.', 'dback-db-tools'); ?></p>
             <p>
                 <button type="button" class="button" id="dback-logs-refresh">
                     <?php esc_html_e('Refresh Log', 'dback-db-tools'); ?>
@@ -164,6 +180,7 @@ class DBack_Admin_Page {
             <table class="widefat striped" id="dback-logs-table">
                 <thead>
                     <tr>
+                        <th scope="col"><?php esc_html_e('Level', 'dback-db-tools'); ?></th>
                         <th scope="col"><?php esc_html_e('Time (UTC)', 'dback-db-tools'); ?></th>
                         <th scope="col"><?php esc_html_e('Operation', 'dback-db-tools'); ?></th>
                         <th scope="col"><?php esc_html_e('Code', 'dback-db-tools'); ?></th>
@@ -173,7 +190,7 @@ class DBack_Admin_Page {
                 </thead>
                 <tbody id="dback-logs-body">
                     <tr>
-                        <td colspan="5"><?php esc_html_e('Loading...', 'dback-db-tools'); ?></td>
+                        <td colspan="6"><?php esc_html_e('Loading...', 'dback-db-tools'); ?></td>
                     </tr>
                 </tbody>
             </table>

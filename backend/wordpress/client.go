@@ -70,7 +70,11 @@ func (c *Client) Ping(ctx context.Context) (map[string]interface{}, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSONResponse(resp)
+	data, err := decodeJSONResponse(resp)
+	if err != nil {
+		return nil, c.enrichRouteError(ctx, err)
+	}
+	return data, nil
 }
 
 func (c *Client) Preflight(ctx context.Context) (PreflightResult, error) {
@@ -237,6 +241,9 @@ func parseErrorBody(status int, body []byte) error {
 			if msg == "" {
 				msg = code
 			}
+			if code == "rest_no_route" {
+				msg += " — check that DBack DB Tools is activated and open Tools → DBack DB Tools → Status & Diagnostics in WordPress admin"
+			}
 			return fmt.Errorf("wordpress API error (%s): %s", code, msg)
 		}
 	}
@@ -245,6 +252,14 @@ func parseErrorBody(status int, body []byte) error {
 
 func queryResultFromJSON(data map[string]interface{}) db.QueryResult {
 	queryType, _ := data["type"].(string)
+	if queryType == "batch" {
+		executed := formatNumber(data["statements_executed"])
+		return db.QueryResult{
+			Columns: []string{"Statements"},
+			Rows:    [][]string{{executed}},
+			Message: fmt.Sprintf("%s SQL statement(s) executed", executed),
+		}
+	}
 	if queryType == "command" {
 		affected := formatNumber(data["affected_rows"])
 		return db.QueryResult{
@@ -306,4 +321,68 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+type restIndexSnapshot struct {
+	HTTPStatus int
+	Namespaces []string
+	HasDBack   bool
+}
+
+func (c *Client) fetchRESTIndex(ctx context.Context) (restIndexSnapshot, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/wp-json/", nil)
+	if err != nil {
+		return restIndexSnapshot{}, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return restIndexSnapshot{}, err
+	}
+	defer resp.Body.Close()
+
+	snapshot := restIndexSnapshot{HTTPStatus: resp.StatusCode}
+	if resp.StatusCode >= 400 {
+		return snapshot, fmt.Errorf("REST index HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return snapshot, err
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return snapshot, fmt.Errorf("REST index returned invalid JSON")
+	}
+
+	for _, ns := range stringSliceFromJSON(data["namespaces"]) {
+		snapshot.Namespaces = append(snapshot.Namespaces, ns)
+		if ns == restNamespace {
+			snapshot.HasDBack = true
+		}
+	}
+
+	return snapshot, nil
+}
+
+func (c *Client) enrichRouteError(ctx context.Context, err error) error {
+	if err == nil || !strings.Contains(err.Error(), "rest_no_route") {
+		return err
+	}
+
+	snapshot, fetchErr := c.fetchRESTIndex(ctx)
+	if fetchErr != nil {
+		return fmt.Errorf("%w — could not read WordPress REST index at %s/wp-json/: %v. Check Site URL, permalinks, and that DBack DB Tools is activated", err, c.baseURL, fetchErr)
+	}
+
+	if snapshot.HasDBack {
+		return fmt.Errorf("%w — dback/v1 is listed in REST index but /ping failed; try deactivating and reactivating the plugin", err)
+	}
+
+	ns := "none"
+	if len(snapshot.Namespaces) > 0 {
+		ns = strings.Join(snapshot.Namespaces, ", ")
+	}
+
+	return fmt.Errorf("%w — dback/v1 namespace missing from %s/wp-json/ (found: %s). Install or activate DBack DB Tools, then open Tools → DBack DB Tools → Status & Diagnostics in WordPress admin", err, c.baseURL, ns)
 }

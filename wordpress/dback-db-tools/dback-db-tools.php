@@ -2,7 +2,7 @@
 /**
  * Plugin Name: DBack DB Tools
  * Description: Pure-PHP database export, import, and SQL query tools for DBack. No shell commands required.
- * Version: 1.0.0
+ * Version: 1.1.2
  * Author: DBack
  * Requires PHP: 7.4
  * Requires at least: 5.8
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DBACK_DB_TOOLS_VERSION', '1.0.0');
+define('DBACK_DB_TOOLS_VERSION', '1.1.2');
 define('DBACK_DB_TOOLS_FILE', __FILE__);
 define('DBACK_DB_TOOLS_PATH', plugin_dir_path(__FILE__));
 define('DBACK_DB_TOOLS_URL', plugin_dir_url(__FILE__));
@@ -30,9 +30,20 @@ require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-importer.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-query-runner.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-preflight.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-rest-controller.php';
+require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-diagnostics.php';
 require_once DBACK_DB_TOOLS_PATH . 'includes/class-dback-admin-page.php';
 
-register_activation_hook(__FILE__, array('DBack_Api_Key', 'activate'));
+/**
+ * Plugin activation: sync API key and refresh rewrite rules for REST routes.
+ */
+function dback_db_tools_activate() {
+    DBack_Api_Key::activate();
+
+    $controller = new DBack_Rest_Controller();
+    $controller->register_routes();
+    flush_rewrite_rules(false);
+}
+register_activation_hook(__FILE__, 'dback_db_tools_activate');
 
 final class DBack_DB_Tools_Plugin {
 
@@ -60,6 +71,8 @@ final class DBack_DB_Tools_Plugin {
         add_action('rest_api_init', array($this->rest_controller, 'register_routes'));
         add_action('admin_menu', array($this->admin_page, 'register_menu'));
         add_action('admin_enqueue_scripts', array($this->admin_page, 'enqueue_assets'));
+        DBack_Diagnostics::register_plugin_links();
+        DBack_Diagnostics::register_admin_notices();
     }
 }
 

@@ -10,6 +10,12 @@ class DBack_Api_Key {
     const PLACEHOLDER = '{{DBACK_API_KEY}}';
 
     public static function activate() {
+        $hardcoded = self::hardcoded_key();
+        if ('' !== $hardcoded) {
+            update_option(self::OPTION_NAME, $hardcoded, false);
+            return;
+        }
+
         if (!self::get()) {
             self::regenerate();
         }

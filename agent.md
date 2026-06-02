@@ -236,7 +236,9 @@ No tmp-file fallback. Plugin details: [`wordpress_agent.md`](wordpress/dback-db-
 4. Post-import query (optional)      → RunImportQuery, connectDB=true
 ```
 
-**Important:** Pre-import query failure is logged as **Warning** — restore **continues**. Post-import failure is also Warning only.
+**Important:** Pre-import query failure **aborts** restore before any import upload starts. Pre-import runs when `PreImportQuery` is non-empty (WordPress and SSH). Post-import query failure returns an error after the database import completes.
+
+**WordPress before-import:** DBack sends no `X-DBACK-DATABASE` header so DROP/CREATE DATABASE can run against the server default connection. After-import and manual queries with connectDB use `TargetDBName` when set.
 
 ### SSH path
 

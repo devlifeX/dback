@@ -226,8 +226,14 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 										return
 									}
 									if apiKey == "" {
-										u.showError(fmt.Errorf("generate or enter an API key first"))
-										return
+										key, err := u.core.GenerateWPKey()
+										if err != nil {
+											u.showError(err)
+											return
+										}
+										apiKey = key
+										setEditorText(&f.WPKey, key)
+										u.showInfo("Token created", "Save the host profile to keep this token. Re-downloading the plugin uses the same token.")
 									}
 									data, filename, err := u.core.BuildWordPressPluginZip(siteURL, apiKey)
 									if err != nil {

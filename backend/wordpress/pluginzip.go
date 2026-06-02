@@ -29,7 +29,8 @@ func BuildPluginZip(siteURL, apiKey string) ([]byte, string, error) {
 	}
 
 	hostLabel := hostnameFromSiteURL(siteURL)
-	filename := fmt.Sprintf("dback-%s-%s.zip", hostLabel, version)
+	zipRoot := fmt.Sprintf("dback-%s-%s", hostLabel, version)
+	filename := zipRoot + ".zip"
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -41,7 +42,7 @@ func BuildPluginZip(siteURL, apiKey string) ([]byte, string, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if relPath == "embed.go" {
+		if !dbackdbtools.IncludeInReleaseZip(relPath) {
 			return nil
 		}
 
@@ -53,7 +54,10 @@ func BuildPluginZip(siteURL, apiKey string) ([]byte, string, error) {
 			data = []byte(strings.ReplaceAll(string(data), dbackdbtools.APIKeyPlaceholder, apiKey))
 		}
 
-		zipPath := path.Join(dbackdbtools.PluginSlug, filepathToSlash(relPath))
+		// WordPress expects a single top-level folder in the zip whose root contains
+		// the main plugin file. Match the folder name to the download filename so
+		// "extract to …" in file managers does not add an extra wrapper directory.
+		zipPath := path.Join(zipRoot, filepathToSlash(relPath))
 		w, err := zw.Create(zipPath)
 		if err != nil {
 			return err

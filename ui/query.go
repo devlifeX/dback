@@ -70,11 +70,13 @@ func newQueryForm(p models.Profile) *QueryForm {
 }
 
 func (f *QueryForm) settings() models.Profile {
+	preImport := strings.TrimSpace(editorText(&f.Before.Query))
+	postImport := strings.TrimSpace(editorText(&f.After.Query))
 	return models.Profile{
-		PreImportQuery:       strings.TrimSpace(editorText(&f.Before.Query)),
-		RunQueryBeforeImport: f.Before.RunOnImport.Value,
-		PostImportQuery:      strings.TrimSpace(editorText(&f.After.Query)),
-		RunQueryAfterImport:  f.After.RunOnImport.Value,
+		PreImportQuery:       preImport,
+		RunQueryBeforeImport: f.Before.RunOnImport.Value || preImport != "",
+		PostImportQuery:      postImport,
+		RunQueryAfterImport:  f.After.RunOnImport.Value || postImport != "",
 	}
 }
 

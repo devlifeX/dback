@@ -14,11 +14,75 @@ class DBack_Query_Runner {
      */
     public static function run($sql, $target_database = '') {
         return DBack_Database::with_target_database($target_database, function ($selected_database) use ($sql) {
-            $result = self::run_on_active_connection($sql);
-            $result['database'] = $selected_database;
+            $statements = self::split_statements($sql);
+            if (empty($statements)) {
+                throw new InvalidArgumentException('SQL query is required.');
+            }
 
-            return $result;
+            if (1 === count($statements)) {
+                $result = self::run_on_active_connection($statements[0]);
+                $result['database'] = $selected_database;
+
+                return $result;
+            }
+
+            $results = array();
+            foreach ($statements as $statement) {
+                $results[] = self::run_on_active_connection($statement);
+            }
+
+            return array(
+                'success' => true,
+                'type' => 'batch',
+                'statements_executed' => count($results),
+                'statements' => $results,
+                'driver' => DBack_Database::driver(),
+                'database' => $selected_database,
+            );
         });
+    }
+
+    /**
+     * Split a SQL script into individual statements (semicolon-delimited).
+     *
+     * @param string $sql
+     * @return string[]
+     */
+    public static function split_statements($sql) {
+        $sql = trim((string) $sql);
+        if ('' === $sql) {
+            return array();
+        }
+
+        $statements = array();
+        $buffer = '';
+        $lines = preg_split('/\R/', $sql);
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ('' === $trimmed && '' === trim($buffer)) {
+                continue;
+            }
+            if ('' !== $trimmed && (0 === strpos($trimmed, '--') || 0 === strpos($trimmed, '#'))) {
+                continue;
+            }
+
+            $buffer .= $line . "\n";
+            if (';' === substr(rtrim($line), -1)) {
+                $statement = trim($buffer);
+                if ('' !== $statement) {
+                    $statements[] = $statement;
+                }
+                $buffer = '';
+            }
+        }
+
+        $tail = trim($buffer);
+        if ('' !== $tail) {
+            $statements[] = $tail;
+        }
+
+        return $statements;
     }
 
     /**

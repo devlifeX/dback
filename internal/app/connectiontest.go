@@ -144,6 +144,21 @@ func (a *App) GenerateWPKey() (string, error) {
 	return GenerateWPAPIKey()
 }
 
+func ensureWordPressAPIKey(profile *models.Profile) error {
+	if profile == nil || !profile.UsesWordPress() {
+		return nil
+	}
+	if strings.TrimSpace(profile.WPKey) != "" {
+		return nil
+	}
+	key, err := GenerateWPAPIKey()
+	if err != nil {
+		return err
+	}
+	profile.WPKey = key
+	return nil
+}
+
 func GenerateWPAPIKey() (string, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {

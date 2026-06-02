@@ -25,6 +25,11 @@
     }
   }
 
+  function restUrl(path) {
+    var root = String(config.restRoot || '').replace(/\/$/, '');
+    return root + path;
+  }
+
   function restHeaders(extra) {
     var headers = {
       'X-WP-Nonce': config.nonce,
@@ -58,6 +63,10 @@
 
     if (body.code) {
       parts.push('Code: ' + body.code);
+    }
+
+    if (body.code === 'rest_no_route') {
+      parts.push(config.strings.restNoRouteHint);
     }
 
     return parts.join(' | ');
@@ -137,7 +146,7 @@
     if (!entries || !entries.length) {
       var emptyRow = document.createElement('tr');
       var emptyCell = document.createElement('td');
-      emptyCell.colSpan = 5;
+      emptyCell.colSpan = 6;
       emptyCell.textContent = config.strings.logsEmpty;
       emptyRow.appendChild(emptyCell);
       tbody.appendChild(emptyRow);
@@ -149,6 +158,7 @@
       var context = entry.context || {};
 
       [
+        entry.level || '',
         entry.time || '',
         context.operation || '',
         entry.code || '',
@@ -167,7 +177,7 @@
   function loadErrorLog() {
     showStatus('dback-logs-status', config.strings.logsLoading, 'info');
 
-    return fetch(config.restRoot + '/logs?limit=50', {
+    return fetch(restUrl('/logs?limit=50'), {
       method: 'GET',
       headers: restHeaders(),
       credentials: 'same-origin',
@@ -194,7 +204,7 @@
   }
 
   function clearErrorLog() {
-    fetch(config.restRoot + '/logs', {
+    fetch(restUrl('/logs'), {
       method: 'DELETE',
       headers: restHeaders(),
       credentials: 'same-origin',
@@ -223,7 +233,7 @@
   function handleExport() {
     showStatus('dback-export-status', config.strings.exportStarted, 'info');
 
-    fetch(config.restRoot + '/export', {
+    fetch(restUrl('/export'), {
       method: 'GET',
       headers: restHeaders(),
       credentials: 'same-origin',
@@ -265,7 +275,7 @@
     var file = fileInput.files[0];
     showStatus('dback-import-status', config.strings.importStarted, 'info');
 
-    fetch(config.restRoot + '/import', {
+    fetch(restUrl('/import'), {
       method: 'POST',
       headers: restHeaders({
         'Content-Type': 'application/gzip',
@@ -307,7 +317,7 @@
     renderQueryResult(null);
     showStatus('dback-query-status', config.strings.queryRunning, 'info');
 
-    fetch(config.restRoot + '/query', {
+    fetch(restUrl('/query'), {
       method: 'POST',
       headers: restHeaders({
         'Content-Type': 'application/json',

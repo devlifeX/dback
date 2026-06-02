@@ -385,7 +385,8 @@ func (u *UI) runRestore(record models.ExportRecord) {
 				u.finishJob(job.ID, "Import canceled", nil)
 				return
 			}
-			u.finishJob(job.ID, "Import canceled or failed", err)
+			u.finishJob(job.ID, "Import failed", err)
+			u.showError(err)
 			return
 		}
 		u.finishJob(job.ID, "Import complete", nil)
