@@ -1,3 +1,9 @@
+dback (3.6.4) ubuntu; urgency=medium
+
+  * Release 3.6.4.
+
+ -- Dariush Vesal <dvworkmail2017@gmail.com>  Tue, 02 Jun 2026 18:00:00 +0000
+
 dback (3.6.3) ubuntu; urgency=medium
 
   * Initial Launchpad PPA packaging.
