@@ -605,7 +605,7 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 | Windows build | GitHub Actions + `go build` — see `README.md` |
 | CI release | [`.github/workflows/go.yml`](.github/workflows/go.yml) — runs on tag push `v*` |
 
-**Current app version in repo:** `3.6.5` → About screen and local `./build.sh` use this until you bump again.
+**Current app version in repo:** `3.6.8` → About screen and local `./build.sh` use this until you bump again.
 
 ### Local build
 
@@ -724,7 +724,7 @@ Key test locations:
 
 ## Versioning
 
-**Current app version:** `3.6.5`
+**Current app version:** `3.6.8`
 
 The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DBACK_DB_TOOLS_VERSION`) — see [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Do not confuse the two.
 
@@ -771,4 +771,4 @@ CI reads the tag (`v3.6.5` → `APP_VERSION=3.6.5`); tag and `main.go`/`build.sh
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.6.5 — in-app updater, Debian packaging, PPA CI, and mandatory app version bumps on changes.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.6.8 — in-app updater, Debian packaging, PPA CI, and mandatory app version bumps on changes.
