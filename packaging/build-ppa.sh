@@ -59,7 +59,7 @@ dput_with_retry() {
 			echo "Retrying dput (attempt ${attempt}/${max_attempts})..."
 			sleep 5
 		fi
-		if dput "$ppa" "$changes"; then
+		if dput -f "$ppa" "$changes"; then
 			return 0
 		fi
 	done
@@ -162,5 +162,6 @@ if [ "$UPLOAD" = "1" ]; then
 	fi
 	echo ""
 	echo "Uploading to ${PPA}..."
+	rm -f "${changes%.changes}.ppa.upload"
 	dput_with_retry "$PPA" "$changes"
 fi

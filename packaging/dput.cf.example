@@ -1,0 +1,25 @@
+# Advanced dput config for ppa:devlifex/dback (optional).
+# Copy to ~/.dput.cf or merge with existing file.
+#
+# Basic upload still works without this:
+#   dput ppa:devlifex/dback ../dback_VERSION_source.changes
+#
+# Do NOT name the section [ppa] — that conflicts with /etc/dput.cf.
+
+[dback-ppa]
+fqdn = ppa.launchpad.net
+method = ftp
+incoming = ~devlifex/ubuntu/dback/
+login = anonymous
+allow_unsigned_uploads = 0
+
+# SFTP alternative (uses Launchpad username instead of anonymous FTP):
+# [dback-ppa-sftp]
+# fqdn = ppa.launchpad.net
+# method = sftp
+# incoming = ~devlifex/ubuntu/dback/
+# login = devlifex
+# allow_unsigned_uploads = 0
+#
+# Upload with:
+#   dput dback-ppa-sftp ../dback_VERSION_source.changes

@@ -88,24 +88,25 @@ Ubuntu series پیشنهادی: **22.04 jammy**, **24.04 noble**
 |------|------|
 | `main.go` | `appVersion` |
 | `build.sh` | `APP_VERSION` |
-| `debian/changelog` | خط اول، مثلاً `dback (3.6.4)` |
+| `debian/changelog` | خط اول، مثلاً `dback (3.6.4-1) noble` |
 
 ### به‌روز کردن changelog
 
-release جدید upstream:
+**distribution** باید codename Ubuntu باشد (`noble`, `jammy`) — **نه** `ubuntu`.
+
+release جدید برای noble (24.04):
 
 ```bash
-dch -v 3.6.4 "New upstream release."
+dch -v 3.6.5-1 -D noble "Release 3.6.5."
 ```
 
-فقط fix بسته‌بندی (همان upstream):
+fix بسته‌بندی:
 
 ```bash
-dch -i
-# نتیجه: 3.6.3-1 ، 3.6.3-2 ، ...
+dch -i -D noble
 ```
 
-> بسته **native** است؛ برای اولین upload هر upstream از `3.6.4` (بدون `-1`) استفاده کن.
+> Launchpad فقط **source package** می‌پذیرد (`debuild -S`)، نه فایل `.deb` آماده.
 
 ---
 
@@ -126,23 +127,23 @@ UPLOAD=1 ./packaging/build-ppa.sh
 خروجی در **پوشه parent** ریپو:
 
 ```
-../dback_3.6.3.dsc
-../dback_3.6.3.tar.xz
-../dback_3.6.3_source.changes
+../dback_3.6.4-1.dsc
+../dback_3.6.4-1.tar.xz
+../dback_3.6.4-1_source.changes
 ```
 
 ### فقط build + sign (بدون upload)
 
 ```bash
 ./packaging/build-ppa.sh
-dput ppa:devlifex/dback ../dback_3.6.3_source.changes
+dput ppa:devlifex/dback ../dback_3.6.4-1_source.changes
 ```
 
 ### upload دستی بعداً
 
 ```bash
-debsign -k E8B25AD68688EC024359E03FE00C906928B7599C ../dback_3.6.3_source.changes
-dput ppa:devlifex/dback ../dback_3.6.3_source.changes
+debsign -k E8B25AD68688EC024359E03FE00C906928B7599C ../dback_3.6.4-1_source.changes
+dput -f ppa:devlifex/dback ../dback_3.6.4-1_source.changes
 ```
 
 ---
@@ -172,6 +173,70 @@ sudo apt install dback
 
 ---
 
+## طبق مستندات Launchpad (خلاصه)
+
+منبع: [Upload a package to a PPA](https://help.launchpad.net/Packaging/PPA/Uploading)
+
+### روش upload (FTP — همان کاری که ما می‌کنیم)
+
+```bash
+dput ppa:devlifex/dback ../dback_VERSION_source.changes
+```
+
+- Launchpad خودش **build** می‌گیرد؛ فایل `.deb` آماده upload **نمی‌شود**
+- source با `debuild -S` ساخته می‌شود (`./packaging/build-ppa.sh`)
+
+### `debian/changelog` — فیلد distribution
+
+Suite در changelog باید یکی از **Ubuntu series فعال در PPA** باشد:
+
+| Ubuntu | codename در changelog |
+|--------|------------------------|
+| 24.04 | `noble` |
+| 22.04 | `jammy` |
+
+❌ `ubuntu` — معتبر نیست → build شروع نمی‌شود
+
+### چند Ubuntu series (jammy + noble)
+
+Launchpad می‌گوید **نسخه باید برای هر series یکتا باشد**. برای series دوم suffix بزن:
+
+| Series | نمونه version |
+|--------|----------------|
+| noble (24.04) | `3.6.4-1~ppa1~ubuntu24.04.1` |
+| jammy (22.04) | `3.6.4-1~ppa1~ubuntu22.04.1` |
+
+برای release بعدی `~ppa2`، `~ppa3`، …
+
+```bash
+# noble (اول)
+dch -v 3.6.4-1~ppa1~ubuntu24.04.1 -D noble "Build for noble."
+UPLOAD=1 ./packaging/build-ppa.sh
+
+# jammy (دوم — نسخه متفاوت!)
+dch -v 3.6.4-1~ppa1~ubuntu22.04.1 -D jammy "Build for jammy."
+UPLOAD=1 ./packaging/build-ppa.sh
+```
+
+### dput پیشرفته (اختیاری)
+
+فایل نمونه: [`packaging/dput.cf.example`](packaging/dput.cf.example)
+
+```ini
+[dback-ppa]
+incoming = ~devlifex/ubuntu/dback/
+```
+
+```bash
+dput dback-ppa ../dback_3.6.4-1_source.changes
+```
+
+### SFTP (جایگزین FTP)
+
+در `dput.cf`: `method = sftp` و `login = devlifex` — SSH fingerprint را تأیید کن.
+
+---
+
 ## خطاهای رایج
 
 ### `No secret key` هنگام sign
@@ -191,9 +256,28 @@ FTP Launchpad گاهی قطع می‌شود. **دوباره همان دستور 
 
 ### lintian: `bad-distribution-in-changes-file ubuntu`
 
-برای PPA مشکلی نیست؛ upload قبول می‌شود.
+**مهم:** در `debian/changelog` به‌جای `ubuntu` باید codename سری Ubuntu باشد، مثلاً **`noble`** (24.04) یا **`jammy`** (22.04).  
+PPA فقط برای seriesهایی که در تنظیمات PPA فعال کرده‌ای build می‌گیرد.
 
-### lintian: `build-depends-on-build-essential` / `xorg-dev`
+```bash
+dch -v 3.6.4-1 -D noble "Fix PPA target series."
+```
+
+### Builds خالی / «No matching builds»
+
+چک‌لیست:
+
+1. **ایمیل** `dvworkmail2017@gmail.com` — Launchpad acceptance یا rejection
+2. **PPA فعال است؟** https://launchpad.net/~devlifex/+activate-ppa
+3. **Ubuntu series فعال؟** https://launchpad.net/~devlifex/+archive/ubuntu/dback/+edit → حداقل **noble** و/یا **jammy**
+4. **کلید GPG Active** (نه pending): https://launchpad.net/~devlifex/+editpgpkeys
+5. **changelog** distribution = `noble` نه `ubuntu`
+6. **نسخه تکراری** — Launchpad نسخه تکراری قبول نمی‌کند؛ revision را بالا ببر (`3.6.4-1`) و `dput -f` بزن
+
+```bash
+rm -f ../dback_*_source.ppa.upload
+UPLOAD=1 ./packaging/build-ppa.sh
+```
 
 هشدار policy است؛ مانع upload یا build در Launchpad نمی‌شود.
 

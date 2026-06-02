@@ -26,6 +26,7 @@ jobs:
       - name: Sync debian/changelog with tag
         env:
           APP_VERSION: ${{ steps.version.outputs.app_version }}
+          PPA_DIST: noble
         run: ./packaging/sync-debian-changelog.sh
 
       - name: Import GPG signing key
