@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=DBack
+Comment=DB Sync Manager
+Exec=dback
+Icon=dback
+Terminal=false
+Type=Application
+Categories=Utility;Development;
+StartupNotify=true

@@ -50,6 +50,7 @@ const (
 	DialogTemplateReplace
 	DialogSyncPushWarning
 	DialogConnectionTest
+	DialogUpdateAvailable
 )
 
 type DialogState struct {

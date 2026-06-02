@@ -173,13 +173,16 @@ func (u *UI) layoutDialogCard(gtx layout.Context, th *material.Theme, theme *App
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							label := dialogOKLabel(d.Kind, d.OKLabel)
-							return primaryButton(gtx, th, theme, &u.dialogOKBtn, label, func() {
-								if d.OnOK != nil {
-									d.OnOK()
-								}
-								u.passphraseEditor.SetText("")
-								u.closeDialog()
-							})
+						return primaryButton(gtx, th, theme, &u.dialogOKBtn, label, func() {
+							if d.OnOK != nil {
+								d.OnOK()
+							}
+							if d.Kind == DialogUpdateAvailable {
+								return
+							}
+							u.passphraseEditor.SetText("")
+							u.closeDialog()
+						})
 						}),
 					)
 				}),
@@ -277,7 +280,7 @@ func (u *UI) showTemplateReplacePrompt(t models.SQLTemplate, oldBody string, usa
 
 func dialogHasActions(kind DialogKind) bool {
 	switch kind {
-	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogInfo, DialogError:
+	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogInfo, DialogError, DialogUpdateAvailable:
 		return true
 	default:
 		return false
@@ -286,7 +289,7 @@ func dialogHasActions(kind DialogKind) bool {
 
 func dialogHasCancel(kind DialogKind) bool {
 	switch kind {
-	case DialogConfirm, DialogPassword, DialogTemplateReplace:
+	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogUpdateAvailable:
 		return true
 	default:
 		return false
@@ -304,6 +307,8 @@ func dialogOKLabel(kind DialogKind, custom string) string {
 		return "Continue"
 	case DialogTemplateReplace:
 		return "Replace"
+	case DialogUpdateAvailable:
+		return "Update now"
 	case DialogInfo, DialogError:
 		return "OK"
 	default:

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	_ "image/png"
@@ -123,6 +124,11 @@ type UI struct {
 	connectionTestCopyBtn   widget.Clickable
 	deleteTemplateBtn   widget.Clickable
 	aboutProjectBtn     widget.Clickable
+	aboutCheckUpdateBtn widget.Clickable
+
+	updateStatus      string
+	pendingUpdateInfo  coreapp.UpdateInfo
+	updateApplyCancel  context.CancelFunc
 
 	menuOpenID   string
 	menuCloseArea widget.Clickable

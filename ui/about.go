@@ -60,11 +60,29 @@ func (u *UI) layoutAbout(gtx layout.Context, th *material.Theme) layout.Dimensio
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return linkButton(gtx, th, theme, &u.aboutProjectBtn, "github.com/devlifeX/dback", func() {
-							if err := u.platform.OpenURL(ProjectURL); err != nil {
-								u.showError(fmt.Errorf("open project link: %w", err))
-							}
-						})
+						status := u.updateStatus
+						if status == "" {
+							status = "Check GitHub Releases for newer versions."
+						}
+						return mutedLabel(gtx, th, theme, status)
+					})
+				}),
+				layout.Rigid(vgap(theme)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return primaryButton(gtx, th, theme, &u.aboutCheckUpdateBtn, "Check for updates", u.runAboutUpdateCheck)
+							}),
+							layout.Rigid(hgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return linkButton(gtx, th, theme, &u.aboutProjectBtn, "Open GitHub", func() {
+									if err := u.platform.OpenURL(ProjectURL); err != nil {
+										u.showError(fmt.Errorf("open project link: %w", err))
+									}
+								})
+							}),
+						)
 					})
 				}),
 			)

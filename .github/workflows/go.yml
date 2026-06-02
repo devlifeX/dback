@@ -44,21 +44,45 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libvulkan-dev xorg-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev libxfixes-dev libegl-dev
+          sudo apt-get install -y build-essential pkg-config libvulkan-dev xorg-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev libxfixes-dev libegl-dev curl
 
-      - name: Build
+      - name: Resolve app version
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "app_version=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare packaging icons
+        run: |
+          mkdir -p packaging/icons/hicolor/256x256/apps packaging/icons/hicolor/48x48/apps
+          cp logo.png packaging/icons/hicolor/256x256/apps/dback.png
+          cp logo.png packaging/icons/hicolor/48x48/apps/dback.png
+
+      - name: Build Linux binary
+        env:
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
         run: |
           mkdir -p dist
-          go build -v -o dist/dback-linux .
+          CGO_ENABLED=1 go build -v -ldflags "-X main.appVersion=${APP_VERSION}" -o dist/dback-linux .
+
+      - name: Build Debian package
+        env:
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+        run: |
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v2.44.1/nfpm_2.44.1_Linux_x86_64.tar.gz" | tar -xz nfpm
+          chmod +x nfpm
+          APP_VERSION="${APP_VERSION}" ./nfpm package -f packaging/nfpm.yaml -p deb --target dist
 
       - name: Test
         run: go test -v ./...
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dback-linux
-          path: dist/dback-linux
+          path: |
+            dist/dback-linux
+            dist/dback_*_amd64.deb
 
   windows-build:
     name: Build Windows
@@ -72,10 +96,20 @@ jobs:
         with:
           go-version: "1.21"
 
+      - name: Resolve app version
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "app_version=${TAG}" >> "$GITHUB_OUTPUT"
+
       - name: Build
+        shell: bash
+        env:
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
         run: |
           mkdir -p dist
-          go build -v -o dist/dback-windows.exe .
+          go build -v -ldflags "-X main.appVersion=${APP_VERSION}" -o dist/dback-windows.exe .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -104,3 +138,4 @@ jobs:
           files: |
             release-assets/dback-linux
             release-assets/dback-windows.exe
+            release-assets/dback_*_amd64.deb

@@ -122,6 +122,7 @@ DBACK_DEBUG=1 ./run.sh
 Output:
 - `dist/dback-linux`
 - `dist/dback` launcher wrapper (handles common EGL/GPU driver issues)
+- `dist/dback_${APP_VERSION}_amd64.deb` — Debian/Ubuntu installer with menu icon (`/usr/bin/dback`)
 
 Set the app version at build time:
 
@@ -129,7 +130,7 @@ Set the app version at build time:
 APP_VERSION=3.2.0 ./build.sh linux
 ```
 
-Version appears in **About** inside the app.
+Version appears in **About** inside the app. Use **Check for updates** on the About screen to compare against [GitHub Releases](https://github.com/devlifeX/dback/releases); when a newer version exists, DBack downloads the matching asset and installs it (Linux `.deb` via `pkexec` + `apt`, Windows `.exe` with restart helper).
 
 ### Build (Windows)
 
@@ -172,10 +173,16 @@ Tagged releases (`v*`) are built automatically by GitHub Actions:
 
 | Platform | Artifact |
 |----------|----------|
-| Linux | `dback-linux` |
+| Linux | `dback-linux`, `dback_{version}_amd64.deb` |
 | Windows | `dback-windows.exe` |
 
-Download the latest release from [GitHub Releases](https://github.com/devlifeX/dback/releases).
+Install on Ubuntu/Debian:
+
+```bash
+sudo apt install ./dback_3.6.1_amd64.deb
+```
+
+Or use **About → Check for updates** inside the running app.
 
 ## Default Paths
 

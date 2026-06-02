@@ -1,0 +1,40 @@
+name: dback
+arch: amd64
+platform: linux
+version: "${APP_VERSION}"
+section: utils
+priority: optional
+maintainer: "dariush vesal <dariush.vesal@gmail.com>"
+description: |
+  Desktop app for MySQL/MariaDB backup and restore over SSH, Docker, or WordPress.
+depends:
+  - libegl1
+  - libvulkan1
+  - libwayland-client0
+  - libxkbcommon0
+  - libx11-6
+  - libxcursor1
+  - libxfixes3
+  - libxcb1
+  - libglib2.0-0
+contents:
+  - src: dist/dback-linux
+    dst: /usr/lib/dback/dback
+    file_info:
+      mode: 0755
+  - src: packaging/dback-launcher.sh
+    dst: /usr/bin/dback
+    file_info:
+      mode: 0755
+  - src: packaging/dback.desktop
+    dst: /usr/share/applications/dback.desktop
+    file_info:
+      mode: 0644
+  - src: packaging/icons/hicolor/256x256/apps/dback.png
+    dst: /usr/share/icons/hicolor/256x256/apps/dback.png
+    file_info:
+      mode: 0644
+  - src: packaging/icons/hicolor/48x48/apps/dback.png
+    dst: /usr/share/icons/hicolor/48x48/apps/dback.png
+    file_info:
+      mode: 0644

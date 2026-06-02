@@ -594,8 +594,11 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 |------|----------|
 | Logo | `main.go` — `//go:embed logo.png` |
 | Version | `-ldflags "-X main.appVersion=..."` — `build.sh`; default `3.2.0` |
+| Linux `.deb` | `packaging/nfpm.yaml` + `build.sh` → `dist/dback_${VERSION}_amd64.deb` |
+| Desktop icon (deb) | `packaging/dback.desktop` + `packaging/icons/hicolor/*/apps/dback.png` |
+| In-app updater | `internal/update/` + `internal/app/update.go`; About → Check for updates |
 | Plugin embed | `wordpress/dback-db-tools/embed.go` |
-| Linux build | `build.sh` — CGO + Gio/EGL |
+| Linux build | `build.sh` — CGO + Gio/EGL + nfpm deb |
 | Windows build | GitHub Actions + `go build` — see `README.md` |
 
 **Cross-platform:** all embedded assets and zip/download logic must work on both targets — see **Cross-platform requirement** above.
@@ -614,6 +617,7 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 | Vault | `Store.Unlock`, `Store.SaveProfiles` | `internal/store/` |
 | Sync | `App.SyncPush`, `sync.Push` | `internal/app/sync.go`, `internal/sync/s3.go` |
 | UI shell | `UI.layout`, `Section`, `View` | `ui/app.go`, `ui/state.go` |
+| About / updates | `layoutAbout`, `runAboutUpdateCheck` | `ui/about.go`, `ui/about_update.go` |
 | Profile model | `models.Profile`, `ConnectionType` | `models/models.go` |
 
 ---
@@ -665,6 +669,7 @@ Key test locations:
 | Area | Path |
 |------|------|
 | WordPress client | `backend/wordpress/client_test.go` |
+| App updater | `internal/update/*_test.go` |
 | Transfer / validate | `backend/transfer/*_test.go` |
 | Store / vault | `internal/store/store_test.go` |
 | UI helpers | `ui/helpers_test.go`, `ui/filters_test.go` |

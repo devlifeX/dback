@@ -6,6 +6,7 @@ APP_NAME="dback"
 DIST_DIR="dist"
 ICON_PATH="logo.png"
 APP_VERSION="${APP_VERSION:-3.2.0}"
+NFPM_VERSION="${NFPM_VERSION:-v2.44.1}"
 
 export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
 
@@ -95,6 +96,82 @@ ensure_linux_deps() {
     fi
 }
 
+ensure_nfpm() {
+    if command -v nfpm >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local nfpm_version="$NFPM_VERSION"
+    local nfpm_arch
+    case "$(uname -m)" in
+        x86_64|amd64) nfpm_arch="x86_64" ;;
+        aarch64|arm64) nfpm_arch="arm64" ;;
+        *)
+            print_error "Unsupported architecture for nfpm bootstrap: $(uname -m)"
+            return 1
+            ;;
+    esac
+
+    local nfpm_url="https://github.com/goreleaser/nfpm/releases/download/${nfpm_version}/nfpm_${nfpm_version#v}_Linux_${nfpm_arch}.tar.gz"
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+
+    echo "Installing nfpm ${nfpm_version} (${nfpm_arch})..."
+    if ! curl -fsSL "$nfpm_url" | tar -xz -C "$tmp_dir" nfpm; then
+        print_error "Failed to download nfpm from ${nfpm_url}"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    mkdir -p "${HOME}/.local/bin"
+    mv "$tmp_dir/nfpm" "${HOME}/.local/bin/nfpm"
+    chmod +x "${HOME}/.local/bin/nfpm"
+    export PATH="${HOME}/.local/bin:${PATH}"
+    rm -rf "$tmp_dir"
+
+    if ! command -v nfpm >/dev/null 2>&1; then
+        print_error "nfpm install failed."
+        return 1
+    fi
+}
+
+prepare_packaging_icons() {
+    ensure_icon || return 1
+    mkdir -p packaging/icons/hicolor/256x256/apps packaging/icons/hicolor/48x48/apps
+    cp "$ICON_PATH" packaging/icons/hicolor/256x256/apps/dback.png
+    cp "$ICON_PATH" packaging/icons/hicolor/48x48/apps/dback.png
+}
+
+pack_deb() {
+    if [ ! -f "$DIST_DIR/${APP_NAME}-linux" ]; then
+        print_error "Missing Linux binary; build it first."
+        return 1
+    fi
+
+    prepare_packaging_icons || return 1
+    ensure_nfpm || return 1
+
+    echo ""
+    echo "Building Debian package..."
+    export APP_VERSION
+    if APP_VERSION="$APP_VERSION" nfpm package -f packaging/nfpm.yaml -p deb --target "$DIST_DIR"; then
+        local deb_file="$DIST_DIR/dback_${APP_VERSION}_amd64.deb"
+        if [ -f "$deb_file" ]; then
+            print_success "Debian package: ./$deb_file"
+            return 0
+        fi
+        local found
+        found="$(find "$DIST_DIR" -maxdepth 1 -name 'dback_*_amd64.deb' | head -n 1)"
+        if [ -n "$found" ]; then
+            print_success "Debian package: ./$found"
+            return 0
+        fi
+    fi
+
+    print_error "Debian package build failed."
+    return 1
+}
+
 build_linux() {
     echo ""
     echo "Building for Linux..."
@@ -132,6 +209,7 @@ LAUNCHER_EOF
         chmod +x "$launcher"
         print_success "Launcher script:  ./$DIST_DIR/${APP_NAME}"
         echo "  Run the app with: ./$DIST_DIR/${APP_NAME}"
+        pack_deb || return 1
         return 0
     fi
 
