@@ -578,7 +578,7 @@ The Go app embeds plugin files and builds a per-site zip when the user clicks **
 1. Walk embedded files from `wordpress/dback-db-tools/embed.go`
 2. Skip paths rejected by `release_zip.go` — `IncludeInReleaseZip()` (see **Release zip exclusions** below)
 3. Replace `{{DBACK_API_KEY}}` in `dback-db-tools.php` with the host’s generated token
-4. Pack into zip with a **single top-level folder** whose name matches the download filename (without `.zip`)
+4. Pack into zip with a **single stable top-level folder** named `dback-db-tools`
 
 ### Release zip exclusions
 
@@ -597,7 +597,7 @@ Example: `dback-florancewatch.com-1.0.0.zip`
 **Zip internal layout** (WordPress-compatible):
 
 ```
-dback-florancewatch.com-1.0.0/
+dback-db-tools/
 ├── dback-db-tools.php      ← main plugin file at folder root
 ├── includes/
 ├── assets/
@@ -605,7 +605,7 @@ dback-florancewatch.com-1.0.0/
 └── index.php
 ```
 
-The root folder name matches the zip basename so file managers that “extract to …” do not add an extra wrapper around `dback-db-tools/`. Upload the `.zip` directly in **Plugins → Add New → Upload Plugin** — do not re-zip an extracted folder.
+The zip filename keeps the host/version pattern, but the internal root folder stays `dback-db-tools/` so extracting a newer zip overwrites the previous plugin folder instead of creating versioned directories. Upload the `.zip` directly in **Plugins → Add New → Upload Plugin** — do not re-zip an extracted folder.
 
 Manual dev install: copy the `wordpress/dback-db-tools/` folder to `wp-content/plugins/dback-db-tools/` (no token replacement; uses `dback_api_key` option instead).
 

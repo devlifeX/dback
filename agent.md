@@ -565,7 +565,7 @@ Before finishing a task that touches paths, files, dialogs, or zip:
 
 1. Run **`go test ./...`** (CI runs on Linux; catches logic regressions).
 2. Mentally verify **Windows** paths: save dialog, filename with dots, cancel vs error.
-3. For plugin zip: assert folder name matches filename stem (`TestBuildPluginZipFolderMatchesFilename`).
+3. For plugin zip: assert all entries live under stable `dback-db-tools/` root (`TestBuildPluginZipUsesStableRootFolder`).
 4. For explorer changes: verify both code paths — `*os.File` from Gio and error handling.
 
 If you cannot run Windows locally, document assumptions and add unit tests for sanitizers and pure logic.

@@ -45,6 +45,7 @@ func normalizeSiteURL(raw string) string {
 }
 
 func (c *Client) endpoint(path string) string {
+	path = "/" + strings.Trim(path, "/") + "/"
 	return c.baseURL + "/wp-json/" + restNamespace + path
 }
 
@@ -67,7 +68,7 @@ func (c *Client) Ping(ctx context.Context) (map[string]interface{}, error) {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.enrichTransportError(ctx, req.Method, req.URL.String(), err)
 	}
 	defer resp.Body.Close()
 	data, err := decodeJSONResponse(resp)
@@ -84,7 +85,7 @@ func (c *Client) Preflight(ctx context.Context) (PreflightResult, error) {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return PreflightResult{}, err
+		return PreflightResult{}, c.enrichTransportError(ctx, req.Method, req.URL.String(), err)
 	}
 	defer resp.Body.Close()
 	data, err := decodeJSONResponse(resp)
@@ -102,7 +103,7 @@ func (c *Client) Export(ctx context.Context) (io.ReadCloser, error) {
 	req.Header.Set("Accept", "application/gzip")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.enrichTransportError(ctx, req.Method, req.URL.String(), err)
 	}
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
@@ -148,7 +149,7 @@ func (c *Client) Import(ctx context.Context, r io.Reader, size int64, database s
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return c.enrichTransportError(ctx, req.Method, req.URL.String(), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
@@ -190,7 +191,7 @@ func (c *Client) Query(ctx context.Context, sql, database string) (db.QueryResul
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return db.QueryResult{}, err
+		return db.QueryResult{}, c.enrichTransportError(ctx, req.Method, req.URL.String(), err)
 	}
 	defer resp.Body.Close()
 	data, err := decodeJSONResponse(resp)
@@ -385,4 +386,22 @@ func (c *Client) enrichRouteError(ctx context.Context, err error) error {
 	}
 
 	return fmt.Errorf("%w — dback/v1 namespace missing from %s/wp-json/ (found: %s). Install or activate DBack DB Tools, then open Tools → DBack DB Tools → Status & Diagnostics in WordPress admin", err, c.baseURL, ns)
+}
+
+func (c *Client) enrichTransportError(ctx context.Context, method, endpoint string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	base := fmt.Errorf("wordpress request failed (%s %s): %w", method, endpoint, err)
+	snapshot, fetchErr := c.fetchRESTIndex(ctx)
+	if fetchErr != nil {
+		return fmt.Errorf("%w — REST index probe failed at %s/wp-json/: %v", base, c.baseURL, fetchErr)
+	}
+
+	ns := "none"
+	if len(snapshot.Namespaces) > 0 {
+		ns = strings.Join(snapshot.Namespaces, ", ")
+	}
+	return fmt.Errorf("%w — REST index HTTP %d (namespaces: %s)", base, snapshot.HTTPStatus, ns)
 }

@@ -16,6 +16,7 @@ import (
 )
 
 var pluginVersionPattern = regexp.MustCompile(`define\('DBACK_DB_TOOLS_VERSION',\s*'([^']+)'\)`)
+const releaseZipRootFolder = "dback-db-tools"
 
 // BuildPluginZip returns a WordPress plugin zip with the API key hardcoded.
 func BuildPluginZip(siteURL, apiKey string) ([]byte, string, error) {
@@ -30,9 +31,7 @@ func BuildPluginZip(siteURL, apiKey string) ([]byte, string, error) {
 	}
 
 	hostLabel := hostnameFromSiteURL(siteURL)
-	zipRoot := sanitizeZipRootFolder(fmt.Sprintf("dback-%s-%s", hostLabel, version))
-	filename := sanitizeDownloadFilename(zipRoot + ".zip")
-	zipRoot = strings.TrimSuffix(filename, ".zip")
+	filename := sanitizeDownloadFilename(fmt.Sprintf("dback-%s-%s.zip", hostLabel, version))
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -56,10 +55,9 @@ func BuildPluginZip(siteURL, apiKey string) ([]byte, string, error) {
 			data = []byte(strings.ReplaceAll(string(data), dbackdbtools.APIKeyPlaceholder, apiKey))
 		}
 
-		// WordPress expects a single top-level folder in the zip whose root contains
-		// the main plugin file. Match the folder name to the download filename so
-		// "extract to …" in file managers does not add an extra wrapper directory.
-		zipPath := path.Join(zipRoot, filepathToSlash(relPath))
+		// Keep a stable plugin directory so extracting newer versions overwrites the
+		// existing wp-content/plugins/dback-db-tools folder instead of creating a new one.
+		zipPath := path.Join(releaseZipRootFolder, filepathToSlash(relPath))
 		w, err := zw.Create(zipPath)
 		if err != nil {
 			return err

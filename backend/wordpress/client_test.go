@@ -23,12 +23,12 @@ func TestClientPingAndQuery(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/wp-json/dback/v1/ping":
+		case "/wp-json/dback/v1/ping/":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": true,
 				"message": "pong",
 			})
-		case "/wp-json/dback/v1/query":
+		case "/wp-json/dback/v1/query/":
 			var body map[string]string
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			if body["sql"] != "SELECT 1" {
@@ -83,7 +83,7 @@ func TestClientExport(t *testing.T) {
 
 	payload := []byte{0x1f, 0x8b, 0x08}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/wp-json/dback/v1/export" {
+		if r.URL.Path != "/wp-json/dback/v1/export/" {
 			http.NotFound(w, r)
 			return
 		}
@@ -171,7 +171,7 @@ func TestClientImport(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/wp-json/dback/v1/import" {
+		if r.URL.Path != "/wp-json/dback/v1/import/" {
 			http.NotFound(w, r)
 			return
 		}
@@ -263,7 +263,7 @@ func TestBuildPluginZip(t *testing.T) {
 		t.Fatalf("NewReader: %v", err)
 	}
 	var mainPHP string
-	mainPath := strings.TrimSuffix(filename, ".zip") + "/dback-db-tools.php"
+	mainPath := releaseZipRootFolder + "/dback-db-tools.php"
 	for _, f := range zr.File {
 		if f.Name == mainPath {
 			rc, err := f.Open()
@@ -286,7 +286,7 @@ func TestBuildPluginZip(t *testing.T) {
 		t.Fatalf("main plugin file %q not found in zip", mainPath)
 	}
 	for _, f := range zr.File {
-		if strings.HasPrefix(f.Name, "dback-db-tools/") {
+		if strings.HasPrefix(f.Name, "dback-db-tools/dback-db-tools/") {
 			t.Fatalf("unexpected nested plugin folder in zip: %q", f.Name)
 		}
 		lower := strings.ToLower(f.Name)
@@ -323,7 +323,7 @@ func TestSanitizeDownloadFilenameWindowsSafe(t *testing.T) {
 	}
 }
 
-func TestBuildPluginZipFolderMatchesFilename(t *testing.T) {
+func TestBuildPluginZipUsesStableRootFolder(t *testing.T) {
 	t.Parallel()
 
 	data, filename, err := BuildPluginZip("https://shop.example.com", "token")
@@ -334,10 +334,12 @@ func TestBuildPluginZipFolderMatchesFilename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewReader: %v", err)
 	}
-	root := strings.TrimSuffix(filename, ".zip")
+	if !strings.HasPrefix(filename, "dback-shop.example.com-") || !strings.HasSuffix(filename, ".zip") {
+		t.Fatalf("unexpected filename: %q", filename)
+	}
 	for _, f := range zr.File {
-		if !strings.HasPrefix(f.Name, root+"/") {
-			t.Fatalf("zip entry %q not under folder %q/", f.Name, root)
+		if !strings.HasPrefix(f.Name, releaseZipRootFolder+"/") {
+			t.Fatalf("zip entry %q not under folder %q/", f.Name, releaseZipRootFolder)
 		}
 	}
 }
@@ -351,7 +353,7 @@ func TestPingEnrichesRestNoRouteError(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"namespaces": []string{"wp/v2"},
 			})
-		case "/wp-json/dback/v1/ping":
+		case "/wp-json/dback/v1/ping/":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
