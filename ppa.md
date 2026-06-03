@@ -217,7 +217,7 @@ Launchpad **نسخه Debian یکتا برای هر series** می‌خواهد. C
 
 [`packaging/sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh) با `PPA_DIST=noble|jammy` changelog را تنظیم می‌کند.
 
-**Go روی jammy:** Build-Depends از `golang-1.22-go` استفاده می‌کند (پیش‌فرض jammy فقط 1.18 دارد). [`debian/prepare-go.sh`](debian/prepare-go.sh) باینری Go را از PATH یا `/usr/lib/go-1.22/bin/go` پیدا می‌کند.
+**Go روی jammy:** Build-Depends از `golang-1.22-go` استفاده می‌کند (پیش‌فرض jammy فقط 1.18 دارد). این پکیج `go` را در `/usr/lib/go-1.22/bin/go` نصب می‌کند، نه الزاماً `/usr/bin/go`. برای همین [`debian/rules`](debian/rules) باید `/usr/lib/go-1.22/bin` را در `PATH` export کند و [`debian/prepare-go.sh`](debian/prepare-go.sh) همان باینری را verify کند.
 
 **پیش‌نیاز Launchpad:** در تنظیمات PPA هر دو series **jammy** و **noble** فعال باشند.
 
@@ -312,6 +312,29 @@ SIGN=1 UPLOAD=1 ./packaging/build-ppa.sh
 
 FTP Launchpad گاهی قطع می‌شود. **دوباره همان دستور `dput` را بزن** — معمولاً بار دوم موفق می‌شود. اسکریپت `UPLOAD=1` خودش تا ۳ بار retry می‌کند.
 
+### Launchpad build: `/bin/sh: 1: go: not found`
+
+نمونه:
+
+```text
+debian/prepare-go.sh
+prepare-go: using /usr/lib/go-1.22/bin/go
+go version go1.22.2 linux/amd64
+go build -mod=vendor -buildvcs=false ...
+/bin/sh: 1: go: not found
+```
+
+علت: `prepare-go.sh` داخل process خودش `PATH` را تنظیم می‌کند، اما خط بعدی `debian/rules` در shell جدا اجرا می‌شود. اگر `PATH` در خود make export نشده باشد، `go build` دیگر `go` را پیدا نمی‌کند.
+
+راه‌حل در [`debian/rules`](debian/rules):
+
+```make
+export PATH := /usr/lib/go-1.22/bin:$(PATH)
+export GOTOOLCHAIN := local
+```
+
+بعد از fix، لاگ باید مسیر واقعی Go را نشان بدهد و همان مرحله `go build` عبور کند.
+
 ### lintian: `bad-distribution-in-changes-file ubuntu`
 
 **مهم:** در `debian/changelog` به‌جای `ubuntu` باید codename سری Ubuntu باشد، مثلاً **`noble`** (24.04) یا **`jammy`** (22.04).  
@@ -363,11 +386,11 @@ gpg --keyserver hkp://keyserver.ubuntu.com:80 --send-keys E00C906928B7599C
 | `/usr/share/applications/dback.desktop` | منوی برنامه |
 | `/usr/share/icons/hicolor/*/apps/dback.png` | آیکون |
 
-Build در Launchpad: **Go 1.22** (noble: `golang-go`؛ jammy: `golang-1.22-go`) و **`vendor/` داخل source tarball** — بدون اینترنت روی builder (`GOPROXY=off`, `GOTOOLCHAIN=local` در [`debian/rules`](debian/rules)). پوشه `vendor/` در git نیست؛ [`packaging/build-ppa.sh`](packaging/build-ppa.sh) قبل از `debuild` با `go mod vendor` می‌سازد (شبکه فقط روی ماشین build/upload لازم است).
+Build در Launchpad: **Go 1.22** (noble: `golang-go`؛ jammy: `golang-1.22-go`) و **`vendor/` داخل source tarball** — بدون اینترنت روی builder (`GOPROXY=off`, `GOTOOLCHAIN=local` در [`debian/rules`](debian/rules)). [`debian/rules`](debian/rules) مسیر `/usr/lib/go-1.22/bin` را export می‌کند تا recipeهای `make` در Launchpad بتوانند `go` را پیدا کنند. پوشه `vendor/` در git نیست؛ [`packaging/build-ppa.sh`](packaging/build-ppa.sh) قبل از `debuild` با `go mod vendor` می‌سازد (شبکه فقط روی ماشین build/upload لازم است).
 
 [`go.mod`](go.mod) روی **`go 1.22`** است (برای سازگاری CI و Launchpad). وابستگی‌های مستقیم pin شده‌اند (`minio-go v7.0.82`, `golang.org/x/crypto v0.31.0`) — `go mod tidy` با Go 1.25+ نباید بدون بررسی commit شود.
 
-[`debian/prepare-go.sh`](debian/prepare-go.sh) قبل از build، Go ≥ 1.21 را از PATH یا `/usr/lib/go-1.22/bin/go` پیدا می‌کند و وجود `vendor/modules.txt` را چک می‌کند.
+[`debian/prepare-go.sh`](debian/prepare-go.sh) قبل از build، Go ≥ 1.22 را از PATH یا `/usr/lib/go-1.22/bin/go` پیدا می‌کند، مسیر باینری را log می‌کند، و وجود `vendor/modules.txt` را چک می‌کند.
 
 ---
 
@@ -477,5 +500,5 @@ UPLOAD=1 ./packaging/build-ppa.sh
 | `packaging/build-ppa.sh` | build + sign + upload |
 | `debian/` | بسته منبع Launchpad |
 | `packaging/sync-debian-changelog.sh` | هماهنگ‌سازی changelog با tag و `PPA_DIST` (CI + دستی) |
-| `debian/prepare-go.sh` | بررسی Go ≥ 1.21 و `vendor/` قبل از build آفلاین |
+| `debian/prepare-go.sh` | بررسی Go ≥ 1.22، log کردن مسیر `go`، و بررسی `vendor/` قبل از build آفلاین |
 | `.github/workflows/ppa.yml` | آپلود خودکار PPA (matrix: noble + jammy) |

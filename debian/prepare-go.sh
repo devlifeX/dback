@@ -4,7 +4,7 @@ set -euo pipefail
 
 export GOTOOLCHAIN=local
 
-MIN_GO="1.21"
+MIN_GO="1.22"
 
 go_version() {
 	local bin="$1"
@@ -39,4 +39,5 @@ if [ ! -f vendor/modules.txt ]; then
 	exit 1
 fi
 
+echo "prepare-go: using $(command -v go)"
 go version

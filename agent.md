@@ -605,7 +605,7 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 | Windows build | GitHub Actions + `go build` — see `README.md` |
 | CI release | [`.github/workflows/go.yml`](.github/workflows/go.yml) — Go **1.22**, `GOTOOLCHAIN=local`; runs on tag push `v*` |
 
-**Go toolchain:** [`go.mod`](go.mod) declares **`go 1.22`**. CI and Launchpad use `GOTOOLCHAIN=local` (no auto-download). PPA builds vendor deps at package time (`vendor/` is gitignored). Do not run `go mod tidy` with a newer local Go without verifying CI/PPA still pass.
+**Go toolchain:** [`go.mod`](go.mod) declares **`go 1.22`**. CI and Launchpad use `GOTOOLCHAIN=local` (no auto-download). PPA builds vendor deps at package time (`vendor/` is gitignored). Launchpad jammy may install `golang-1.22-go` without `/usr/bin/go`, so [`debian/rules`](debian/rules) must export `/usr/lib/go-1.22/bin` in `PATH`; [`debian/prepare-go.sh`](debian/prepare-go.sh) verifies and logs the actual `go` binary. Do not run `go mod tidy` with a newer local Go without verifying CI/PPA still pass.
 
 **Current app version in repo:** `3.6.8` → About screen and local `./build.sh` use this until you bump again.
 

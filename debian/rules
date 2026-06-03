@@ -1,5 +1,6 @@
 #!/usr/bin/make -f
 
+export PATH := /usr/lib/go-1.22/bin:$(PATH)
 export CGO_ENABLED := 1
 export GO111MODULE := on
 export GOTOOLCHAIN := local
