@@ -165,7 +165,7 @@ Output:
 Set the app version at build time:
 
 ```bash
-APP_VERSION=3.6.10 ./build.sh linux
+APP_VERSION=3.7.0 ./build.sh linux
 ```
 
 Version appears in **About** inside the app. Use **Check for updates** on the About screen to compare against [GitHub Releases](https://github.com/devlifeX/dback/releases); when a newer version exists, DBack downloads the matching asset and installs it (Linux `.deb` via `pkexec` + `apt`, Windows `.exe` with restart helper).
@@ -175,7 +175,7 @@ Version appears in **About** inside the app. Use **Check for updates** on the Ab
 Requirements: **Go 1.21+** and a Windows development environment.
 
 ```powershell
-go build -ldflags "-X main.appVersion=3.6.10" -o dist/dback-windows.exe .
+go build -ldflags "-X main.appVersion=3.7.0" -o dist/dback-windows.exe .
 ```
 
 ### Build manually (Linux)
@@ -194,7 +194,7 @@ sudo apt-get update && sudo apt-get install -y \
 Then:
 
 ```bash
-go build -ldflags "-X main.appVersion=3.6.10" -o dist/dback-linux .
+go build -ldflags "-X main.appVersion=3.7.0" -o dist/dback-linux .
 ```
 
 ### Docker alternative

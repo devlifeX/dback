@@ -88,7 +88,7 @@ Ubuntu series پیشنهادی: **22.04 jammy**, **24.04 noble**
 |------|------|
 | `main.go` | `appVersion` |
 | `build.sh` | `APP_VERSION` |
-| `debian/changelog` | خط اول، مثلاً `dback (3.6.10-1~ubuntu24.04.1) noble` |
+| `debian/changelog` | خط اول، مثلاً `dback (3.7.0-1~ubuntu24.04.1) noble` |
 
 ### به‌روز کردن changelog
 
@@ -98,12 +98,12 @@ Ubuntu series پیشنهادی: **22.04 jammy**, **24.04 noble**
 
 ```bash
 # noble (24.04)
-PPA_DIST=noble APP_VERSION=3.6.10 ./packaging/sync-debian-changelog.sh
-# → dback (3.6.10-1~ubuntu24.04.1) noble
+PPA_DIST=noble APP_VERSION=3.7.0 ./packaging/sync-debian-changelog.sh
+# → dback (3.7.0-1~ubuntu24.04.1) noble
 
 # jammy (22.04) — upload جدا با نسخه متفاوت
-PPA_DIST=jammy APP_VERSION=3.6.10 ./packaging/sync-debian-changelog.sh
-# → dback (3.6.10-1~ubuntu22.04.1) jammy
+PPA_DIST=jammy APP_VERSION=3.7.0 ./packaging/sync-debian-changelog.sh
+# → dback (3.7.0-1~ubuntu22.04.1) jammy
 ```
 
 fix بسته‌بندی (revision بالاتر برای همان series):
@@ -136,23 +136,23 @@ UPLOAD=1 ./packaging/build-ppa.sh
 خروجی در **پوشه parent** ریپو (نام فایل به نسخه changelog بستگی دارد):
 
 ```
-../dback_3.6.10-1~ubuntu24.04.1.dsc
-../dback_3.6.10-1~ubuntu24.04.1.tar.xz
-../dback_3.6.10-1~ubuntu24.04.1_source.changes
+../dback_3.7.0-1~ubuntu24.04.1.dsc
+../dback_3.7.0-1~ubuntu24.04.1.tar.xz
+../dback_3.7.0-1~ubuntu24.04.1_source.changes
 ```
 
 ### فقط build + sign (بدون upload)
 
 ```bash
 ./packaging/build-ppa.sh
-dput ppa:devlifex/dback ../dback_3.6.10-1~ubuntu24.04.1_source.changes
+dput ppa:devlifex/dback ../dback_3.7.0-1~ubuntu24.04.1_source.changes
 ```
 
 ### upload دستی بعداً
 
 ```bash
-debsign -k E8B25AD68688EC024359E03FE00C906928B7599C ../dback_3.6.10-1~ubuntu24.04.1_source.changes
-dput -f ppa:devlifex/dback ../dback_3.6.10-1~ubuntu24.04.1_source.changes
+debsign -k E8B25AD68688EC024359E03FE00C906928B7599C ../dback_3.7.0-1~ubuntu24.04.1_source.changes
+dput -f ppa:devlifex/dback ../dback_3.7.0-1~ubuntu24.04.1_source.changes
 ```
 
 ---
@@ -212,8 +212,8 @@ Launchpad **نسخه Debian یکتا برای هر series** می‌خواهد. C
 
 | Series | distribution | نمونه version |
 |--------|--------------|----------------|
-| noble (24.04) | `noble` | `3.6.10-1~ubuntu24.04.1` |
-| jammy (22.04) | `jammy` | `3.6.10-1~ubuntu22.04.1` |
+| noble (24.04) | `noble` | `3.7.0-1~ubuntu24.04.1` |
+| jammy (22.04) | `jammy` | `3.7.0-1~ubuntu22.04.1` |
 
 [`packaging/sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh) با `PPA_DIST=noble|jammy` changelog را تنظیم می‌کند.
 
@@ -223,11 +223,11 @@ Launchpad **نسخه Debian یکتا برای هر series** می‌خواهد. C
 
 ```bash
 # noble
-PPA_DIST=noble APP_VERSION=3.6.10 ./packaging/sync-debian-changelog.sh
+PPA_DIST=noble APP_VERSION=3.7.0 ./packaging/sync-debian-changelog.sh
 UPLOAD=1 ./packaging/build-ppa.sh
 
 # jammy (نسخه متفاوت!)
-PPA_DIST=jammy APP_VERSION=3.6.10 ./packaging/sync-debian-changelog.sh
+PPA_DIST=jammy APP_VERSION=3.7.0 ./packaging/sync-debian-changelog.sh
 UPLOAD=1 ./packaging/build-ppa.sh
 ```
 
@@ -241,7 +241,7 @@ incoming = ~devlifex/ubuntu/dback/
 ```
 
 ```bash
-dput dback-ppa ../dback_3.6.10-1~ubuntu24.04.1_source.changes
+dput dback-ppa ../dback_3.7.0-1~ubuntu24.04.1_source.changes
 ```
 
 ### SFTP (جایگزین FTP)
@@ -386,8 +386,8 @@ rm -rf debian/go-build-cache
 PPA فقط برای seriesهایی که در تنظیمات PPA فعال کرده‌ای build می‌گیرد.
 
 ```bash
-PPA_DIST=noble APP_VERSION=3.6.10 ./packaging/sync-debian-changelog.sh
-# یا: dch -v 3.6.10-1~ubuntu24.04.1 -D noble "Fix PPA target series."
+PPA_DIST=noble APP_VERSION=3.7.0 ./packaging/sync-debian-changelog.sh
+# یا: dch -v 3.7.0-1~ubuntu24.04.1 -D noble "Fix PPA target series."
 ```
 
 ### Builds خالی / «No matching builds»
@@ -502,9 +502,9 @@ cat ppa-private-key.asc
 ```bash
 # 1. نسخه را در main.go و build.sh هماهنگ کن
 git add main.go build.sh
-git commit -m "Release 3.6.10"
-git tag v3.6.10
-git push origin master v3.6.10
+git commit -m "Release 3.7.0"
+git tag v3.7.0
+git push origin master v3.7.0
 ```
 
 > `debian/changelog` را CI خودش برای هر matrix job با [`sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh) تنظیم می‌کند — نیازی به commit دستی changelog برای هر series نیست.
@@ -520,18 +520,18 @@ git push origin master v3.6.10
 ## release بعدی — مثال کامل (دستی، دو series)
 
 ```bash
-# 1. نسخه را در main.go و build.sh به 3.6.11 تغییر بده
+# 1. نسخه را در main.go و build.sh به 3.7.1 تغییر بده
 git add main.go build.sh
-git commit -m "Release 3.6.11"
-git tag v3.6.11
-git push origin master v3.6.11   # CI خودکار PPA + GitHub Release
+git commit -m "Release 3.7.1"
+git tag v3.7.1
+git push origin master v3.7.1   # CI خودکار PPA + GitHub Release
 
 # یا PPA دستی (هر series جدا):
 export GPG_TTY=$(tty)
-PPA_DIST=noble APP_VERSION=3.6.11 ./packaging/sync-debian-changelog.sh
+PPA_DIST=noble APP_VERSION=3.7.1 ./packaging/sync-debian-changelog.sh
 UPLOAD=1 ./packaging/build-ppa.sh
 
-PPA_DIST=jammy APP_VERSION=3.6.11 ./packaging/sync-debian-changelog.sh
+PPA_DIST=jammy APP_VERSION=3.7.1 ./packaging/sync-debian-changelog.sh
 UPLOAD=1 ./packaging/build-ppa.sh
 ```
 
