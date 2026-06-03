@@ -223,7 +223,7 @@ Or use **About → Check for updates** inside the running app.
 | Purpose | Path |
 |---------|------|
 | App config & data | `~/.config/dback` |
-| Default backups | `~/dback/backups` |
+| Default backups | Linux: `~/dback/backups` — Windows: `%USERPROFILE%\Documents\dback` |
 | Encrypted vault | `~/.config/dback/app_data.vault.json` |
 | Remote sync object | `{bucket}/dback/app-data.json` |
 | SSH known hosts | `~/.config/dback/ssh_known_hosts` |

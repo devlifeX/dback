@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"dback/internal/paths"
 	"dback/models"
 
 	"gioui.org/layout"
@@ -355,7 +356,7 @@ func (u *UI) openProfileEditor(p models.Profile) {
 	u.editingProfile = p
 	setEditorText(&u.profileName, p.Name)
 	setEditorText(&u.profileGroup, p.Group)
-	defaultDest := defaultBackupDir(u.platform)
+	defaultDest := paths.DefaultBackupDestination()
 	u.hostForm = newSettingsForm(p, defaultDest)
 	u.queryForm = newQueryForm(p)
 	u.profileTab = 0

@@ -35,6 +35,10 @@ func sanitizeError(err error) string {
 		if strings.Contains(lower, "decryption failed") {
 			return "Wrong master key or corrupted remote data."
 		}
+		if strings.Contains(lower, "create host backup folder") ||
+			strings.Contains(lower, "backup folder") && strings.Contains(lower, "permission denied") {
+			return "Cannot write to the backup folder. Check the Destination Folder path and permissions."
+		}
 		if strings.Contains(lower, "password") ||
 			strings.Contains(lower, "secret") ||
 			strings.Contains(lower, "key") ||

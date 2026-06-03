@@ -16,6 +16,7 @@ import (
 	"dback/backend/transfer"
 	"dback/backend/wordpress"
 	"dback/internal/debug"
+	"dback/internal/paths"
 	"dback/internal/store"
 	"dback/models"
 )
@@ -92,6 +93,14 @@ func (a *App) Reload() error {
 		log.Printf("app.Reload: LoadProfiles failed: %v", err)
 		return err
 	}
+	migratedProfiles := false
+	for i := range profiles {
+		if newDest, ok := paths.MigrateBackupDestination(profiles[i].Destination); ok {
+			log.Printf("app.Reload: migrated backup destination for profile %q: %q -> %q", profiles[i].Name, profiles[i].Destination, newDest)
+			profiles[i].Destination = newDest
+			migratedProfiles = true
+		}
+	}
 	log.Printf("app.Reload: loading templates")
 	templates, err := a.store.LoadTemplates()
 	if err != nil {
@@ -111,11 +120,18 @@ func (a *App) Reload() error {
 		return err
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.profiles = profiles
 	a.templates = templates
 	a.history = history
 	a.logs = logs
+	a.mu.Unlock()
+
+	if migratedProfiles {
+		if err := a.store.SaveProfiles(profiles); err != nil {
+			log.Printf("app.Reload: SaveProfiles after destination migration failed: %v", err)
+			return err
+		}
+	}
 	return nil
 }
 
@@ -296,10 +312,7 @@ func (a *App) ImportAppData(path string, includeSecrets bool, passphrase string)
 func (a *App) Backup(ctx context.Context, profile models.Profile, progress ProgressFunc) (models.ExportRecord, error) {
 	operationID := newID()
 	started := time.Now()
-	dest := profile.Destination
-	if dest == "" {
-		dest = defaultBackupDir()
-	}
+	dest := paths.EffectiveBackupDestination(profile.Destination)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return models.ExportRecord{}, err
 	}
@@ -577,16 +590,6 @@ func formatQueryResultSummary(result db.QueryResult) string {
 		return result.Message
 	}
 	return fmt.Sprintf("%d row(s) returned", len(result.Rows))
-}
-
-func defaultBackupDir() string {
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, "dback", "backups")
-	}
-	if dir, err := os.UserConfigDir(); err == nil && dir != "" {
-		return filepath.Join(dir, "dback", "backups")
-	}
-	return "./backups"
 }
 
 func newID() string {

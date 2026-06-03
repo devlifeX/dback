@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"dback/internal/paths"
 	"dback/models"
 
 	"gioui.org/widget"
@@ -28,7 +29,7 @@ func editorText(e *widget.Editor) string {
 
 func defaultProfile() models.Profile {
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	dest := defaultBackupDir(DesktopPlatform{})
+	dest := paths.DefaultBackupDestination()
 	return models.Profile{
 		ID:             id,
 		Name:           "New Host",
