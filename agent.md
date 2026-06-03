@@ -597,13 +597,15 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 | Logo | `main.go` — `//go:embed logo.png` |
 | Version | `main.go` default + `build.sh` `APP_VERSION`; must match release git tag |
 | Linux `.deb` | `packaging/nfpm.yaml` + `build.sh` → `dist/dback_${VERSION}_amd64.deb` |
-| Launchpad PPA | `debian/` + `packaging/build-ppa.sh`; CI: [`.github/workflows/ppa.yml`](.github/workflows/ppa.yml); see [`ppa.md`](ppa.md) |
+| Launchpad PPA | `debian/` + `packaging/build-ppa.sh`; CI matrix (noble + jammy): [`.github/workflows/ppa.yml`](.github/workflows/ppa.yml); see [`ppa.md`](ppa.md) |
 | Desktop icon (deb) | `packaging/dback.desktop` + `packaging/icons/hicolor/*/apps/dback.png` |
 | In-app updater | `internal/update/` + `internal/app/update.go`; About → Check for updates |
 | Plugin embed | `wordpress/dback-db-tools/embed.go` |
 | Linux build | `build.sh` — CGO + Gio/EGL + nfpm deb |
 | Windows build | GitHub Actions + `go build` — see `README.md` |
-| CI release | [`.github/workflows/go.yml`](.github/workflows/go.yml) — runs on tag push `v*` |
+| CI release | [`.github/workflows/go.yml`](.github/workflows/go.yml) — Go **1.22**, `GOTOOLCHAIN=local`; runs on tag push `v*` |
+
+**Go toolchain:** [`go.mod`](go.mod) declares **`go 1.22`**. CI and Launchpad use `GOTOOLCHAIN=local` (no auto-download). PPA builds vendor deps at package time (`vendor/` is gitignored). Do not run `go mod tidy` with a newer local Go without verifying CI/PPA still pass.
 
 **Current app version in repo:** `3.6.8` → About screen and local `./build.sh` use this until you bump again.
 
@@ -612,19 +614,19 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 ```bash
 ./build.sh linux
 # or explicitly:
-APP_VERSION=3.6.5 ./build.sh linux
+APP_VERSION=3.6.8 ./build.sh linux
 ```
 
-Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.6.5_amd64.deb`.  
+Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.6.8_amd64.deb`.  
 `build.sh` prints the **release git tag** to push when the build succeeds.
 
 ### GitHub Release (after merging to `master`)
 
-Tag **must** match `main.go` / `build.sh` version (`3.6.5` → tag `v3.6.5`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
+Tag **must** match `main.go` / `build.sh` version (`3.6.8` → tag `v3.6.8`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
 
 ```bash
-git tag v3.6.5
-git push origin v3.6.5
+git tag v3.6.8
+git push origin v3.6.8
 ```
 
 GitHub Actions then publishes:
@@ -633,7 +635,9 @@ GitHub Actions then publishes:
 |-------|------|
 | Linux binary | `dback-linux` |
 | Windows binary | `dback-windows.exe` |
-| Debian package | `dback_3.6.5_amd64.deb` |
+| Debian package | `dback_3.6.8_amd64.deb` |
+
+PPA: [`ppa.yml`](.github/workflows/ppa.yml) uploads **two** source packages per tag — `PPA_DIST=noble` and `PPA_DIST=jammy` — via [`packaging/sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh). See [`ppa.md`](ppa.md).
 
 **When you bump the app version**, update this table’s examples and the tag commands to the new `v{x.y.z}`.
 
@@ -699,6 +703,8 @@ GitHub Actions then publishes:
 
 ```bash
 go test ./...
+# CI uses Go 1.22 with GOTOOLCHAIN=local — match locally when debugging CI failures:
+GOTOOLCHAIN=go1.22.12 go test ./...
 ```
 
 Key test locations:
@@ -732,19 +738,19 @@ The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DB
 
 When you modify Go app code, UI, build/CI, updater, or user-visible behavior:
 
-1. **Bump the app version** (patch by default: `3.6.5` → `3.6.6`):
+1. **Bump the app version** (patch by default: `3.6.8` → `3.6.9`):
    - [`main.go`](main.go) — `var appVersion = "…"` (local/`go run` default)
    - [`build.sh`](build.sh) — `APP_VERSION="${APP_VERSION:-…}"`
 2. Update examples in [`README.md`](README.md) if they show a pinned version.
 3. Update **Current app version** here and in [Build and embed](#build-and-embed).
-4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.6.5`** for app version `3.6.5`).
+4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.6.8`** for app version `3.6.8`).
 
 ```bash
-git tag v3.6.5
-git push origin v3.6.5
+git tag v3.6.8
+git push origin v3.6.8
 ```
 
-CI reads the tag (`v3.6.5` → `APP_VERSION=3.6.5`); tag and `main.go`/`build.sh` must always match.
+CI reads the tag (`v3.6.8` → `APP_VERSION=3.6.8`); tag and `main.go`/`build.sh` must always match. PPA changelog per Ubuntu series is synced in CI — do not commit jammy/noble-specific changelog entries unless doing a manual PPA upload.
 
 ### Agent checklist before finishing
 
@@ -757,7 +763,7 @@ CI reads the tag (`v3.6.5` → `APP_VERSION=3.6.5`); tag and `main.go`/`build.sh
 
 | Change type | Example bump |
 |-------------|--------------|
-| Bug fix, CI/packaging, docs tied to app behavior | `3.6.4` → `3.6.5` |
+| Bug fix, CI/packaging, docs tied to app behavior | `3.6.8` → `3.6.9` |
 | New user-facing feature (backward compatible) | `3.6.x` → `3.7.0` |
 | Breaking profile/vault/sync contract | `3.x` → `4.0.0` |
 
@@ -771,4 +777,4 @@ CI reads the tag (`v3.6.5` → `APP_VERSION=3.6.5`); tag and `main.go`/`build.sh
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.6.8 — in-app updater, Debian packaging, PPA CI, and mandatory app version bumps on changes.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.6.8 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, and mandatory app version bumps on changes.

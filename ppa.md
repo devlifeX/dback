@@ -94,16 +94,22 @@ Ubuntu series پیشنهادی: **22.04 jammy**, **24.04 noble**
 
 **distribution** باید codename Ubuntu باشد (`noble`, `jammy`) — **نه** `ubuntu`.
 
-release جدید برای noble (24.04):
+برای release جدید ترجیحاً از [`packaging/sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh) استفاده کن (همان کاری که CI روی tag انجام می‌دهد):
 
 ```bash
-dch -v 3.6.5-1 -D noble "Release 3.6.5."
+# noble (24.04)
+PPA_DIST=noble APP_VERSION=3.6.8 ./packaging/sync-debian-changelog.sh
+# → dback (3.6.8-1~ubuntu24.04.1) noble
+
+# jammy (22.04) — upload جدا با نسخه متفاوت
+PPA_DIST=jammy APP_VERSION=3.6.8 ./packaging/sync-debian-changelog.sh
+# → dback (3.6.8-1~ubuntu22.04.1) jammy
 ```
 
-fix بسته‌بندی:
+fix بسته‌بندی (revision بالاتر برای همان series):
 
 ```bash
-dch -i -D noble
+dch -i -D noble   # یا -D jammy
 ```
 
 > Launchpad فقط **source package** می‌پذیرد (`debuild -S`)، نه فایل `.deb` آماده.
@@ -122,30 +128,31 @@ UPLOAD=1 ./packaging/build-ppa.sh
 
 این کارها را انجام می‌دهد:
 
-1. ساخت source package (`debuild -S -sa -d -us -uc`)
-2. sign با fingerprint کلید GPG (`debsign -k …`)
-3. upload به Launchpad (`dput ppa:devlifex/dback …`)
+1. `go mod vendor` — وابستگی‌ها داخل tarball (پوشه `vendor/` در git نیست)
+2. ساخت source package (`debuild --no-lintian --no-tgz-check -S -sa -d` + sign با `-k FINGERPRINT` اگر کلید موجود باشد)
+3. verify امضای GPG و checksum روی `.dsc` / `.changes`
+4. upload از staging ایزوله به Launchpad (`dput ppa:devlifex/dback …`)
 
-خروجی در **پوشه parent** ریپو:
+خروجی در **پوشه parent** ریپو (نام فایل به نسخه changelog بستگی دارد):
 
 ```
-../dback_3.6.4-1.dsc
-../dback_3.6.4-1.tar.xz
-../dback_3.6.4-1_source.changes
+../dback_3.6.8-1~ubuntu24.04.1.dsc
+../dback_3.6.8-1~ubuntu24.04.1.tar.xz
+../dback_3.6.8-1~ubuntu24.04.1_source.changes
 ```
 
 ### فقط build + sign (بدون upload)
 
 ```bash
 ./packaging/build-ppa.sh
-dput ppa:devlifex/dback ../dback_3.6.4-1_source.changes
+dput ppa:devlifex/dback ../dback_3.6.8-1~ubuntu24.04.1_source.changes
 ```
 
 ### upload دستی بعداً
 
 ```bash
-debsign -k E8B25AD68688EC024359E03FE00C906928B7599C ../dback_3.6.4-1_source.changes
-dput -f ppa:devlifex/dback ../dback_3.6.4-1_source.changes
+debsign -k E8B25AD68688EC024359E03FE00C906928B7599C ../dback_3.6.8-1~ubuntu24.04.1_source.changes
+dput -f ppa:devlifex/dback ../dback_3.6.8-1~ubuntu24.04.1_source.changes
 ```
 
 ---
@@ -234,7 +241,7 @@ incoming = ~devlifex/ubuntu/dback/
 ```
 
 ```bash
-dput dback-ppa ../dback_3.6.4-1_source.changes
+dput dback-ppa ../dback_3.6.8-1~ubuntu24.04.1_source.changes
 ```
 
 ### SFTP (جایگزین FTP)
@@ -272,7 +279,7 @@ export GPG_TTY=$(tty)
 UPLOAD=1 ./packaging/build-ppa.sh
 ```
 
-اگر `GPG signature verification passed` دیدی، upload کن. نسخه جدید: `3.6.5-2`.
+اگر `GPG signature verification passed` دیدی، upload کن. برای retry همان release، revision جدید بزن (مثلاً `dch -i -D noble`).
 
 ### MD5 mismatch (Launchpad rejection)
 
@@ -284,10 +291,11 @@ File dback_X.tar.xz mentioned in the changes has a MD5 mismatch
 
 **راه‌حل:**
 
-1. revision جدید بزن (مثلاً `3.6.5-3`، نه retry همان `3.6.5-2`):
+1. revision جدید بزن برای **همان series** (noble یا jammy)، نه retry همان نسخه:
 
 ```bash
-dch -i -D noble
+dch -i -D noble   # یا -D jammy
+# یا دوباره sync با APP_VERSION جدید / suffix بالاتر
 ```
 
 2. فقط از اسکریپت با lock و staging upload کن (همزمان دو terminal اجرا نکن):
@@ -310,7 +318,8 @@ FTP Launchpad گاهی قطع می‌شود. **دوباره همان دستور 
 PPA فقط برای seriesهایی که در تنظیمات PPA فعال کرده‌ای build می‌گیرد.
 
 ```bash
-dch -v 3.6.4-1 -D noble "Fix PPA target series."
+PPA_DIST=noble APP_VERSION=3.6.8 ./packaging/sync-debian-changelog.sh
+# یا: dch -v 3.6.8-1~ubuntu24.04.1 -D noble "Fix PPA target series."
 ```
 
 ### Builds خالی / «No matching builds»
@@ -322,7 +331,7 @@ dch -v 3.6.4-1 -D noble "Fix PPA target series."
 3. **Ubuntu series فعال؟** https://launchpad.net/~devlifex/+archive/ubuntu/dback/+edit → حداقل **noble** و/یا **jammy**
 4. **کلید GPG Active** (نه pending): https://launchpad.net/~devlifex/+editpgpkeys
 5. **changelog** distribution = `noble` نه `ubuntu`
-6. **نسخه تکراری** — Launchpad نسخه تکراری قبول نمی‌کند؛ revision را بالا ببر (`3.6.4-1`) و `dput -f` بزن
+6. **نسخه تکراری** — Launchpad نسخه تکراری قبول نمی‌کند؛ revision را بالا ببر (`dch -i -D noble` یا suffix جدید) و `dput -f` بزن
 
 ```bash
 rm -f ../dback_*_source.ppa.upload
@@ -354,13 +363,23 @@ gpg --keyserver hkp://keyserver.ubuntu.com:80 --send-keys E00C906928B7599C
 | `/usr/share/applications/dback.desktop` | منوی برنامه |
 | `/usr/share/icons/hicolor/*/apps/dback.png` | آیکون |
 
-Build در Launchpad: از **Go سیستم** نوبل (1.22) و **`vendor/` داخل source tarball** استفاده می‌شود — بدون اینترنت روی builder (`GOPROXY=off`, `GOTOOLCHAIN=local`). پوشه `vendor/` در git نیست؛ `./packaging/build-ppa.sh` قبل از `debuild` با `go mod vendor` می‌سازد (نیاز به شبکه فقط روی ماشین build/upload).
+Build در Launchpad: **Go 1.22** (noble: `golang-go`؛ jammy: `golang-1.22-go`) و **`vendor/` داخل source tarball** — بدون اینترنت روی builder (`GOPROXY=off`, `GOTOOLCHAIN=local` در [`debian/rules`](debian/rules)). پوشه `vendor/` در git نیست؛ [`packaging/build-ppa.sh`](packaging/build-ppa.sh) قبل از `debuild` با `go mod vendor` می‌سازد (شبکه فقط روی ماشین build/upload لازم است).
+
+[`go.mod`](go.mod) روی **`go 1.22`** است (برای سازگاری CI و Launchpad). وابستگی‌های مستقیم pin شده‌اند (`minio-go v7.0.82`, `golang.org/x/crypto v0.31.0`) — `go mod tidy` با Go 1.25+ نباید بدون بررسی commit شود.
+
+[`debian/prepare-go.sh`](debian/prepare-go.sh) قبل از build، Go ≥ 1.21 را از PATH یا `/usr/lib/go-1.22/bin/go` پیدا می‌کند و وجود `vendor/modules.txt` را چک می‌کند.
 
 ---
 
 ## GitHub Actions — آپلود خودکار PPA
 
-با push کردن tag (`v*`)، workflow [`.github/workflows/ppa.yml`](.github/workflows/ppa.yml) خودکار source package را sign و به PPA می‌فرستد (موازی با GitHub Release).
+با push کردن tag (`v*`)، workflow [`.github/workflows/ppa.yml`](.github/workflows/ppa.yml) **دو job موازی** اجرا می‌کند (matrix: **noble** و **jammy**). هر job:
+
+1. `sync-debian-changelog.sh` با `PPA_DIST` مناسب
+2. import GPG (`ci-import-gpg.sh`)
+3. `build-ppa.sh` با `SIGN=1` و `UPLOAD=1`
+
+موازی با آن، [`go.yml`](.github/workflows/go.yml) GitHub Release می‌سازد.
 
 ### یک‌بار — Secrets در GitHub
 
@@ -414,35 +433,37 @@ cat ppa-private-key.asc
 
 ```bash
 # 1. نسخه را در main.go و build.sh هماهنگ کن
-# 2. debian/changelog را به‌روز کن (CI خودش هم sync می‌کند اگر فرق داشت)
-git add main.go build.sh debian/changelog
-git commit -m "Release 3.6.5"
-git tag v3.6.5
-git push origin master v3.6.5
+git add main.go build.sh
+git commit -m "Release 3.6.8"
+git tag v3.6.8
+git push origin master v3.6.8
 ```
 
+> `debian/changelog` را CI خودش برای هر matrix job با [`sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh) تنظیم می‌کند — نیازی به commit دستی changelog برای هر series نیست.
+
 بعد از push tag:
-- `go.yml` → GitHub Release (linux, windows, .deb)
-- `ppa.yml` → Launchpad PPA upload
+- `go.yml` → GitHub Release (linux, windows, `.deb`)
+- `ppa.yml` → دو upload به Launchpad (**noble** + **jammy**)
 
 وضعیت Actions: https://github.com/devlifeX/dback/actions
 
 ---
 
-## release بعدی — مثال کامل (دستی)
+## release بعدی — مثال کامل (دستی، دو series)
 
 ```bash
-# 1. نسخه را در main.go و build.sh به 3.6.4 تغییر بده
-dch -v 3.6.4 "New upstream release."
+# 1. نسخه را در main.go و build.sh به 3.6.9 تغییر بده
+git add main.go build.sh
+git commit -m "Release 3.6.9"
+git tag v3.6.9
+git push origin master v3.6.9   # CI خودکار PPA + GitHub Release
 
-# 2. commit + tag (اختیاری، برای GitHub Release)
-git add main.go build.sh debian/changelog
-git commit -m "Release 3.6.5"
-git tag v3.6.5
-git push origin master v3.6.5
-
-# 3. PPA upload
+# یا PPA دستی (هر series جدا):
 export GPG_TTY=$(tty)
+PPA_DIST=noble APP_VERSION=3.6.9 ./packaging/sync-debian-changelog.sh
+UPLOAD=1 ./packaging/build-ppa.sh
+
+PPA_DIST=jammy APP_VERSION=3.6.9 ./packaging/sync-debian-changelog.sh
 UPLOAD=1 ./packaging/build-ppa.sh
 ```
 
@@ -455,5 +476,6 @@ UPLOAD=1 ./packaging/build-ppa.sh
 | `ppa.md` | این راهنما |
 | `packaging/build-ppa.sh` | build + sign + upload |
 | `debian/` | بسته منبع Launchpad |
-| `packaging/sync-debian-changelog.sh` | هماهنگ‌سازی changelog با tag (CI) |
-| `.github/workflows/ppa.yml` | آپلود خودکار PPA روی tag |
+| `packaging/sync-debian-changelog.sh` | هماهنگ‌سازی changelog با tag و `PPA_DIST` (CI + دستی) |
+| `debian/prepare-go.sh` | بررسی Go ≥ 1.21 و `vendor/` قبل از build آفلاین |
+| `.github/workflows/ppa.yml` | آپلود خودکار PPA (matrix: noble + jammy) |
