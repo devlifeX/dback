@@ -6,21 +6,32 @@ export GOTOOLCHAIN=local
 
 MIN_GO="1.21"
 
-if ! command -v go >/dev/null 2>&1; then
-	echo "prepare-go: go not found; install golang-go from Build-Depends." >&2
+go_version() {
+	local bin="$1"
+	"$bin" env GOVERSION 2>/dev/null | sed 's/^go//'
+}
+
+resolve_go_bin() {
+	local candidate ver
+	for candidate in go /usr/lib/go-1.22/bin/go /usr/lib/go-1.21/bin/go; do
+		if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
+			ver="$(go_version "$candidate")"
+			if [ -n "$ver" ] && dpkg --compare-versions "$ver" ge "$MIN_GO" 2>/dev/null; then
+				echo "$candidate"
+				return 0
+			fi
+		fi
+	done
+	return 1
+}
+
+GO_BIN="$(resolve_go_bin || true)"
+if [ -z "$GO_BIN" ]; then
+	echo "prepare-go: no Go >= ${MIN_GO} found (install golang-1.22-go or golang-go from Build-Depends)." >&2
 	exit 1
 fi
 
-ver="$(go env GOVERSION 2>/dev/null | sed 's/^go//')"
-if [ -z "$ver" ]; then
-	echo "prepare-go: could not determine Go version." >&2
-	exit 1
-fi
-
-if ! dpkg --compare-versions "$ver" ge "$MIN_GO" 2>/dev/null; then
-	echo "prepare-go: Go ${ver} is older than required ${MIN_GO}." >&2
-	exit 1
-fi
+export PATH="$(dirname "$GO_BIN"):${PATH}"
 
 if [ ! -f vendor/modules.txt ]; then
 	echo "prepare-go: vendor/modules.txt missing in source tree." >&2

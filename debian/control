@@ -14,7 +14,7 @@ Build-Depends: debhelper-compat (= 13),
                libxcursor-dev,
                libxfixes-dev,
                libegl-dev,
-               golang-go (>= 2:1.21~) | golang-any,
+               golang-1.22-go | golang-go (>= 2:1.21~),
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://github.com/devlifeX/dback

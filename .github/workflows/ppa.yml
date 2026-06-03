@@ -7,8 +7,14 @@ on:
 
 jobs:
   ppa:
-    name: Upload to Launchpad PPA
+    name: Upload to Launchpad PPA (${{ matrix.ppa_dist }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ppa_dist: noble
+          - ppa_dist: jammy
     # Secrets are stored as Environment secrets (see ppa.md).
     environment: PPA_GPG_PASSPHRASE
     steps:
@@ -26,7 +32,7 @@ jobs:
       - name: Sync debian/changelog with tag
         env:
           APP_VERSION: ${{ steps.version.outputs.app_version }}
-          PPA_DIST: noble
+          PPA_DIST: ${{ matrix.ppa_dist }}
         run: ./packaging/sync-debian-changelog.sh
 
       - name: Import GPG signing key

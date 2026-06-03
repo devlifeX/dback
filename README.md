@@ -12,7 +12,7 @@ DBack connects to remote Linux servers or WordPress sites, streams database dump
 
 ### Ubuntu / Debian (PPA — recommended)
 
-Install from the [Launchpad PPA](https://launchpad.net/~devlifex/+archive/ubuntu/dback) (Ubuntu 24.04 **noble** and other enabled series):
+Install from the [Launchpad PPA](https://launchpad.net/~devlifex/+archive/ubuntu/dback) (Ubuntu 22.04 **jammy** and 24.04 **noble**):
 
 ```bash
 sudo add-apt-repository ppa:devlifex/dback

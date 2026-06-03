@@ -10,7 +10,7 @@ This document is the **AI roadmap** for the DBack Go desktop application (`dback
 
 DBack is a **Gio desktop app** (not a web server) for MySQL/MariaDB **backup, restore, and SQL queries** against remote hosts. Data (profiles, templates, history, logs, sync settings) lives in a **local encrypted vault**. Backup files (`.sql.gz`) are stored on disk under each host’s destination folder.
 
-**Stack:** Go 1.25 · [Gio](https://gioui.org) UI · SSH/shell transport · WordPress REST plugin transport · MinIO S3 sync · Argon2id + AES-GCM vault.
+**Stack:** Go 1.22 · [Gio](https://gioui.org) UI · SSH/shell transport · WordPress REST plugin transport · MinIO S3 sync · Argon2id + AES-GCM vault.
 
 **Supported desktop targets:** **Linux** and **Windows** (primary release platforms). All new and changed Go/UI code **must** work correctly on both — not Linux-only.
 

@@ -10,6 +10,17 @@ PPA_DIST="${PPA_DIST:-noble}"
 export DEBFULLNAME="${DEBFULLNAME:-Dariush Vesal}"
 export DEBEMAIL="${DEBEMAIL:-dvworkmail2017@gmail.com}"
 
+ppa_dist_suffix() {
+	case "$1" in
+		noble) echo "ubuntu24.04.1" ;;
+		jammy) echo "ubuntu22.04.1" ;;
+		*)
+			echo "ERROR: unknown PPA_DIST '${1}' (use noble or jammy)." >&2
+			exit 1
+			;;
+	esac
+}
+
 main_version="$(sed -n 's/^var appVersion = "\(.*\)".*/\1/p' main.go)"
 build_version="$(sed -n 's/^APP_VERSION="${APP_VERSION:-\([^}]*\)}".*/\1/p' build.sh)"
 
@@ -22,15 +33,16 @@ if [ "$build_version" != "$APP_VERSION" ]; then
 	exit 1
 fi
 
+suffix="$(ppa_dist_suffix "$PPA_DIST")"
+deb_version="${APP_VERSION}-1~${suffix}"
+
 current_version="$(dpkg-parsechangelog -SVersion)"
 current_dist="$(dpkg-parsechangelog -SDistribution)"
-base_version="$(sed 's/-.*//' <<<"$current_version")"
 
-if [ "$base_version" = "$APP_VERSION" ] && [ "$current_dist" = "$PPA_DIST" ]; then
+if [ "$current_version" = "$deb_version" ] && [ "$current_dist" = "$PPA_DIST" ]; then
 	echo "debian/changelog already at ${current_version} (${PPA_DIST})"
 	exit 0
 fi
 
-# Always use Debian revision (-1); bare APP_VERSION breaks native packaging and re-uploads.
-echo "Updating debian/changelog -> ${APP_VERSION}-1 (${PPA_DIST})"
-dch -v "${APP_VERSION}-1" -D "${PPA_DIST}" --force-bad-version "Release ${APP_VERSION}."
+echo "Updating debian/changelog -> ${deb_version} (${PPA_DIST})"
+dch -v "${deb_version}" -D "${PPA_DIST}" --force-bad-version "Release ${APP_VERSION} for ${PPA_DIST}."

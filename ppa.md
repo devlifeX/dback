@@ -88,7 +88,7 @@ Ubuntu series پیشنهادی: **22.04 jammy**, **24.04 noble**
 |------|------|
 | `main.go` | `appVersion` |
 | `build.sh` | `APP_VERSION` |
-| `debian/changelog` | خط اول، مثلاً `dback (3.6.5-1) noble` |
+| `debian/changelog` | خط اول، مثلاً `dback (3.6.8-1~ubuntu24.04.1) noble` |
 
 ### به‌روز کردن changelog
 
@@ -201,22 +201,26 @@ Suite در changelog باید یکی از **Ubuntu series فعال در PPA** ب
 
 ### چند Ubuntu series (jammy + noble)
 
-Launchpad می‌گوید **نسخه باید برای هر series یکتا باشد**. برای series دوم suffix بزن:
+Launchpad **نسخه Debian یکتا برای هر series** می‌خواهد. CI روی tag `v*` دو job دارد (matrix در `.github/workflows/ppa.yml`).
 
-| Series | نمونه version |
-|--------|----------------|
-| noble (24.04) | `3.6.4-1~ppa1~ubuntu24.04.1` |
-| jammy (22.04) | `3.6.4-1~ppa1~ubuntu22.04.1` |
+| Series | distribution | نمونه version |
+|--------|--------------|----------------|
+| noble (24.04) | `noble` | `3.6.8-1~ubuntu24.04.1` |
+| jammy (22.04) | `jammy` | `3.6.8-1~ubuntu22.04.1` |
 
-برای release بعدی `~ppa2`، `~ppa3`، …
+[`packaging/sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh) با `PPA_DIST=noble|jammy` changelog را تنظیم می‌کند.
+
+**Go روی jammy:** Build-Depends از `golang-1.22-go` استفاده می‌کند (پیش‌فرض jammy فقط 1.18 دارد). [`debian/prepare-go.sh`](debian/prepare-go.sh) باینری Go را از PATH یا `/usr/lib/go-1.22/bin/go` پیدا می‌کند.
+
+**پیش‌نیاز Launchpad:** در تنظیمات PPA هر دو series **jammy** و **noble** فعال باشند.
 
 ```bash
-# noble (اول)
-dch -v 3.6.4-1~ppa1~ubuntu24.04.1 -D noble "Build for noble."
+# noble
+PPA_DIST=noble APP_VERSION=3.6.8 ./packaging/sync-debian-changelog.sh
 UPLOAD=1 ./packaging/build-ppa.sh
 
-# jammy (دوم — نسخه متفاوت!)
-dch -v 3.6.4-1~ppa1~ubuntu22.04.1 -D jammy "Build for jammy."
+# jammy (نسخه متفاوت!)
+PPA_DIST=jammy APP_VERSION=3.6.8 ./packaging/sync-debian-changelog.sh
 UPLOAD=1 ./packaging/build-ppa.sh
 ```
 
