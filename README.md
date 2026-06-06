@@ -50,6 +50,7 @@ Maintainers: PPA upload and packaging — [`ppa.md`](ppa.md).
 
 - **Streaming backups** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
 - **Smart fallback** — retries with a remote tmp-file when SSH streams fail; supports resume and checksum validation
+- **Dry-Run Verify** — SHA256 checksum + table fingerprint at backup time; optional deep verify restores to a temp database and compares row counts (SSH and WordPress)
 - **Unified hosts** — one connection, backup folder, and import queries per host
 - **WordPress hosts** — backup/import/query via the embedded **DBack DB Tools** plugin (pure PHP, no shell on the server)
 - **Encrypted vault** — profiles, templates, history, and logs stored in `app_data.vault.json`
@@ -89,6 +90,51 @@ Configure pre-import SQL, append templates, and test queries before restore.
 - **Restore flow** — select a backup, pick a destination host, run pre-import SQL, import, then optional post-import SQL
 - **Pre/post import queries** — run before restore starts; failures abort the import and show an error in the app
 - **Job center** — progress and cancel controls on the Backups screen
+- **Dry-Run Verify** — two-layer backup verification (see below)
+- **Remembered import destination** — the last destination host chosen for a given source host is stored in the vault and pre-selected on the next import or deep verify
+
+### Dry-Run Verify (backup verification)
+
+Verification always compares a backup against the **fingerprint captured when that backup was created** — not against the live production database.
+
+**Layer 1 — at backup time (automatic)**
+
+After every successful backup, DBack:
+
+1. Stores a **SHA256 checksum** of the `.sql.gz` file
+2. Queries the **source database** for per-table row counts (`information_schema`) and saves them as a fingerprint in backup history (vault)
+3. Runs an automatic **quick verify** (SHA256 match on disk)
+
+Works for **SSH / Jump Host / Localhost** and **WordPress** hosts.
+
+**Layer 2 — quick verify (file integrity)**
+
+Re-checks that the local backup file’s SHA256 still matches the stored checksum. No database connection. Useful after copying files or if you suspect local corruption.
+
+**Layer 3 — deep verify (optional)**
+
+On demand, DBack:
+
+1. Confirms file integrity (SHA256)
+2. Restores the backup into a **temporary database** on a host you choose (`dback_verify_*` — production DB is not replaced)
+3. Runs exact `COUNT(*)` per table and compares against the stored fingerprint
+4. Drops the temporary database when finished
+
+Deep verify uses the same restore path as a normal import (SSH streaming/tmp-file or WordPress REST). The destination host must allow import (`Import protected` must be off).
+
+**Interpreting results**
+
+| Outcome | Meaning |
+|---------|---------|
+| SHA256 matched, rows match | Backup file intact and restored row counts match the fingerprint |
+| SHA256 matched, rows differ | File is intact; row counts differ from the fingerprint snapshot. The fast fingerprint uses approximate InnoDB estimates — this does not always mean the backup is unusable |
+| No fingerprint | Backup was created before this feature, or capture failed — create a new backup to enable deep verify |
+
+**Limits**
+
+- Fingerprint row counts at backup time are **approximate** (fast mode via `information_schema.table_rows`).
+- Deep verify needs the `.sql.gz` on **local disk** and a writable import destination.
+- Remote sync uploads **metadata only** — checksum and fingerprint travel with history; you must have the backup file locally to verify.
 
 ### WordPress plugin (DBack DB Tools)
 - Embedded in the desktop app; **Download Plugin** builds a zip with a per-host API token hardcoded in the plugin
@@ -264,8 +310,14 @@ For plugin and REST details, see [`wordpress/dback-db-tools/wordpress_agent.md`]
 ### Restore
 1. Open **Backups** → filter by host if needed
 2. Select a backup file
-3. Choose a destination host
+3. Choose a destination host (DBack remembers the last destination per source host)
 4. Click **Import to Selected Host**
+
+### Deep verify (optional)
+1. Open **Backups** → pick a backup with a fingerprint (new backups only)
+2. Run **deep verify** and choose a destination host that allows import
+3. Review the report — SHA256 must pass; row comparison uses the fingerprint from backup time
+4. Progress appears in the Jobs tab like other long operations
 
 ### App data export/import
 1. Open **Settings** → **Export** tab
@@ -316,7 +368,10 @@ Removed. DBack now supports **MySQL and MariaDB** only.
 Profiles are now independent **hosts** with a single connection. Legacy dual settings are migrated automatically on first load.
 
 ### What is included in remote sync?
-The same data as **Export App Data**: hosts, templates, backup history metadata, activity logs, and sync settings. Backup `.sql.gz` files and local sync timestamps (last push/pull) are **not** uploaded.
+The same data as **Export App Data**: hosts, templates, backup history metadata (including SHA256 checksums and fingerprints), activity logs, and sync settings. Backup `.sql.gz` files and local sync timestamps (last push/pull) are **not** uploaded. To run quick or deep verify, the backup file must exist on the device that performs the check.
+
+### How does Dry-Run Verify work?
+At backup time DBack saves a SHA256 hash and a table row fingerprint from the source DB. Quick verify checks the file hash only. Deep verify restores into a temporary database on a host you pick, counts rows, and compares to that fingerprint — without overwriting production. See [Dry-Run Verify](#dry-run-verify-backup-verification) above.
 
 ### Can I use MinIO or a self-hosted S3 endpoint?
 Yes. Enter the host (with or without `https://`) and port, set **Use SSL** as needed, and provide bucket credentials. The remote object path is always `dback/app-data.json` inside your bucket.

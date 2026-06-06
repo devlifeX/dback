@@ -33,6 +33,7 @@ dback/
 │   ├── ssh/                        # SSH, JumpHost, Localhost executor
 │   ├── db/                         # Shell command builders, validation, query parsing
 │   ├── transfer/                   # Backup/restore strategies
+│   ├── verify/                     # SHA256 quick check, fingerprint capture, deep-verify report
 │   ├── preflight/                  # Remote preflight (SSH path)
 │   └── wordpress/                  # REST client, plugin zip generation
 └── wordpress/dback-db-tools/       # Embedded PHP plugin (see wordpress_agent.md)
@@ -219,6 +220,139 @@ No tmp-file fallback. Plugin details: [`wordpress_agent.md`](wordpress/dback-db-
 
 - Minimum backup size: **128 bytes** (app + transfer).
 - Jump Host: prefer tmp-file — double SSH tunnel streaming is unreliable for large dumps.
+
+### Dry-Run Verify (backup verification)
+
+Two-layer verification compares each backup against a **fingerprint captured at backup time** — never against the live source database.
+
+```mermaid
+flowchart TB
+    subgraph backupTime [At backup time]
+        File[".sql.gz on disk"]
+        SHA[SHA256 checksum]
+        FP["table row counts from source DB"]
+        Vault[ExportRecord in vault]
+        File --> SHA --> Vault
+        File --> FP --> Vault
+    end
+    subgraph quick [Quick verify — automatic]
+        QCheck["QuickCheck: SHA256 vs stored checksum"]
+        QCheck --> QuickVerified
+    end
+    subgraph deep [Deep verify — optional]
+        TempDB["temp DB dback_verify_*"]
+        Restore["RestoreSSH / RestoreWordPress to temp DB"]
+        Count["COUNT(*) per table"]
+        Report["BuildTableReport vs fingerprint"]
+        TempDB --> Restore --> Count --> Report
+    end
+    Vault --> QCheck
+    Vault --> Restore
+```
+
+#### Layer 1 — Fingerprint at backup time (automatic)
+
+After a successful backup in `App.Backup` (`internal/app/app.go`):
+
+1. `verify.ChecksumFile` → `ExportRecord.Sha256`
+2. `verify.CaptureFingerprint` (default `ModeFast`) → `ExportRecord.Fingerprint`
+3. `applyAutoQuickVerify` → `ExportRecord.QuickVerified`
+
+**Fingerprint query (fast mode):** `information_schema.tables` — `table_name`, `table_rows` for the backup schema.
+
+| Transport | Schema in query |
+|-----------|-----------------|
+| SSH / Jump / Localhost | `table_schema = '{TargetDBName}'` |
+| WordPress, empty `TargetDBName` | `table_schema = DATABASE()` |
+| WordPress, named DB | `table_schema = '{TargetDBName}'` |
+
+Fingerprint capture uses `App.RunImportQuery` via `appQueryRunner` (`internal/app/verify.go`).
+
+#### Layer 2 — Quick verify (SHA256 only)
+
+| Symbol | Location |
+|--------|----------|
+| `verify.QuickCheck` | `backend/verify/quick.go` |
+| `App.QuickVerify` | `internal/app/verify.go` |
+| `App.BackupVerifyStatus` | display helper for list/detail |
+
+Recomputes SHA256 of the local `.sql.gz` and compares to `ExportRecord.Sha256`. **No database connection.** Runs automatically after every new backup; can be re-run via `App.QuickVerify`.
+
+#### Layer 3 — Deep verify (optional)
+
+| Symbol | Location |
+|--------|----------|
+| `App.DeepVerify` | `internal/app/verify.go` |
+| `verify.CountTablesExact`, `verify.BuildTableReport` | `backend/verify/fingerprint.go`, `report.go` |
+| `verify.TempDBName` | `dback_verify_{unix}` |
+
+**Prerequisites:** `Fingerprint` present, quick check passes, destination `AllowsImport()` (`!ImportProtected`).
+
+**Flow:**
+
+```
+App.DeepVerify
+  → verify.QuickCheck (abort if SHA256 mismatch)
+  → tempDB = verify.TempDBName()
+  → WordPress only: prepareVerifyDatabase (DROP+CREATE via RunImportQuery, connectDB=false)
+  → transfer.RestoreSSH or RestoreWordPress with TargetDBOverride=tempDB
+  → verify.CountTablesExact on temp DB (exact COUNT(*) per table)
+  → verify.BuildTableReport vs record.Fingerprint
+  → persist ExportRecord.DeepVerified
+  → dropVerifyDatabase (defer cleanup on failure)
+```
+
+**SSH / Jump / Localhost:** `RestoreRequest.TargetDBOverride` switches restore to a temp database only — `restoreProfile` overrides `TargetDBName`; uses `BuildImportPrepareTempCommand` and `BuildImportStreamCommandForVerify` so production DB is not dropped.
+
+**WordPress:** `prepareVerifyDatabase` creates temp DB without `X-DBACK-DATABASE`; restore/import uses `X-DBACK-DATABASE: tempDB`.
+
+**Result semantics** (`App.BackupDeepVerifyStatus`):
+
+| State | Meaning |
+|-------|---------|
+| `matched` | SHA256 OK and all table row counts match fingerprint |
+| `row_diff` | SHA256 OK but row counts differ (fast fingerprint is approximate; file may still be valid) |
+| `none` | Deep verify not run |
+
+Deep verify failure with mismatches returns `error` from `App.DeepVerify` but still persists `DeepVerified` with `Passed: false` and per-table `Report`.
+
+#### ExportRecord verify fields
+
+| Field | Role |
+|-------|------|
+| `Sha256` | SHA256 of backup file at creation |
+| `Fingerprint` | `BackupFingerprint` — `Mode`, `Tables`, `TotalRows`, `CapturedAt` |
+| `QuickVerified` | Last quick (SHA256) verify result |
+| `DeepVerified` | Last deep verify result + `Report` |
+| `LastVerified` | Legacy; prefer `QuickVerified` / `DeepVerified` |
+
+#### Import destination memory (vault)
+
+`AppVaultPayload.ImportDestByProfile` maps **source host profile ID → last chosen destination profile ID** for import and deep verify.
+
+| API | File |
+|-----|------|
+| `Store.ImportDestForProfile`, `SetImportDestForProfile` | `internal/store/store.go` |
+| `App.ImportDestForProfile`, `SetImportDestForProfile` | `internal/app/import_prefs.go` |
+
+#### Parser note
+
+`db.parseTSVBlock` accepts single-column MySQL CLI output without tabs (e.g. `COUNT(*)\n0`) — required for exact row counts during deep verify.
+
+#### Risks and constraints
+
+- **Fast fingerprint** uses `information_schema.table_rows` (approximate on InnoDB). Deep verify compares restored data against that snapshot, not a live re-read of production.
+- **Old backups** without `Fingerprint` cannot deep verify — user must create a new backup.
+- **Deep verify cost:** full restore to a writable host (CPU, disk, time); temp DB name must match `dback_verify_*` prefix (safety check).
+- **Quick verify** requires the backup file on local disk (`backup file not found` if only metadata synced).
+
+#### Tests
+
+| Area | Path |
+|------|------|
+| Checksum / quick check | `backend/verify/quick_test.go` |
+| Fingerprint parse / report | `backend/verify/fingerprint_test.go`, `report_test.go` |
+| Import dest prefs | `internal/store/vault_test.go` — `TestVaultPersistsImportDestByProfile` |
 
 ---
 
@@ -650,6 +784,7 @@ PPA: [`ppa.yml`](.github/workflows/ppa.yml) uploads **two** source packages per 
 | Concern | Primary symbols | File |
 |---------|-----------------|------|
 | Backup | `App.Backup`, `transfer.BackupSSH`, `transfer.BackupWordPress` | `internal/app/app.go`, `backend/transfer/` |
+| Verify | `App.QuickVerify`, `App.DeepVerify`, `verify.QuickCheck`, `verify.CaptureFingerprint` | `internal/app/verify.go`, `backend/verify/` |
 | Restore | `App.Restore`, `transfer.RestoreSSH`, `transfer.RestoreWordPress` | same |
 | Query | `App.RunImportQuery`, `db.BuildQueryCommand`, `wordpress.Client.Query` | `internal/app/app.go`, `backend/db/`, `backend/wordpress/` |
 | Executor | `ssh.NewExecutor`, `ssh.NewClient`, `LocalClient` | `backend/ssh/executor.go` |
@@ -674,6 +809,8 @@ PPA: [`ppa.yml`](.github/workflows/ppa.yml) uploads **two** source packages per 
 - Respect **`context.Context`** — close SSH on cancel.
 - Clear legacy **`ExportSettings` / `ImportSettings`** on save.
 - Validate **minimum backup size** (128 bytes).
+- Capture **SHA256 + fingerprint** after every successful backup (`captureBackupMetadata`).
+- Use **`TargetDBOverride`** only for deep verify temp DB restores — never point it at production.
 - Use **tmp-file-first** for Jump Host backups.
 - Keep **vault locked** checks on all store access.
 - Pass **`X-DBACK-DATABASE`** for WordPress import and query when `TargetDBName` is set.
@@ -714,6 +851,7 @@ Key test locations:
 | WordPress client | `backend/wordpress/client_test.go` |
 | App updater | `internal/update/*_test.go` |
 | Transfer / validate | `backend/transfer/*_test.go` |
+| Dry-Run Verify | `backend/verify/*_test.go` |
 | Store / vault | `internal/store/store_test.go` |
 | UI helpers | `ui/helpers_test.go`, `ui/filters_test.go` |
 
@@ -777,4 +915,4 @@ CI reads the tag (`v3.7.1` → `APP_VERSION=3.7.1`); tag and `main.go`/`build.sh
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.7.1 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, and mandatory app version bumps on changes.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.7.1 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, Dry-Run Verify (SHA256 + fingerprint + deep verify), and mandatory app version bumps on changes.
