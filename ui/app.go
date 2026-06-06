@@ -259,13 +259,8 @@ func (u *UI) loop() {
 	for {
 		e := u.window.Event()
 		u.explorer.ListenEvents(e)
+		u.handlePlatformEvent(e)
 		switch e := e.(type) {
-		case app.X11ViewEvent:
-			if e.Valid() {
-				u.x11Display = e.Display
-				u.x11Window = e.Window
-				u.attemptWindowCenter()
-			}
 		case app.DestroyEvent:
 			if e.Err != nil {
 				log.Printf("loop: DestroyEvent err=%v", e.Err)
