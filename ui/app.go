@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	coreapp "dback/internal/app"
 	"dback/internal/debug"
@@ -19,7 +20,6 @@ import (
 	"gioui.org/app"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"gioui.org/x/explorer"
@@ -34,6 +34,12 @@ type UI struct {
 
 	window   *app.Window
 	explorer *explorer.Explorer
+
+	x11Display            unsafe.Pointer
+	x11Window             uintptr
+	pendingCenterSize     image.Point
+	windowCentered        bool
+	windowCenterAttempts  int
 
 	section Section
 	view    View
@@ -110,9 +116,10 @@ type UI struct {
 	tabQuery            widget.Clickable
 	tabBackupFiles      widget.Clickable
 	tabBackupJobs       widget.Clickable
-	importSelectedBtn   widget.Clickable
-	openFolderBtn       widget.Clickable
 	restoreBtn          widget.Clickable
+	verifyBackupBtn     widget.Clickable
+	deepVerifySelect    widget.Enum
+	deepVerifyDropdown  DropdownState
 	openBackupFolderBtn widget.Clickable
 	dialogOKBtn         widget.Clickable
 	dialogCancelBtn     widget.Clickable
@@ -130,14 +137,14 @@ type UI struct {
 	pendingUpdateInfo  coreapp.UpdateInfo
 	updateApplyCancel  context.CancelFunc
 
-	menuOpenID   string
-	menuCloseArea widget.Clickable
+	menuOpenID        string
+	backupMenuOpenID  string
+	menuCloseArea     widget.Clickable
 
-	profileCards     map[string]profileCardWidgets
-	groupChips       map[string]*widget.Clickable
-	templateRows     map[string]*widget.Clickable
-	backupRows       map[string]*widget.Clickable
-	backupFolderBtns map[string]*widget.Clickable
+	profileCards  map[string]profileCardWidgets
+	groupChips    map[string]*widget.Clickable
+	templateRows  map[string]*widget.Clickable
+	backupRowMenus map[string]backupRowMenuWidgets
 	jobCancelBtns    map[string]*widget.Clickable
 
 	unlocked             bool
@@ -167,6 +174,13 @@ type profileCardWidgets struct {
 	more      *widget.Clickable
 }
 
+type backupRowMenuWidgets struct {
+	more   *widget.Clickable
+	import_ *widget.Clickable
+	verify *widget.Clickable
+	folder *widget.Clickable
+}
+
 func New(logoPNG []byte, version string) *UI {
 	var logo image.Image
 	if len(logoPNG) > 0 {
@@ -187,8 +201,7 @@ func New(logoPNG []byte, version string) *UI {
 		profileCards:     make(map[string]profileCardWidgets),
 		groupChips:       make(map[string]*widget.Clickable),
 		templateRows:     make(map[string]*widget.Clickable),
-		backupRows:       make(map[string]*widget.Clickable),
-		backupFolderBtns: make(map[string]*widget.Clickable),
+		backupRowMenus: make(map[string]backupRowMenuWidgets),
 		jobCancelBtns:    make(map[string]*widget.Clickable),
 		loginFocusPending: true,
 	}
@@ -220,11 +233,7 @@ func (u *UI) Run() {
 
 	log.Printf("startup: creating window")
 	u.window = new(app.Window)
-	u.window.Option(
-		app.Title("DBack - DB Sync Manager"),
-		app.Size(unit.Dp(1200), unit.Dp(800)),
-		app.MinSize(unit.Dp(900), unit.Dp(600)),
-	)
+	u.configureWindow()
 	u.explorer = explorer.NewExplorer(u.window)
 
 	go func() {
@@ -251,6 +260,12 @@ func (u *UI) loop() {
 		e := u.window.Event()
 		u.explorer.ListenEvents(e)
 		switch e := e.(type) {
+		case app.X11ViewEvent:
+			if e.Valid() {
+				u.x11Display = e.Display
+				u.x11Window = e.Window
+				u.attemptWindowCenter()
+			}
 		case app.DestroyEvent:
 			if e.Err != nil {
 				log.Printf("loop: DestroyEvent err=%v", e.Err)
@@ -267,7 +282,14 @@ func (u *UI) loop() {
 				log.Printf("loop: DestroyEvent (clean exit)")
 			}
 			return
+		case app.ConfigEvent:
+			if validWindowSize(e.Config.Size) {
+				u.centerWindowForSize(e.Config.Size)
+			}
 		case app.FrameEvent:
+			if !u.windowCentered && validWindowSize(e.Size) {
+				u.centerWindowForSize(e.Size)
+			}
 			gtx := app.NewContext(&ops, e)
 			u.layout(gtx)
 			e.Frame(gtx.Ops)

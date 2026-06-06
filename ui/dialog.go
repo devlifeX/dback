@@ -2,11 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
+	"dback/backend/verify"
 	"dback/models"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
 
@@ -33,6 +36,12 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 				if d.Kind == DialogConnectionTest {
 					maxW = unit.Dp(420)
 				}
+				if d.Kind == DialogVerifyReport {
+					maxW = unit.Dp(520)
+				}
+				if d.Kind == DialogDeepVerifyConfirm {
+					maxW = unit.Dp(560)
+				}
 				gtx.Constraints.Max.X = gtx.Dp(maxW)
 				if d.Kind == DialogConnectionTest {
 					return u.layoutConnectionTestCard(gtx, th, theme)
@@ -56,6 +65,28 @@ func (u *UI) layoutDialogCard(gtx layout.Context, th *material.Theme, theme *App
 					lbl := material.Body1(th, d.Message)
 					lbl.Color = theme.TextMuted
 					return lbl.Layout(gtx)
+				}),
+				layout.Rigid(vgap(theme)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if d.Kind != DialogDeepVerifyConfirm {
+						return layout.Dimensions{}
+					}
+					hosts := importableProfiles(u.core.Profiles())
+					if len(hosts) == 0 {
+						return mutedLabel(gtx, th, theme, "No import destinations available.")
+					}
+					values, labels := importableHostDropdownOptions(hosts)
+					if u.deepVerifySelect.Value == "" {
+						u.deepVerifySelect.Value = defaultDeepVerifyHostID(hosts)
+					}
+					return labeledEnumDropdownField(gtx, th, theme, &u.deepVerifySelect, "Verify on host", values, labels, &u.deepVerifyDropdown, u.invalidate, nil)
+				}),
+				layout.Rigid(vgap(theme)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if d.Kind != DialogVerifyReport || len(d.VerifyReport) == 0 {
+						return layout.Dimensions{}
+					}
+					return layoutVerifyReportDetails(gtx, th, theme, &u.dialogHostList, d.VerifyReport, d.VerifyPassed)
 				}),
 				layout.Rigid(vgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -278,9 +309,94 @@ func (u *UI) showTemplateReplacePrompt(t models.SQLTemplate, oldBody string, usa
 	})
 }
 
+func layoutVerifyReportDetails(gtx layout.Context, th *material.Theme, theme *AppTheme, list *widget.List, report []models.TableVerifyResult, passed bool) layout.Dimensions {
+	_, mismatched, matched := verify.PartitionReport(report)
+	maxH := gtx.Dp(unit.Dp(260))
+	gtx.Constraints.Max.Y = maxH
+	return scrollArea(gtx, th, list, func(gtx layout.Context) layout.Dimensions {
+		var rows []layout.FlexChild
+		if len(mismatched) > 0 {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return sectionLabel(gtx, th, theme, fmt.Sprintf("Tables with row differences (%d)", len(mismatched)))
+			}))
+			rows = append(rows, layout.Rigid(vgap(theme)))
+			for _, row := range mismatched {
+				row := row
+				rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layoutVerifyMismatchRow(gtx, th, theme, row)
+				}))
+				rows = append(rows, layout.Rigid(vgap(theme)))
+			}
+		}
+		if len(matched) > 0 {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return sectionLabel(gtx, th, theme, fmt.Sprintf("Matched tables (%d)", len(matched)))
+			}))
+			rows = append(rows, layout.Rigid(vgap(theme)))
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				names := make([]string, len(matched))
+				for i, row := range matched {
+					names[i] = row.Table
+				}
+				return mutedLabel(gtx, th, theme, strings.Join(names, ", "))
+			}))
+		}
+		if passed && len(mismatched) == 0 && len(matched) == 0 {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return mutedLabel(gtx, th, theme, "No table details available.")
+			}))
+		}
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+	})
+}
+
+func layoutVerifyMismatchRow(gtx layout.Context, th *material.Theme, theme *AppTheme, row models.TableVerifyResult) layout.Dimensions {
+	diff := row.Actual - row.Expected
+	diffText := fmt.Sprintf("%+d", diff)
+	line1 := row.Table
+	line2 := fmt.Sprintf("In restored backup: %s", formatVerifyCount(row.Actual))
+	line3 := fmt.Sprintf("Recorded at backup: %s", formatVerifyCount(row.Expected))
+	line4 := fmt.Sprintf("Difference: %s rows", diffText)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Body2(th, line1)
+			lbl.Color = theme.Text
+			return lbl.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return mutedLabel(gtx, th, theme, line2)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return mutedLabel(gtx, th, theme, line3)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Body2(th, line4)
+			lbl.Color = theme.Danger
+			return lbl.Layout(gtx)
+		}),
+	)
+}
+
+func formatVerifyCount(n int64) string {
+	s := fmt.Sprintf("%d", n)
+	if n < 1000 {
+		return s
+	}
+	var parts []string
+	for s != "" {
+		if len(s) <= 3 {
+			parts = append([]string{s}, parts...)
+			break
+		}
+		parts = append([]string{s[len(s)-3:]}, parts...)
+		s = s[:len(s)-3]
+	}
+	return strings.Join(parts, ",")
+}
+
 func dialogHasActions(kind DialogKind) bool {
 	switch kind {
-	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogInfo, DialogError, DialogUpdateAvailable:
+	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogInfo, DialogError, DialogUpdateAvailable, DialogVerifyReport, DialogDeepVerifyConfirm:
 		return true
 	default:
 		return false
@@ -289,7 +405,7 @@ func dialogHasActions(kind DialogKind) bool {
 
 func dialogHasCancel(kind DialogKind) bool {
 	switch kind {
-	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogUpdateAvailable:
+	case DialogConfirm, DialogPassword, DialogTemplateReplace, DialogUpdateAvailable, DialogDeepVerifyConfirm:
 		return true
 	default:
 		return false
@@ -301,8 +417,8 @@ func dialogOKLabel(kind DialogKind, custom string) string {
 		return custom
 	}
 	switch kind {
-	case DialogConfirm:
-		return "Confirm"
+	case DialogConfirm, DialogDeepVerifyConfirm:
+		return "Start deep verify"
 	case DialogPassword:
 		return "Continue"
 	case DialogTemplateReplace:

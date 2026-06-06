@@ -168,6 +168,31 @@ type AppConfig struct {
 	Profiles []Profile `json:"profiles"`
 }
 
+type FingerprintTable struct {
+	Rows int64 `json:"rows"`
+}
+
+type BackupFingerprint struct {
+	CapturedAt time.Time                  `json:"captured_at"`
+	Mode       string                     `json:"mode"` // "fast" | "exact"
+	Tables     map[string]FingerprintTable `json:"tables"`
+	TotalRows  int64                      `json:"total_rows"`
+}
+
+type TableVerifyResult struct {
+	Table    string `json:"table"`
+	Expected int64  `json:"expected"`
+	Actual   int64  `json:"actual"`
+	Match    bool   `json:"match"`
+}
+
+type LastVerified struct {
+	VerifiedAt time.Time           `json:"verified_at"`
+	Method     string              `json:"method"` // "quick" | "deep"
+	Passed     bool                `json:"passed"`
+	Report     []TableVerifyResult `json:"report,omitempty"`
+}
+
 type ExportRecord struct {
 	ID             string         `json:"id"`
 	OperationID    string         `json:"operation_id,omitempty"`
@@ -179,6 +204,11 @@ type ExportRecord struct {
 	FileSize       string         `json:"file_size"`
 	FileSizeBytes  int64          `json:"file_size_bytes"`
 	ConnectionType ConnectionType `json:"connection_type,omitempty"`
+	Sha256         string             `json:"sha256,omitempty"`
+	Fingerprint    *BackupFingerprint `json:"fingerprint,omitempty"`
+	QuickVerified  *LastVerified      `json:"quick_verified,omitempty"`
+	DeepVerified   *LastVerified      `json:"deep_verified,omitempty"`
+	LastVerified   *LastVerified      `json:"last_verified,omitempty"` // legacy; prefer QuickVerified/DeepVerified
 }
 
 type ProfileBundle struct {
@@ -226,13 +256,14 @@ type SyncActivity struct {
 
 // AppVaultPayload is the decrypted contents of the internal vault.
 type AppVaultPayload struct {
-	Version      int            `json:"version"`
-	Profiles     []Profile      `json:"profiles"`
-	Templates    []SQLTemplate  `json:"templates"`
-	History      []ExportRecord `json:"history"`
-	Logs         []LogEntry     `json:"logs"`
-	Sync         *SyncSettings  `json:"sync,omitempty"`
-	SyncActivity SyncActivity   `json:"sync_activity,omitempty"`
+	Version              int               `json:"version"`
+	Profiles             []Profile         `json:"profiles"`
+	Templates            []SQLTemplate     `json:"templates"`
+	History              []ExportRecord    `json:"history"`
+	Logs                 []LogEntry        `json:"logs"`
+	Sync                 *SyncSettings     `json:"sync,omitempty"`
+	SyncActivity         SyncActivity      `json:"sync_activity,omitempty"`
+	ImportDestByProfile  map[string]string `json:"import_dest_by_profile,omitempty"`
 }
 
 // AppBundle exports hosts, templates, backup history metadata, and activity logs.

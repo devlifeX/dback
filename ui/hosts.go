@@ -150,7 +150,7 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 		subtitle := hostConnectionSubtitle(p)
 
 		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+			return compactCard(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -162,10 +162,15 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 									return importProtectedIcon(gtx, theme)
 								})
 							}),
-							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								lbl := material.Body1(th, p.Name)
 								lbl.Color = theme.Text
 								return lbl.Layout(gtx)
+							}),
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return mutedLabel(gtx, th, theme, subtitle)
+								})
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return badge(gtx, th, theme, normalizeGroup(p.Group))
@@ -176,28 +181,16 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 							}),
 						)
 					}),
-					layout.Rigid(vgap(theme)),
+					layout.Rigid(spacer(theme, unit.Dp(8))),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, subtitle)
-					}),
-					layout.Rigid(vgap(theme)),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return divider(gtx, theme)
-					}),
-					layout.Rigid(vgap(theme)),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return successButton(gtx, th, theme, cards.backup, "Backup", func() {
-									u.runBackup(p)
-								})
-							}),
-						)
+						return fixedWidthSuccessButton(gtx, th, theme, cards.backup, "Backup", unit.Dp(150), func() {
+							u.runBackup(p)
+						})
 					}),
 				)
 			})
 		}))
-		rows = append(rows, layout.Rigid(vgap(theme)))
+		rows = append(rows, layout.Rigid(spacer(theme, unit.Dp(8))))
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 }
@@ -338,8 +331,14 @@ func (u *UI) runBackup(p models.Profile) {
 			if total > 0 {
 				progress = float64(current) / float64(total)
 			}
-			u.updateJob(job.ID, message, progress, "")
+			verifyPhase := strings.Contains(message, "Capturing fingerprint") ||
+				strings.Contains(message, "Verifying backup integrity")
+			u.setBackupJobProgress(job.ID, message, progress, verifyPhase)
+			if verifyPhase {
+				u.invalidateBackupCache()
+			}
 		})
+		u.invalidateBackupCache()
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				u.finishJob(job.ID, "Backup canceled", nil)
@@ -348,6 +347,7 @@ func (u *UI) runBackup(p models.Profile) {
 			u.finishJob(job.ID, "Backup failed", err)
 			return
 		}
+		u.setBackupJobRecord(job.ID, record.ID)
 		u.finishJob(job.ID, "Backup complete: "+filepath.Base(record.FilePath), nil)
 	}()
 }

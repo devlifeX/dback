@@ -101,7 +101,7 @@ func BackupWordPress(ctx context.Context, req BackupRequest) (BackupResult, erro
 
 // RestoreWordPress uploads a gzip SQL dump to the WordPress REST plugin.
 func RestoreWordPress(ctx context.Context, req RestoreRequest) error {
-	p := req.Profile
+	p := restoreProfile(req)
 	if err := db.ValidateProfileForWordPress(p); err != nil {
 		return err
 	}

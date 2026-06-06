@@ -51,16 +51,21 @@ const (
 	DialogSyncPushWarning
 	DialogConnectionTest
 	DialogUpdateAvailable
+	DialogVerifyReport
+	DialogDeepVerifyConfirm
 )
 
 type DialogState struct {
-	Kind       DialogKind
-	Title      string
-	Message    string
-	OKLabel    string
-	HostUsages []models.TemplateHostUsage
-	OnOK       func()
-	OnCancel   func()
+	Kind                  DialogKind
+	Title                 string
+	Message               string
+	OKLabel               string
+	HostUsages            []models.TemplateHostUsage
+	VerifyReport          []models.TableVerifyResult
+	VerifyPassed          bool
+	VerifyFingerprintMode string
+	OnOK                  func()
+	OnCancel              func()
 }
 
 type PendingFilePick struct {

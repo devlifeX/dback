@@ -373,6 +373,9 @@ func (a *App) Backup(ctx context.Context, profile models.Profile, progress Progr
 		FileSizeBytes:  size,
 		ConnectionType: profile.ConnectionType,
 	}
+	if profile.UsesWordPress() && strings.TrimSpace(record.DatabaseName) == "" {
+		record.DatabaseName = "wordpress"
+	}
 	a.mu.Lock()
 	a.history = append(a.history, record)
 	history := append([]models.ExportRecord(nil), a.history...)
@@ -380,6 +383,22 @@ func (a *App) Backup(ctx context.Context, profile models.Profile, progress Progr
 	if err := a.store.SaveHistory(history); err != nil {
 		return record, err
 	}
+
+	if progress != nil {
+		progress("Capturing fingerprint...", size, size)
+	}
+	sha256, fingerprint := a.captureBackupMetadata(ctx, profile, fullPath, profile.TargetDBName)
+	record.Sha256 = sha256
+	record.Fingerprint = fingerprint
+
+	if progress != nil {
+		progress("Verifying backup integrity...", size, size)
+	}
+	applyAutoQuickVerify(&record)
+	if err := a.UpdateHistoryRecord(record); err != nil {
+		return record, err
+	}
+
 	a.logPhaseWithFile(operationID, profile, "Export", "complete", "", 0, fmt.Sprintf("Backup completed in %s", time.Since(started).Round(time.Millisecond)), "Info", "Succeeded", "", fullPath, size)
 	if progress != nil {
 		progress("Backup completed", size, size)

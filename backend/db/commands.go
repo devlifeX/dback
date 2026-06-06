@@ -14,6 +14,11 @@ func shellEscape(s string) string {
 }
 
 func sqlIdent(name string) string {
+	return SQLIdent(name)
+}
+
+// SQLIdent quotes a MySQL identifier.
+func SQLIdent(name string) string {
 	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
 
@@ -198,6 +203,33 @@ func BuildImportCommand(p models.Profile) string {
 	return ""
 }
 
+// BuildDropDatabaseCommand returns SQL that drops a database by name.
+func BuildDropDatabaseCommand(databaseName string) string {
+	db := sqlIdent(databaseName)
+	return fmt.Sprintf("DROP DATABASE IF EXISTS %s;", db)
+}
+
+// BuildImportPrepareTempCommand runs DROP/CREATE for a temporary verify database.
+func BuildImportPrepareTempCommand(p models.Profile, tempDBName string) string {
+	if !mysqlOrMariaDB(p) {
+		return ""
+	}
+	db := sqlIdent(tempDBName)
+	sql := fmt.Sprintf(
+		"DROP DATABASE IF EXISTS %s; CREATE DATABASE %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
+		db, db,
+	)
+	inner := fmt.Sprintf("set -e; %s", mysqlClientExec(p, "", "-e "+shellEscape(sql)))
+	if p.IsDocker {
+		cmd, err := dockerExecCommand(p.ContainerID, inner)
+		if err != nil {
+			return ""
+		}
+		return cmd
+	}
+	return fmt.Sprintf("sh -c %s", shellEscape(inner))
+}
+
 // BuildImportPrepareCommand runs DROP/CREATE DATABASE before streaming import.
 func BuildImportPrepareCommand(p models.Profile) string {
 	if !mysqlOrMariaDB(p) {
@@ -221,12 +253,34 @@ func BuildImportPrepareCommand(p models.Profile) string {
 
 // BuildImportStreamCommand streams dump from stdin into mysql/mariadb.
 func BuildImportStreamCommand(p models.Profile, compression string) string {
+	return buildImportStreamCommand(p, compression, "")
+}
+
+// BuildImportStreamCommandForVerify streams a dump into a temp verify database without
+// allowing USE/CREATE/DROP statements in the SQL to touch other databases.
+func BuildImportStreamCommandForVerify(p models.Profile, compression, tempDBName string) string {
+	return buildImportStreamCommand(p, compression, tempDBName)
+}
+
+func importVerifySanitizeFilter(tempDBName string) string {
+	ident := sqlIdent(tempDBName)
+	return fmt.Sprintf(
+		`sed -e '/^CREATE DATABASE/IId' -e '/^DROP DATABASE/IId' -e 's/^USE `+"`"+`[^`+"`"+`]*`+"`"+`/USE %s/I'`,
+		ident,
+	)
+}
+
+func buildImportStreamCommand(p models.Profile, compression, verifyTempDB string) string {
 	if !mysqlOrMariaDB(p) {
 		return ""
 	}
 	client := mysqlClientExec(p, p.TargetDBName, "")
 	sessionSetup := `printf "SET SESSION sql_mode=''; SET FOREIGN_KEY_CHECKS=0;\n"`
-	pipe := fmt.Sprintf("{ %s; %s; } | %s", sessionSetup, importDecompressStream(compression), client)
+	stream := importDecompressStream(compression)
+	if verifyTempDB != "" {
+		stream = fmt.Sprintf("%s | %s", stream, importVerifySanitizeFilter(verifyTempDB))
+	}
+	pipe := fmt.Sprintf("{ %s; %s; } | %s", sessionSetup, stream, client)
 	cmd := shellWithPipefail(pipe)
 	if p.IsDocker {
 		dockerCmd, err := dockerExecCommand(p.ContainerID, cmd)
@@ -240,24 +294,38 @@ func BuildImportStreamCommand(p models.Profile, compression string) string {
 
 // BuildImportFromFileCommand imports from remote compressed file on host.
 func BuildImportFromFileCommand(p models.Profile, remotePath, compression string) string {
+	return buildImportFromFileCommand(p, remotePath, compression, "")
+}
+
+// BuildImportFromFileCommandForVerify imports into a temp verify database safely.
+func BuildImportFromFileCommandForVerify(p models.Profile, remotePath, compression, tempDBName string) string {
+	return buildImportFromFileCommand(p, remotePath, compression, tempDBName)
+}
+
+func buildImportFromFileCommand(p models.Profile, remotePath, compression, verifyTempDB string) string {
 	if !mysqlOrMariaDB(p) {
 		return ""
 	}
 	client := mysqlClientExec(p, p.TargetDBName, "")
 	sessionSetup := `printf "SET SESSION sql_mode=''; SET FOREIGN_KEY_CHECKS=0;\n"`
+	stream := fmt.Sprintf("%s %s", importDecompressStream(compression), shellEscape(remotePath))
+	if verifyTempDB != "" {
+		stream = fmt.Sprintf("%s | %s", stream, importVerifySanitizeFilter(verifyTempDB))
+	}
 	pipe := fmt.Sprintf(
-		"{ %s; %s %s; } | %s",
-		sessionSetup, importDecompressStream(compression), shellEscape(remotePath), client,
+		"{ %s; %s; } | %s",
+		sessionSetup, stream, client,
 	)
 	if p.IsDocker {
 		containerClient, err := dockerExecCommand(p.ContainerID, shellWithPipefail(fmt.Sprintf("{ %s; cat; } | %s", sessionSetup, mysqlClientExec(p, p.TargetDBName, ""))))
 		if err != nil {
 			return ""
 		}
-		hostPipe := fmt.Sprintf("%s | %s",
-			importDecompressStream(compression)+" "+shellEscape(remotePath),
-			containerClient,
-		)
+		hostStream := importDecompressStream(compression) + " " + shellEscape(remotePath)
+		if verifyTempDB != "" {
+			hostStream = fmt.Sprintf("%s | %s", hostStream, importVerifySanitizeFilter(verifyTempDB))
+		}
+		hostPipe := fmt.Sprintf("%s | %s", hostStream, containerClient)
 		return shellWithPipefail(hostPipe)
 	}
 	return shellWithPipefail(pipe)

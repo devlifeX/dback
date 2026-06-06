@@ -64,21 +64,44 @@ func splitBlocks(out string) []string {
 func parseTSVBlock(block string) QueryResult {
 	lines := strings.Split(block, "\n")
 	var rows [][]string
+	hasTabs := false
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if !strings.Contains(line, "\t") {
-			continue
+		if strings.Contains(line, "\t") {
+			hasTabs = true
+			rows = append(rows, strings.Split(line, "\t"))
 		}
-		rows = append(rows, strings.Split(line, "\t"))
 	}
-	if len(rows) == 0 {
+	if hasTabs {
+		if len(rows) == 0 {
+			return QueryResult{}
+		}
+		return QueryResult{
+			Columns: rows[0],
+			Rows:    rows[1:],
+		}
+	}
+
+	// mysql --batch prints single-column results without tab separators.
+	var nonEmpty []string
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if line != "" {
+			nonEmpty = append(nonEmpty, line)
+		}
+	}
+	if len(nonEmpty) < 2 {
 		return QueryResult{}
 	}
+	dataRows := make([][]string, 0, len(nonEmpty)-1)
+	for _, line := range nonEmpty[1:] {
+		dataRows = append(dataRows, []string{line})
+	}
 	return QueryResult{
-		Columns: rows[0],
-		Rows:    rows[1:],
+		Columns: []string{nonEmpty[0]},
+		Rows:    dataRows,
 	}
 }

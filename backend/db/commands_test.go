@@ -104,6 +104,14 @@ func TestParseMySQLBatchOutput(t *testing.T) {
 		t.Fatalf("expected 2 rows, got %d", len(result.Rows))
 	}
 
+	count := ParseMySQLBatchOutput("COUNT(*)\n0")
+	if len(count.Columns) != 1 || count.Columns[0] != "COUNT(*)" {
+		t.Fatalf("unexpected count columns: %v", count.Columns)
+	}
+	if len(count.Rows) != 1 || count.Rows[0][0] != "0" {
+		t.Fatalf("unexpected count rows: %v", count.Rows)
+	}
+
 	plain := ParseMySQLBatchOutput("Query OK, 3 rows affected")
 	if len(plain.Rows) != 1 || plain.Rows[0][0] != "Query OK, 3 rows affected" {
 		t.Fatalf("unexpected plain result: %v", plain.Rows)
@@ -256,5 +264,48 @@ func TestBuildQueryCommand_Docker(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "mysql_container") {
 		t.Fatalf("expected container id, got: %s", cmd)
+	}
+}
+
+func TestBuildDropDatabaseCommand(t *testing.T) {
+	sql := BuildDropDatabaseCommand("dback_verify_123")
+	if !strings.Contains(sql, "DROP DATABASE IF EXISTS `dback_verify_123`") {
+		t.Fatalf("unexpected drop sql: %q", sql)
+	}
+}
+
+func TestBuildImportStreamCommandForVerify_SanitizesDatabaseSwitch(t *testing.T) {
+	p := models.Profile{
+		DBType:       models.DBTypeMySQL,
+		DBUser:       "user",
+		DBPassword:   "secret",
+		DBHost:       "localhost",
+		DBPort:       "3306",
+		TargetDBName: "dback_verify_123",
+	}
+	cmd := BuildImportStreamCommandForVerify(p, "gzip", "dback_verify_123")
+	if !strings.Contains(cmd, "sed") {
+		t.Fatalf("expected sed sanitizer in verify import command: %s", cmd)
+	}
+	if !strings.Contains(cmd, "dback_verify_123") {
+		t.Fatalf("expected temp db in verify import command: %s", cmd)
+	}
+}
+
+func TestBuildImportPrepareTempCommand(t *testing.T) {
+	p := models.Profile{
+		DBType:       models.DBTypeMySQL,
+		DBUser:       "user",
+		DBPassword:   "secret",
+		DBHost:       "localhost",
+		DBPort:       "3306",
+		TargetDBName: "production",
+	}
+	cmd := BuildImportPrepareTempCommand(p, "dback_verify_999")
+	if cmd == "" {
+		t.Fatal("expected command")
+	}
+	if !strings.Contains(cmd, "dback_verify_999") {
+		t.Fatalf("expected temp db in command: %s", cmd)
 	}
 }

@@ -10,6 +10,8 @@ type operationJob struct {
 	ID          string
 	Kind        string
 	ProfileName string
+	RecordID    string
+	VerifyPhase bool
 	Status      string
 	Progress    float64
 	StartedAt   time.Time
@@ -34,6 +36,32 @@ func (u *UI) addJob(kind, profileName string, cancel context.CancelFunc) *operat
 	u.ensureJobTicker()
 	u.invalidate()
 	return job
+}
+
+func (u *UI) setBackupJobProgress(id, status string, progress float64, verifyPhase bool) {
+	u.jobsMu.Lock()
+	for _, job := range u.jobs {
+		if job.ID == id {
+			job.Status = status
+			job.Progress = progress
+			job.VerifyPhase = verifyPhase
+			break
+		}
+	}
+	u.jobsMu.Unlock()
+	u.requestBackupsRefresh(false)
+}
+
+func (u *UI) setBackupJobRecord(id, recordID string) {
+	u.jobsMu.Lock()
+	for _, job := range u.jobs {
+		if job.ID == id {
+			job.RecordID = recordID
+			job.VerifyPhase = false
+			break
+		}
+	}
+	u.jobsMu.Unlock()
 }
 
 func (u *UI) updateJob(id, status string, progress float64, errText string) {
@@ -69,6 +97,7 @@ func (u *UI) finishJob(id, status string, err error) {
 	}
 	u.jobsMu.Unlock()
 	u.requestBackupsRefresh(true)
+	u.invalidateBackupCache()
 }
 
 func (u *UI) hasActiveJobs() bool {

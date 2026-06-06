@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"path/filepath"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -91,106 +93,70 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 	hostValues := u.backupCache.hostValues
 	hostLabels := u.backupCache.hostLabels
 
-	status := "Select a backup file to import or open its folder."
-	if u.selectedBackup != nil {
-		status = filepath.Base(u.selectedBackup.FilePath)
-	}
-
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return labeledEnumDropdownField(gtx, th, theme, &u.backupHostSelect, "Host filter", hostValues, hostLabels, &u.backupHostDropdown)
+			return labeledEnumDropdownField(gtx, th, theme, &u.backupHostSelect, "Host filter", hostValues, hostLabels, &u.backupHostDropdown, u.invalidate, nil)
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return scrollArea(gtx, th, &u.backupList, func(gtx layout.Context) layout.Dimensions {
-				header := []string{"When", "Profile", "Database", "Size", "File", ""}
-				var rows []layout.FlexChild
-				rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return tableHeader(gtx, th, theme, header)
-				}))
-				for _, record := range records {
-					btn, ok := u.backupRows[record.ID]
-					if !ok {
-						btn = new(widget.Clickable)
-						u.backupRows[record.ID] = btn
-					}
-					rowBtn, ok := u.backupRows["sel_"+record.ID]
-					if !ok {
-						rowBtn = new(widget.Clickable)
-						u.backupRows["sel_"+record.ID] = rowBtn
-					}
-					selected := u.selectedBackupID == record.ID
-					importBtn := btn
-					selectBtn := rowBtn
-					rec := record
-					folderBtn, okFolder := u.backupFolderBtns[rec.ID]
-					if !okFolder {
-						folderBtn = new(widget.Clickable)
-						u.backupFolderBtns[rec.ID] = folderBtn
-					}
-					openBtn := folderBtn
+				return layout.Inset{Bottom: unit.Dp(24)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					var rows []layout.FlexChild
 					rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if selectBtn.Clicked(gtx) {
-							r := rec
-							u.selectedBackup = &r
-							u.selectedBackupID = rec.ID
+						return backupTableHeader(gtx, th, theme)
+					}))
+					for _, record := range records {
+						rec := record
+						menu, ok := u.backupRowMenus[rec.ID]
+						if !ok {
+							menu = backupRowMenuWidgets{
+								more:    new(widget.Clickable),
+								import_: new(widget.Clickable),
+								verify:  new(widget.Clickable),
+								folder:  new(widget.Clickable),
+							}
+							u.backupRowMenus[rec.ID] = menu
 						}
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								return tableRow(gtx, th, theme, selected, []string{
+						selected := u.selectedBackupID == rec.ID
+						rowMenu := menu
+						rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Bottom: theme.Gap}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return backupTableRow(gtx, th, theme, selected, []string{
 									formatRelativeTime(rec.ExportDate),
 									rec.ProfileName,
 									rec.DatabaseName,
 									rec.FileSize,
-									filepath.Base(rec.FilePath),
-								}, "Import", importBtn, func() {
-									u.openBackupDetail(rec)
+									u.backupQuickVerifyStatus(rec),
+									u.backupDeepVerifyStatus(rec),
+								}, func(gtx layout.Context) layout.Dimensions {
+									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return secondaryButton(gtx, th, theme, rowMenu.import_, "Import", func() {
+												u.openBackupDetail(rec)
+											})
+										}),
+										layout.Rigid(hgap(theme)),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return u.layoutBackupRowMoreButton(gtx, th, theme, rec, rowMenu)
+										}),
+									)
 								})
-							}),
-							layout.Rigid(hgap(theme)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return secondaryButton(gtx, th, theme, openBtn, "Folder", func() {
-									u.openBackupFolder(rec.FilePath)
-								})
-							}),
-						)
-					}))
-				}
-				if len(records) == 0 {
-					rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return mutedLabel(gtx, th, theme, "No backup files yet.")
-					}))
-				}
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+							})
+						}))
+					}
+					if len(records) == 0 {
+						rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{
+								Top: unit.Dp(12), Bottom: unit.Dp(12),
+								Left: unit.Dp(16), Right: unit.Dp(16),
+							}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return mutedLabel(gtx, th, theme, "No backup files yet.")
+							})
+						}))
+					}
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
+				})
 			})
-		}),
-		layout.Rigid(vgap(theme)),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return mutedLabel(gtx, th, theme, status)
-		}),
-		layout.Rigid(vgap(theme)),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return primaryButton(gtx, th, theme, &u.importSelectedBtn, "Import Selected", func() {
-						if u.selectedBackup == nil {
-							u.showInfo("Backup Files", "Select a backup first.")
-							return
-						}
-						u.openBackupDetail(*u.selectedBackup)
-					})
-				}),
-				layout.Rigid(hgap(theme)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return secondaryButton(gtx, th, theme, &u.openFolderBtn, "Open Folder", func() {
-						if u.selectedBackup == nil {
-							u.showInfo("Backup Files", "Select a backup first.")
-							return
-						}
-						u.openBackupFolder(u.selectedBackup.FilePath)
-					})
-				}),
-			)
 		}),
 	)
 }
@@ -248,15 +214,30 @@ func (u *UI) layoutJobsTable(gtx layout.Context, th *material.Theme, theme *AppT
 	})
 }
 
+func (u *UI) defaultImportDestID(sourceProfileID string, importable []models.Profile) string {
+	if destID := u.core.ImportDestForProfile(sourceProfileID); destID != "" {
+		if _, ok := profileByID(importable, destID); ok {
+			return destID
+		}
+	}
+	if len(importable) > 0 {
+		return importable[0].ID
+	}
+	return ""
+}
+
+func (u *UI) rememberImportDest(sourceProfileID, destProfileID string) {
+	if sourceProfileID == "" || destProfileID == "" {
+		return
+	}
+	_ = u.core.SetImportDestForProfile(sourceProfileID, destProfileID)
+}
+
 func (u *UI) openBackupDetail(record models.ExportRecord) {
 	u.selectedBackup = &record
 	u.view = ViewBackupDetail
 	importable := importableProfiles(u.core.Profiles())
-	if len(importable) > 0 {
-		u.destSelect.Value = importable[0].ID
-	} else {
-		u.destSelect.Value = ""
-	}
+	u.destSelect.Value = u.defaultImportDestID(record.ProfileID, importable)
 	u.invalidate()
 }
 
@@ -322,8 +303,28 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return sectionLabel(gtx, th, theme, "Verification")
+					}),
+					layout.Rigid(vgap(theme)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return mutedLabel(gtx, th, theme, "File integrity: "+u.backupDetailFileVerifyLabel(*record))
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return mutedLabel(gtx, th, theme, "Deep verify: "+u.backupDetailDeepVerifyLabel(*record))
+					}),
+				)
+			})
+		}),
+		layout.Rigid(vgap(theme)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if canImport {
-				return labeledEnumDropdownField(gtx, th, theme, &u.destSelect, "Destination Host", values, labels, &u.destHostDropdown)
+				sourceProfileID := record.ProfileID
+				return labeledEnumDropdownField(gtx, th, theme, &u.destSelect, "Destination Host", values, labels, &u.destHostDropdown, u.invalidate, func(destID string) {
+					u.rememberImportDest(sourceProfileID, destID)
+				})
 			}
 			return mutedLabel(gtx, th, theme, "No import destinations available. All hosts are protected from import, or no hosts exist.")
 		}),
@@ -344,6 +345,12 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 						u.openBackupFolder(record.FilePath)
 					})
 				}),
+				layout.Rigid(hgap(theme)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return secondaryButton(gtx, th, theme, &u.verifyBackupBtn, "Deep verify", func() {
+						u.runDeepVerifyPrompt(*record)
+					})
+				}),
 			)
 		}),
 	)
@@ -362,6 +369,7 @@ func (u *UI) runRestore(record models.ExportRecord) {
 		u.showError(fmt.Errorf("select an import destination host"))
 		return
 	}
+	u.rememberImportDest(record.ProfileID, dest.ID)
 	if !dest.AllowsImport() {
 		u.showError(fmt.Errorf("host %q is protected from import", dest.Name))
 		return
@@ -391,6 +399,169 @@ func (u *UI) runRestore(record models.ExportRecord) {
 		}
 		u.finishJob(job.ID, "Import complete", nil)
 	}()
+}
+
+type backupTableColumn struct {
+	Label    string
+	Weight   float32
+	MinWidth unit.Dp
+}
+
+var backupTableColumns = []backupTableColumn{
+	{Label: "When", Weight: 1.2},
+	{Label: "Profile", Weight: 1.5},
+	{Label: "Database", Weight: 1.2},
+	{Label: "Size", Weight: 0.8},
+	{Label: "Verify", Weight: 0.9},
+	{Label: "Deep verify", Weight: 1.0},
+	{Label: "Actions", MinWidth: unit.Dp(180)},
+}
+
+func backupTableHeaderInset() layout.Inset {
+	return layout.Inset{
+		Top: unit.Dp(4), Bottom: unit.Dp(8),
+		Left: unit.Dp(16), Right: unit.Dp(16),
+	}
+}
+
+func backupTableRowInset() layout.Inset {
+	return layout.Inset{
+		Top: unit.Dp(12), Bottom: unit.Dp(12),
+		Left: unit.Dp(16), Right: unit.Dp(16),
+	}
+}
+
+func backupTableHeader(gtx layout.Context, th *material.Theme, theme *AppTheme) layout.Dimensions {
+	return backupTableHeaderInset().Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		var children []layout.FlexChild
+		for _, col := range backupTableColumns {
+			col := col
+			if col.Weight > 0 {
+				children = append(children, layout.Flexed(col.Weight, func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Caption(th, col.Label)
+					lbl.Color = theme.TextMuted
+					return lbl.Layout(gtx)
+				}))
+			} else {
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = gtx.Dp(col.MinWidth)
+					lbl := material.Caption(th, col.Label)
+					lbl.Color = theme.TextMuted
+					return lbl.Layout(gtx)
+				}))
+			}
+		}
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+	})
+}
+
+func (u *UI) layoutBackupRowMoreButton(gtx layout.Context, th *material.Theme, theme *AppTheme, rec models.ExportRecord, menu backupRowMenuWidgets) layout.Dimensions {
+	if menu.more.Clicked(gtx) {
+		if u.backupMenuOpenID == rec.ID {
+			u.backupMenuOpenID = ""
+		} else {
+			u.backupMenuOpenID = rec.ID
+		}
+		u.invalidate()
+	}
+
+	btnDims := renderButton(gtx, th, theme, menu.more, "⋮", btnSecondary, false)
+
+	if u.backupMenuOpenID != rec.ID {
+		return btnDims
+	}
+
+	verifyFG := theme.Success
+	folderFG := theme.Link
+	items := []menuPopupItem{
+		{
+			label: "Deep verify",
+			fg:    &verifyFG,
+			btn:   menu.verify,
+			onClick: func() {
+				u.backupMenuOpenID = ""
+				u.runDeepVerifyPrompt(rec)
+			},
+		},
+		{
+			label: "Folder",
+			fg:    &folderFG,
+			btn:   menu.folder,
+			onClick: func() {
+				u.backupMenuOpenID = ""
+				u.openBackupFolder(rec.FilePath)
+			},
+		},
+	}
+
+	if u.menuCloseArea.Clicked(gtx) {
+		u.backupMenuOpenID = ""
+		u.invalidate()
+	}
+
+	popupW := gtx.Dp(unit.Dp(160))
+	popupOffX := btnDims.Size.X - popupW
+	popupOffY := btnDims.Size.Y + gtx.Dp(unit.Dp(4))
+
+	macro := op.Record(gtx.Ops)
+
+	backdropStack := op.Offset(image.Pt(-9999, -9999)).Push(gtx.Ops)
+	backdropClip := clip.Rect{Max: image.Pt(99999, 99999)}.Push(gtx.Ops)
+	u.menuCloseArea.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: image.Pt(99999, 99999)}
+	})
+	backdropClip.Pop()
+	backdropStack.Pop()
+
+	popupStack := op.Offset(image.Pt(popupOffX, popupOffY)).Push(gtx.Ops)
+	menuPopup(gtx, th, theme, items)
+	popupStack.Pop()
+
+	op.Defer(gtx.Ops, macro.Stop())
+
+	return btnDims
+}
+
+func backupTableRow(gtx layout.Context, th *material.Theme, theme *AppTheme, selected bool, cells []string, actions layout.Widget) layout.Dimensions {
+	bg := theme.Surface
+	borderCol := theme.Border
+	if selected {
+		bg = theme.AccentSoft
+		borderCol = theme.Link
+	}
+	macro := op.Record(gtx.Ops)
+	dims := backupTableRowInset().Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		var children []layout.FlexChild
+		cellIdx := 0
+		for _, col := range backupTableColumns {
+			col := col
+			if col.Weight == 0 && col.MinWidth > 0 {
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = gtx.Dp(col.MinWidth)
+					return actions(gtx)
+				}))
+				continue
+			}
+			text := ""
+			if cellIdx < len(cells) {
+				text = cells[cellIdx]
+			}
+			cellIdx++
+			weight := col.Weight
+			cellText := text
+			children = append(children, layout.Flexed(weight, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Body2(th, cellText)
+				lbl.Color = theme.Text
+				return lbl.Layout(gtx)
+			}))
+		}
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+	})
+	call := macro.Stop()
+	radius := gtx.Dp(theme.RadiusSm)
+	borderedRoundedRect(gtx, dims.Size, radius, bg, borderCol, gtx.Dp(unit.Dp(1)))
+	call.Add(gtx.Ops)
+	return dims
 }
 
 func tableHeader(gtx layout.Context, th *material.Theme, theme *AppTheme, cols []string) layout.Dimensions {

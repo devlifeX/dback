@@ -310,17 +310,26 @@ func backupTmpFile(ctx context.Context, client ssh.Executor, p models.Profile, t
 }
 
 type RestoreRequest struct {
-	Profile     models.Profile
-	OperationID string
-	LocalPath   string
-	FileSize    int64
-	Logger      Logger
-	Progress    ProgressFunc
+	Profile          models.Profile
+	OperationID      string
+	LocalPath        string
+	FileSize         int64
+	Logger           Logger
+	Progress         ProgressFunc
+	TargetDBOverride string // optional temp database for deep verify
+}
+
+func restoreProfile(req RestoreRequest) models.Profile {
+	p := req.Profile
+	if override := strings.TrimSpace(req.TargetDBOverride); override != "" {
+		p.TargetDBName = override
+	}
+	return p
 }
 
 // RestoreSSH restores with streaming first, tmp-file fallback.
 func RestoreSSH(ctx context.Context, req RestoreRequest) error {
-	p := req.Profile
+	p := restoreProfile(req)
 	if err := db.ValidateProfileForRemoteOps(p); err != nil {
 		return err
 	}
@@ -362,6 +371,9 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 	}
 
 	importCmd := db.BuildImportStreamCommand(p, compression)
+	if override := strings.TrimSpace(req.TargetDBOverride); override != "" {
+		importCmd = db.BuildImportStreamCommandForVerify(p, compression, override)
+	}
 	logRestore(req, "command", string(StrategyStreaming), 0, db.MaskCommand(importCmd), "Built", "")
 
 	strategies := []Strategy{StrategyStreaming, StrategyTmpFile}
@@ -372,9 +384,19 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 		}
 		logRestore(req, "restore", string(strategy), attempt+1, "Starting restore attempt", "Started", "")
 
-		if prep := db.BuildImportPrepareCommand(p); prep != "" {
+		var prep string
+		if override := strings.TrimSpace(req.TargetDBOverride); override != "" {
+			prep = db.BuildImportPrepareTempCommand(p, override)
+		} else {
+			prep = db.BuildImportPrepareCommand(p)
+		}
+		if prep != "" {
 			if req.Progress != nil {
-				req.Progress("Recreating target database...", 0, req.FileSize)
+				if req.TargetDBOverride != "" {
+					req.Progress("Preparing temporary verify database...", 0, req.FileSize)
+				} else {
+					req.Progress("Recreating target database...", 0, req.FileSize)
+				}
 			}
 			if out, prepErr := client.RunCommand(prep); prepErr != nil {
 				lastErr = fmt.Errorf("prepare database: %w: %s", prepErr, strings.TrimSpace(out))
@@ -397,12 +419,12 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 			if _, seekErr := in.Seek(0, io.SeekStart); seekErr != nil {
 				return seekErr
 			}
-			restoreErr = restoreStream(ctx, client, p, in, req.FileSize, compression, req.Progress)
+			restoreErr = restoreStream(ctx, client, p, in, req.FileSize, compression, req.Progress, req.TargetDBOverride)
 		case StrategyTmpFile:
 			if _, seekErr := in.Seek(0, io.SeekStart); seekErr != nil {
 				return seekErr
 			}
-			restoreErr = restoreTmpFile(ctx, client, p, pf.SelectedTmpDir, req.LocalPath, in, req.FileSize, compression, req.OperationID, req.Progress)
+			restoreErr = restoreTmpFile(ctx, client, p, pf.SelectedTmpDir, req.LocalPath, in, req.FileSize, compression, req.OperationID, req.Progress, req.TargetDBOverride)
 		}
 		if restoreErr == nil {
 			logRestore(req, "restore", string(strategy), attempt+1, "Restore completed", "Succeeded", "")
@@ -421,8 +443,11 @@ func RestoreSSH(ctx context.Context, req RestoreRequest) error {
 	return lastErr
 }
 
-func restoreStream(ctx context.Context, client ssh.Executor, p models.Profile, in *os.File, total int64, compression string, progress ProgressFunc) error {
+func restoreStream(ctx context.Context, client ssh.Executor, p models.Profile, in *os.File, total int64, compression string, progress ProgressFunc, targetDBOverride string) error {
 	importCmd := db.BuildImportStreamCommand(p, compression)
+	if override := strings.TrimSpace(targetDBOverride); override != "" {
+		importCmd = db.BuildImportStreamCommandForVerify(p, compression, override)
+	}
 	stdin, stderr, session, err := client.RunCommandPipeInput(importCmd)
 	if err != nil {
 		return err
@@ -458,7 +483,7 @@ func restoreStream(ctx context.Context, client ssh.Executor, p models.Profile, i
 	return nil
 }
 
-func restoreTmpFile(ctx context.Context, client ssh.Executor, p models.Profile, tmpDir, localPath string, in *os.File, total int64, compression, operationID string, progress ProgressFunc) error {
+func restoreTmpFile(ctx context.Context, client ssh.Executor, p models.Profile, tmpDir, localPath string, in *os.File, total int64, compression, operationID string, progress ProgressFunc, targetDBOverride string) error {
 	remotePath := tmpDir + "/import.sql.gz"
 	mkdir := shellMkdir(tmpDir)
 	if _, err := client.RunCommand(mkdir); err != nil {
@@ -524,6 +549,9 @@ func restoreTmpFile(ctx context.Context, client ssh.Executor, p models.Profile, 
 	}
 
 	importCmd := db.BuildImportFromFileCommand(p, remotePath, compression)
+	if override := strings.TrimSpace(targetDBOverride); override != "" {
+		importCmd = db.BuildImportFromFileCommandForVerify(p, remotePath, compression, override)
+	}
 	if progress != nil {
 		progress("Importing from remote file...", total, total)
 	}

@@ -103,6 +103,20 @@ func card(gtx layout.Context, theme *AppTheme, w layout.Widget) layout.Dimension
 	return dims
 }
 
+func compactCard(gtx layout.Context, theme *AppTheme, w layout.Widget) layout.Dimensions {
+	macro := op.Record(gtx.Ops)
+	dims := layout.Inset{
+		Top: unit.Dp(12), Bottom: unit.Dp(12),
+		Left: unit.Dp(16), Right: unit.Dp(16),
+	}.Layout(gtx, w)
+	call := macro.Stop()
+
+	radius := gtx.Dp(theme.Radius)
+	borderedRoundedRect(gtx, dims.Size, radius, theme.Surface, theme.Border, gtx.Dp(unit.Dp(1)))
+	call.Add(gtx.Ops)
+	return dims
+}
+
 func borderedInput(gtx layout.Context, theme *AppTheme, focused bool, w layout.Widget) layout.Dimensions {
 	borderCol := theme.Border
 	if focused {
@@ -253,6 +267,37 @@ func secondaryButton(gtx layout.Context, th *material.Theme, theme *AppTheme, bt
 
 func successButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, onClick func()) layout.Dimensions {
 	return actionButton(gtx, th, theme, btn, label, btnSuccess, false, onClick)
+}
+
+func fixedWidthSuccessButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *widget.Clickable, label string, width unit.Dp, onClick func()) layout.Dimensions {
+	if btn.Clicked(gtx) && onClick != nil {
+		onClick()
+	}
+	bg := theme.Success
+	fg := color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	radius := gtx.Dp(theme.RadiusSm)
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		macro := op.Record(gtx.Ops)
+		dims := layout.Inset{
+			Top: unit.Dp(10), Bottom: unit.Dp(10),
+			Left: unit.Dp(16), Right: unit.Dp(16),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			w := gtx.Dp(width)
+			if gtx.Constraints.Max.X > w {
+				gtx.Constraints.Min.X = w
+				gtx.Constraints.Max.X = w
+			}
+			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Body2(th, label)
+				lbl.Color = fg
+				return lbl.Layout(gtx)
+			})
+		})
+		call := macro.Stop()
+		borderedRoundedRect(gtx, dims.Size, radius, bg, bg, 0)
+		call.Add(gtx.Ops)
+		return dims
+	})
 }
 
 func disabledButton(gtx layout.Context, th *material.Theme, theme *AppTheme, label string) layout.Dimensions {
@@ -422,11 +467,10 @@ func chipButton(gtx layout.Context, th *material.Theme, theme *AppTheme, btn *wi
 		fg = theme.Link
 		border = theme.Link
 	}
-	clicked := btn.Clicked(gtx)
+	if btn.Clicked(gtx) && onClick != nil {
+		onClick()
+	}
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		if clicked && onClick != nil {
-			onClick()
-		}
 		macro := op.Record(gtx.Ops)
 		dims := layout.Inset{
 			Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(14), Right: unit.Dp(14),
@@ -467,7 +511,19 @@ type DropdownState struct {
 	ItemBtns map[string]*widget.Clickable
 }
 
-func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, label string, opts DropdownOptions, selected *string, open *bool, toggle *widget.Clickable, list *widget.List, itemBtns map[string]*widget.Clickable) layout.Dimensions {
+func dropdownDisplayLabel(values, labels []string, selected string) string {
+	for i, v := range values {
+		if v == selected {
+			if i < len(labels) {
+				return labels[i]
+			}
+			return v
+		}
+	}
+	return selected
+}
+
+func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, label string, opts DropdownOptions, selected *string, open *bool, toggle *widget.Clickable, list *widget.List, itemBtns map[string]*widget.Clickable, invalidate func(), onSelect func(string)) layout.Dimensions {
 	values := opts.Values
 	labels := opts.Labels
 	if len(values) == 0 {
@@ -478,17 +534,6 @@ func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, labe
 	if *selected == "" || !containsString(values, *selected) {
 		*selected = values[0]
 	}
-	display := *selected
-	for i, v := range values {
-		if v == *selected {
-			if i < len(labels) {
-				display = labels[i]
-			} else {
-				display = v
-			}
-			break
-		}
-	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -496,12 +541,15 @@ func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, labe
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				clicked := toggle.Clicked(gtx)
-				if clicked {
-					*open = !*open
-				}
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if toggle.Clicked(gtx) {
+							*open = !*open
+							if invalidate != nil {
+								invalidate()
+							}
+						}
+						display := dropdownDisplayLabel(values, labels, *selected)
 						return borderedInput(gtx, theme, *open, func(gtx layout.Context) layout.Dimensions {
 							return toggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -547,6 +595,12 @@ func dropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, labe
 								return chipButton(gtx, th, theme, btn, itemLabel, "", active, func() {
 									*selected = value
 									*open = false
+									if onSelect != nil {
+										onSelect(value)
+									}
+									if invalidate != nil {
+										invalidate()
+									}
 								})
 							})
 						})
@@ -626,7 +680,7 @@ func checkboxField(gtx layout.Context, th *material.Theme, theme *AppTheme, c *w
 	return ch.Layout(gtx)
 }
 
-func labeledEnumDropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values, labels []string, dd *DropdownState) layout.Dimensions {
+func labeledEnumDropdownField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values, labels []string, dd *DropdownState, invalidate func(), onSelect func(string)) layout.Dimensions {
 	e.Update(gtx)
 	if e.Value == "" && len(values) > 0 {
 		e.Value = values[0]
@@ -634,7 +688,7 @@ func labeledEnumDropdownField(gtx layout.Context, th *material.Theme, theme *App
 	if dd.ItemBtns == nil {
 		dd.ItemBtns = make(map[string]*widget.Clickable)
 	}
-	return dropdownField(gtx, th, theme, label, DropdownOptions{Values: values, Labels: labels}, &e.Value, &dd.Open, &dd.Toggle, &dd.List, dd.ItemBtns)
+	return dropdownField(gtx, th, theme, label, DropdownOptions{Values: values, Labels: labels}, &e.Value, &dd.Open, &dd.Toggle, &dd.List, dd.ItemBtns, invalidate, onSelect)
 }
 
 func labeledEnumField(gtx layout.Context, th *material.Theme, theme *AppTheme, e *widget.Enum, label string, values, labels []string) layout.Dimensions {
@@ -758,6 +812,7 @@ func statusDot(gtx layout.Context, theme *AppTheme, status stepDotStatus) layout
 type menuPopupItem struct {
 	label   string
 	danger  bool
+	fg      *color.NRGBA
 	btn     *widget.Clickable
 	onClick func()
 }
@@ -789,6 +844,8 @@ func menuPopup(gtx layout.Context, th *material.Theme, theme *AppTheme, items []
 				fg := theme.Text
 				if item.danger {
 					fg = theme.Danger
+				} else if item.fg != nil {
+					fg = *item.fg
 				}
 				hovered := item.btn.Hovered()
 				bg := theme.Surface

@@ -82,6 +82,39 @@ func importableProfiles(profiles []models.Profile) []models.Profile {
 	return out
 }
 
+func defaultDeepVerifyHostID(profiles []models.Profile) string {
+	for _, p := range profiles {
+		if p.IsLocalhost() {
+			return p.ID
+		}
+	}
+	if len(profiles) > 0 {
+		return profiles[0].ID
+	}
+	return ""
+}
+
+func importableHostDropdownOptions(profiles []models.Profile) (values, labels []string) {
+	for _, p := range profiles {
+		values = append(values, p.ID)
+		label := p.Name
+		if p.Group != "" {
+			label += " (" + p.Group + ")"
+		}
+		labels = append(labels, label+" — "+hostConnectionSubtitle(p))
+	}
+	return values, labels
+}
+
+func profileByID(profiles []models.Profile, id string) (models.Profile, bool) {
+	for _, p := range profiles {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return models.Profile{}, false
+}
+
 func hostConnectionSubtitle(p models.Profile) string {
 	var conn string
 	switch p.ConnectionType {

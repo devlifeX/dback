@@ -29,8 +29,9 @@ type Store struct {
 	templates []models.SQLTemplate
 	history   []models.ExportRecord
 	logs      []models.LogEntry
-	sync      *models.SyncSettings
-	syncActivity models.SyncActivity
+	sync                 *models.SyncSettings
+	syncActivity         models.SyncActivity
+	importDestByProfile  map[string]string
 }
 
 func New(baseDir string) *Store {
@@ -210,6 +211,45 @@ func (s *Store) RecordSyncPull() error {
 		return ErrVaultLocked
 	}
 	s.syncActivity.LastPullAt = time.Now()
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// ImportDestForProfile returns the last chosen import destination for a source host profile.
+func (s *Store) ImportDestForProfile(sourceProfileID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ""
+	}
+	return s.importDestByProfile[sourceProfileID]
+}
+
+// SetImportDestForProfile remembers the import destination for a source host profile.
+func (s *Store) SetImportDestForProfile(sourceProfileID, destProfileID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	if sourceProfileID == "" || destProfileID == "" {
+		return nil
+	}
+	if s.importDestByProfile == nil {
+		s.importDestByProfile = map[string]string{}
+	}
+	s.importDestByProfile[sourceProfileID] = destProfileID
 	s.bumpRevisionLocked()
 	return s.persistVaultLocked()
 }

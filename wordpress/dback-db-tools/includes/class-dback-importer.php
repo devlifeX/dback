@@ -29,6 +29,7 @@ class DBack_Importer {
         }
 
         $selected_database = DBack_Database::prepare_import_target($target_database);
+        $verify_import = self::is_verify_database($selected_database);
 
         try {
             $handle = gzopen($path, 'rb');
@@ -37,7 +38,7 @@ class DBack_Importer {
             }
 
             try {
-                $executed = self::execute_stream($handle);
+                $executed = self::execute_stream($handle, $verify_import);
             } finally {
                 gzclose($handle);
             }
@@ -162,7 +163,7 @@ class DBack_Importer {
      * @param resource $handle
      * @return int
      */
-    private static function execute_stream($handle) {
+    private static function execute_stream($handle, $verify_import = false) {
         $buffer = '';
         $executed = 0;
 
@@ -180,17 +181,42 @@ class DBack_Importer {
             $buffer .= $line;
 
             if (';' === substr(rtrim($line), -1)) {
-                DBack_Database::exec($buffer);
+                if (!$verify_import || !self::should_skip_verify_statement($buffer)) {
+                    DBack_Database::exec($buffer);
+                    $executed++;
+                }
                 $buffer = '';
-                $executed++;
             }
         }
 
         if ('' !== trim($buffer)) {
-            DBack_Database::exec($buffer);
-            $executed++;
+            if (!$verify_import || !self::should_skip_verify_statement($buffer)) {
+                DBack_Database::exec($buffer);
+                $executed++;
+            }
         }
 
         return $executed;
+    }
+
+    private static function is_verify_database($database) {
+        return 0 === strpos((string) $database, 'dback_verify_');
+    }
+
+    private static function should_skip_verify_statement($sql) {
+        $sql = trim((string) $sql);
+        if ('' === $sql) {
+            return true;
+        }
+        if (preg_match('/^CREATE\s+DATABASE/i', $sql)) {
+            return true;
+        }
+        if (preg_match('/^DROP\s+DATABASE/i', $sql)) {
+            return true;
+        }
+        if (preg_match('/^USE\s+/i', $sql)) {
+            return true;
+        }
+        return false;
     }
 }

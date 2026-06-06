@@ -131,6 +131,27 @@ func TestLoadWhileLockedFails(t *testing.T) {
 	}
 }
 
+func TestVaultPersistsImportDestByProfile(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+
+	if err := s.SetImportDestForProfile("rade-production", "rade-staging"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.ImportDestForProfile("rade-production"); got != "rade-staging" {
+		t.Fatalf("expected rade-staging, got %q", got)
+	}
+
+	s2 := New(dir)
+	if err := s2.Unlock(testMasterKey); err != nil {
+		t.Fatal(err)
+	}
+	if got := s2.ImportDestForProfile("rade-production"); got != "rade-staging" {
+		t.Fatalf("import dest not persisted: %q", got)
+	}
+}
+
 func TestVaultPersistsTemplatesHistoryLogs(t *testing.T) {
 	dir := t.TempDir()
 	s := New(dir)

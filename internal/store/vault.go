@@ -178,6 +178,11 @@ func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) {
 	s.logs = append([]models.LogEntry(nil), payload.Logs...)
 	s.sync = payload.Sync.Clone()
 	s.syncActivity = payload.SyncActivity
+	if len(payload.ImportDestByProfile) > 0 {
+		s.importDestByProfile = cloneStringMap(payload.ImportDestByProfile)
+	} else {
+		s.importDestByProfile = map[string]string{}
+	}
 }
 
 func (s *Store) persistVaultLocked() error {
@@ -206,13 +211,14 @@ func (s *Store) currentPayloadLocked() models.AppVaultPayload {
 		profiles[i].ImportSettings = nil
 	}
 	return models.AppVaultPayload{
-		Version:      CurrentVersion,
-		Profiles:     profiles,
-		Templates:    append([]models.SQLTemplate(nil), s.templates...),
-		History:      append([]models.ExportRecord(nil), s.history...),
-		Logs:         append([]models.LogEntry(nil), s.logs...),
-		Sync:         s.sync.Clone(),
-		SyncActivity: s.syncActivity,
+		Version:             CurrentVersion,
+		Profiles:            profiles,
+		Templates:           append([]models.SQLTemplate(nil), s.templates...),
+		History:             append([]models.ExportRecord(nil), s.history...),
+		Logs:                append([]models.LogEntry(nil), s.logs...),
+		Sync:                s.sync.Clone(),
+		SyncActivity:        s.syncActivity,
+		ImportDestByProfile: cloneStringMap(s.importDestByProfile),
 	}
 }
 
