@@ -60,7 +60,7 @@ func maskMySQLPasswordArgs(cmd string) string {
 func mysqlClientExec(p models.Profile, database, extraArgs string) string {
 	authArgs := fmt.Sprintf("-u %s -p%s", shellEscape(p.DBUser), shellEscape(p.DBPassword))
 	hostArgs := ""
-	if !p.IsDocker {
+	if p.DBHost != "" {
 		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
 	dbArg := ""
@@ -103,7 +103,7 @@ func mysqlDumpExec(p models.Profile) string {
 	dumpArgs := mysqlDumpArgs(p)
 	authArgs := fmt.Sprintf("-u %s -p%s", shellEscape(p.DBUser), shellEscape(p.DBPassword))
 	hostArgs := ""
-	if !p.IsDocker {
+	if p.DBHost != "" {
 		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
 	dbArg := shellEscape(p.TargetDBName)
@@ -349,7 +349,7 @@ func BuildQueryCommand(p models.Profile, query string, connectDB bool) (string, 
 
 	authArgs := fmt.Sprintf("-u %s -p%s", shellEscape(p.DBUser), shellEscape(p.DBPassword))
 	hostArgs := ""
-	if !p.IsDocker {
+	if p.DBHost != "" {
 		hostArgs = fmt.Sprintf("-h %s -P %s", shellEscape(p.DBHost), shellEscape(p.DBPort))
 	}
 	batchFlags := "--batch --raw"
