@@ -228,6 +228,11 @@ func TestMysqlDumpArgs(t *testing.T) {
 	if !strings.Contains(dump, "--column-statistics=0") {
 		t.Fatalf("dump command should conditionally include MySQL 8 flags: %s", dump)
 	}
+	for _, pattern := range []string{`"Ver 8."*`, `"Ver 9."*`, `"Distrib 8."*`, `"Distrib 9."*`} {
+		if !strings.Contains(dump, pattern) {
+			t.Fatalf("dump command should match MySQL 8+ version strings including %s: %s", pattern, dump)
+		}
+	}
 }
 
 func TestBuildDatabaseSizeCommand(t *testing.T) {

@@ -96,7 +96,8 @@ func mysqlDumpArgs(p models.Profile) string {
 }
 
 func mysqlDumpMySQL8FlagSetup() string {
-	return `_mf=""; _mx=$(mysqldump --version 2>&1); case "$_mx" in *"Distrib 8."*|*"Distrib 9."*) _mf="--column-statistics=0 --no-tablespaces";; esac;`
+	// Oracle/MySQL Community prints "Ver 8.x"; MariaDB-based builds often use "Distrib 8.x".
+	return `_mf=""; _mx=$(mysqldump --version 2>&1); case "$_mx" in *"Distrib 8."*|*"Distrib 9."*|*"Ver 8."*|*"Ver 9."*) _mf="--column-statistics=0 --no-tablespaces";; esac;`
 }
 
 func mysqlDumpExec(p models.Profile) string {
