@@ -137,6 +137,9 @@ func TestBuildImportStreamCommand(t *testing.T) {
 	if !strings.Contains(prep, "DROP DATABASE") || !strings.Contains(prep, "CREATE DATABASE") {
 		t.Fatalf("prepare command missing drop/create: %s", prep)
 	}
+	if strings.Contains(prep, "'3306'-u") {
+		t.Fatalf("port and -u must be separate shell words: %s", prep)
+	}
 }
 
 func TestBuildTmpFileCommands(t *testing.T) {

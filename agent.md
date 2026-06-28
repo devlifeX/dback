@@ -741,26 +741,26 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 
 **Go toolchain:** [`go.mod`](go.mod) declares **`go 1.22`**. CI and Launchpad use `GOTOOLCHAIN=local` (no auto-download). PPA builds vendor deps at package time (`vendor/` is gitignored). Launchpad jammy may install `golang-1.22-go` without `/usr/bin/go`, so [`debian/rules`](debian/rules) must export `/usr/lib/go-1.22/bin` in `PATH`; [`debian/prepare-go.sh`](debian/prepare-go.sh) verifies and logs the actual `go` binary. Do not run `go mod tidy` with a newer local Go without verifying CI/PPA still pass.
 
-**Current app version in repo:** `3.8.1` → About screen and local `./build.sh` use this until you bump again.
+**Current app version in repo:** `3.8.2` → About screen and local `./build.sh` use this until you bump again.
 
 ### Local build
 
 ```bash
 ./build.sh linux
 # or explicitly:
-APP_VERSION=3.8.1 ./build.sh linux
+APP_VERSION=3.8.2 ./build.sh linux
 ```
 
-Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.8.1_amd64.deb`.  
+Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.8.2_amd64.deb`.  
 `build.sh` prints the **release git tag** to push when the build succeeds.
 
 ### GitHub Release (after merging to `master`)
 
-Tag **must** match `main.go` / `build.sh` version (`3.8.1` → tag `v3.8.1`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
+Tag **must** match `main.go` / `build.sh` version (`3.8.2` → tag `v3.8.2`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
 
 ```bash
-git tag v3.8.1
-git push origin v3.8.1
+git tag v3.8.2
+git push origin v3.8.2
 ```
 
 GitHub Actions then publishes:
@@ -769,7 +769,7 @@ GitHub Actions then publishes:
 |-------|------|
 | Linux binary | `dback-linux` |
 | Windows binary | `dback-windows.exe` |
-| Debian package | `dback_3.8.1_amd64.deb` |
+| Debian package | `dback_3.8.2_amd64.deb` |
 
 PPA: [`ppa.yml`](.github/workflows/ppa.yml) uploads **two** source packages per tag — `PPA_DIST=noble` and `PPA_DIST=jammy` — via [`packaging/sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh). See [`ppa.md`](ppa.md).
 
@@ -868,7 +868,7 @@ Key test locations:
 
 ## Versioning
 
-**Current app version:** `3.8.1`
+**Current app version:** `3.8.2`
 
 The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DBACK_DB_TOOLS_VERSION`) — see [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Do not confuse the two.
 
@@ -881,14 +881,14 @@ When you modify Go app code, UI, build/CI, updater, or user-visible behavior:
    - [`build.sh`](build.sh) — `APP_VERSION="${APP_VERSION:-…}"`
 2. Update examples in [`README.md`](README.md) if they show a pinned version.
 3. Update **Current app version** here and in [Build and embed](#build-and-embed).
-4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.8.1`** for app version `3.8.1`).
+4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.8.2`** for app version `3.8.2`).
 
 ```bash
-git tag v3.8.1
-git push origin v3.8.1
+git tag v3.8.2
+git push origin v3.8.2
 ```
 
-CI reads the tag (`v3.8.1` → `APP_VERSION=3.8.1`); tag and `main.go`/`build.sh` must always match. PPA changelog per Ubuntu series is synced in CI — do not commit jammy/noble-specific changelog entries unless doing a manual PPA upload.
+CI reads the tag (`v3.8.2` → `APP_VERSION=3.8.2`); tag and `main.go`/`build.sh` must always match. PPA changelog per Ubuntu series is synced in CI — do not commit jammy/noble-specific changelog entries unless doing a manual PPA upload.
 
 ### Agent checklist before finishing
 
@@ -915,4 +915,4 @@ CI reads the tag (`v3.8.1` → `APP_VERSION=3.8.1`); tag and `main.go`/`build.sh
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.8.1 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, Dry-Run Verify (SHA256 + fingerprint + deep verify), and mandatory app version bumps on changes.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.8.2 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, Dry-Run Verify (SHA256 + fingerprint + deep verify), and mandatory app version bumps on changes.

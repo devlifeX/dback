@@ -71,7 +71,7 @@ func mysqlClientExec(p models.Profile, database, extraArgs string) string {
 		extraArgs = " " + extraArgs
 	}
 	return fmt.Sprintf(
-		"if command -v mariadb >/dev/null 2>&1; then mariadb %s%s%s%s; else mysql %s%s%s%s; fi",
+		"if command -v mariadb >/dev/null 2>&1; then mariadb %s %s%s%s; else mysql %s %s%s%s; fi",
 		hostArgs, authArgs, dbArg, extraArgs,
 		hostArgs, authArgs, dbArg, extraArgs,
 	)
