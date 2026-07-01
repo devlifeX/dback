@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	coreapp "dback/internal/app"
 	"dback/backend/verify"
+	coreapp "dback/internal/app"
 	"dback/models"
 )
 
@@ -156,6 +156,10 @@ func verifySummaryMessage(passed bool, summary verify.ReportSummary, fingerprint
 }
 
 func (u *UI) runDeepVerifyPrompt(record models.ExportRecord) {
+	if !record.SupportsImport() {
+		u.showInfo("Deep verify unavailable", "Deep verify is only available for database backups.")
+		return
+	}
 	if record.Fingerprint == nil {
 		u.showInfo("Deep verify unavailable", "No fingerprint available. Re-create this backup to enable deep verify.")
 		return

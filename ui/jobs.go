@@ -11,9 +11,13 @@ type operationJob struct {
 	Kind        string
 	ProfileName string
 	RecordID    string
+	OperationID string
 	VerifyPhase bool
 	Status      string
 	Progress    float64
+	PathIndex   int
+	PathTotal   int
+	SubItems    []jobSubItem
 	StartedAt   time.Time
 	FinishedAt  time.Time
 	Done        bool

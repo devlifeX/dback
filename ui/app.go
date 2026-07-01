@@ -35,11 +35,11 @@ type UI struct {
 	window   *app.Window
 	explorer *explorer.Explorer
 
-	x11Display            unsafe.Pointer
-	x11Window             uintptr
-	pendingCenterSize     image.Point
-	windowCentered        bool
-	windowCenterAttempts  int
+	x11Display           unsafe.Pointer
+	x11Window            uintptr
+	pendingCenterSize    image.Point
+	windowCentered       bool
+	windowCenterAttempts int
 
 	section Section
 	view    View
@@ -60,17 +60,20 @@ type UI struct {
 	templateDesc    widget.Editor
 	templateBody    widget.Editor
 
-	backupTab        int
-	settingsTab      int
-	selectedBackup   *models.ExportRecord
-	selectedBackupID string
-	backupHostFilter string
-	backupHostSelect widget.Enum
+	backupTab          int
+	settingsTab        int
+	selectedBackup     *models.ExportRecord
+	selectedBackupID   string
+	backupHostFilter   string
+	backupHostSelect   widget.Enum
 	backupHostDropdown DropdownState
-	destSelect       widget.Enum
+	backupTypeFilter   string
+	backupTypeSelect   widget.Enum
+	backupTypeDropdown DropdownState
+	destSelect         widget.Enum
 	destHostDropdown   DropdownState
-	backupList       widget.List
-	jobsList         widget.List
+	backupList         widget.List
+	jobsList           widget.List
 
 	includeSecrets   widget.Bool
 	passphraseEditor widget.Editor
@@ -87,65 +90,65 @@ type UI struct {
 	jobTickerRunning   bool
 	lastBackupsRefresh time.Time
 
-	navHosts            widget.Clickable
-	navBackups          widget.Clickable
-	navTemplates        widget.Clickable
-	navSettings         widget.Clickable
-	navAbout            widget.Clickable
-	addHostBtn          widget.Clickable
-	addTemplateBtn      widget.Clickable
-	saveProfileBtn      widget.Clickable
-	saveTemplateBtn     widget.Clickable
-	backBtn             widget.Clickable
-	testExportBtn       widget.Clickable
-	exportAppDataBtn    widget.Clickable
-	importAppDataBtn    widget.Clickable
-	tabSettingsExport   widget.Clickable
-	tabSettingsSync     widget.Clickable
-	saveSyncBtn         widget.Clickable
-	testSyncBtn         widget.Clickable
-	syncPushBtn         widget.Clickable
-	syncPullBtn         widget.Clickable
-	syncForm             *SyncForm
-	syncConnectionOK     bool
-	syncPushPending      bool
-	syncSavedBaseline    *models.SyncSettings
-	syncActivity         models.SyncActivity
-	settingsList         widget.List
-	tabConnection        widget.Clickable
-	tabQuery            widget.Clickable
-	tabBackupFiles      widget.Clickable
-	tabBackupJobs       widget.Clickable
-	restoreBtn          widget.Clickable
-	verifyBackupBtn     widget.Clickable
-	deepVerifySelect    widget.Enum
-	deepVerifyDropdown  DropdownState
-	openBackupFolderBtn widget.Clickable
-	dialogOKBtn         widget.Clickable
-	dialogCancelBtn     widget.Clickable
-	dialogSyncPullBtn   widget.Clickable
-	dialogForcePushBtn  widget.Clickable
-	dialogHostList      widget.List
+	navHosts                widget.Clickable
+	navBackups              widget.Clickable
+	navTemplates            widget.Clickable
+	navSettings             widget.Clickable
+	navAbout                widget.Clickable
+	addHostBtn              widget.Clickable
+	addTemplateBtn          widget.Clickable
+	saveProfileBtn          widget.Clickable
+	saveTemplateBtn         widget.Clickable
+	backBtn                 widget.Clickable
+	testExportBtn           widget.Clickable
+	exportAppDataBtn        widget.Clickable
+	importAppDataBtn        widget.Clickable
+	tabSettingsExport       widget.Clickable
+	tabSettingsSync         widget.Clickable
+	saveSyncBtn             widget.Clickable
+	testSyncBtn             widget.Clickable
+	syncPushBtn             widget.Clickable
+	syncPullBtn             widget.Clickable
+	syncForm                *SyncForm
+	syncConnectionOK        bool
+	syncPushPending         bool
+	syncSavedBaseline       *models.SyncSettings
+	syncActivity            models.SyncActivity
+	settingsList            widget.List
+	tabConnection           widget.Clickable
+	tabQuery                widget.Clickable
+	tabBackupFiles          widget.Clickable
+	tabBackupJobs           widget.Clickable
+	restoreBtn              widget.Clickable
+	verifyBackupBtn         widget.Clickable
+	deepVerifySelect        widget.Enum
+	deepVerifyDropdown      DropdownState
+	openBackupFolderBtn     widget.Clickable
+	dialogOKBtn             widget.Clickable
+	dialogCancelBtn         widget.Clickable
+	dialogSyncPullBtn       widget.Clickable
+	dialogForcePushBtn      widget.Clickable
+	dialogHostList          widget.List
 	connectionTestCancelBtn widget.Clickable
 	connectionTestCloseBtn  widget.Clickable
 	connectionTestCopyBtn   widget.Clickable
-	deleteTemplateBtn   widget.Clickable
-	aboutProjectBtn     widget.Clickable
-	aboutCheckUpdateBtn widget.Clickable
+	deleteTemplateBtn       widget.Clickable
+	aboutProjectBtn         widget.Clickable
+	aboutCheckUpdateBtn     widget.Clickable
 
 	updateStatus      string
-	pendingUpdateInfo  coreapp.UpdateInfo
-	updateApplyCancel  context.CancelFunc
+	pendingUpdateInfo coreapp.UpdateInfo
+	updateApplyCancel context.CancelFunc
 
-	menuOpenID        string
-	backupMenuOpenID  string
-	menuCloseArea     widget.Clickable
+	menuOpenID       string
+	backupMenuOpenID string
+	menuCloseArea    widget.Clickable
 
-	profileCards  map[string]profileCardWidgets
-	groupChips    map[string]*widget.Clickable
-	templateRows  map[string]*widget.Clickable
+	profileCards   map[string]profileCardWidgets
+	groupChips     map[string]*widget.Clickable
+	templateRows   map[string]*widget.Clickable
 	backupRowMenus map[string]backupRowMenuWidgets
-	jobCancelBtns    map[string]*widget.Clickable
+	jobCancelBtns  map[string]*widget.Clickable
 
 	unlocked             bool
 	loginFocusPending    bool
@@ -167,18 +170,19 @@ type UI struct {
 }
 
 type profileCardWidgets struct {
-	backup    *widget.Clickable
-	edit      *widget.Clickable
-	duplicate *widget.Clickable
-	delete    *widget.Clickable
-	more      *widget.Clickable
+	backup      *widget.Clickable
+	backupFiles *widget.Clickable
+	edit        *widget.Clickable
+	duplicate   *widget.Clickable
+	delete      *widget.Clickable
+	more        *widget.Clickable
 }
 
 type backupRowMenuWidgets struct {
-	more   *widget.Clickable
+	more    *widget.Clickable
 	import_ *widget.Clickable
-	verify *widget.Clickable
-	folder *widget.Clickable
+	verify  *widget.Clickable
+	folder  *widget.Clickable
 }
 
 func New(logoPNG []byte, version string) *UI {
@@ -192,17 +196,17 @@ func New(logoPNG []byte, version string) *UI {
 		version = "dev"
 	}
 	return &UI{
-		platform:         DesktopPlatform{},
-		theme:            NewAppTheme(),
-		logo:             logo,
-		version:          version,
-		section:          SectionHosts,
-		view:             ViewList,
-		profileCards:     make(map[string]profileCardWidgets),
-		groupChips:       make(map[string]*widget.Clickable),
-		templateRows:     make(map[string]*widget.Clickable),
-		backupRowMenus: make(map[string]backupRowMenuWidgets),
-		jobCancelBtns:    make(map[string]*widget.Clickable),
+		platform:          DesktopPlatform{},
+		theme:             NewAppTheme(),
+		logo:              logo,
+		version:           version,
+		section:           SectionHosts,
+		view:              ViewList,
+		profileCards:      make(map[string]profileCardWidgets),
+		groupChips:        make(map[string]*widget.Clickable),
+		templateRows:      make(map[string]*widget.Clickable),
+		backupRowMenus:    make(map[string]backupRowMenuWidgets),
+		jobCancelBtns:     make(map[string]*widget.Clickable),
 		loginFocusPending: true,
 	}
 }

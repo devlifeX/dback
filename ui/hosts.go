@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	coreapp "dback/internal/app"
 	"dback/internal/paths"
 	"dback/models"
 
@@ -138,11 +139,12 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 		cards, ok := u.profileCards[p.ID]
 		if !ok {
 			cards = profileCardWidgets{
-				backup:    new(widget.Clickable),
-				edit:      new(widget.Clickable),
-				duplicate: new(widget.Clickable),
-				delete:    new(widget.Clickable),
-				more:      new(widget.Clickable),
+				backup:      new(widget.Clickable),
+				backupFiles: new(widget.Clickable),
+				edit:        new(widget.Clickable),
+				duplicate:   new(widget.Clickable),
+				delete:      new(widget.Clickable),
+				more:        new(widget.Clickable),
 			}
 			u.profileCards[p.ID] = cards
 		}
@@ -183,9 +185,22 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 					}),
 					layout.Rigid(spacer(theme, unit.Dp(8))),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return fixedWidthSuccessButton(gtx, th, theme, cards.backup, "Backup", unit.Dp(150), func() {
-							u.runBackup(p)
-						})
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return fixedWidthSuccessButton(gtx, th, theme, cards.backup, "Backup", unit.Dp(120), func() {
+									u.runBackup(p)
+								})
+							}),
+							layout.Rigid(hgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if !p.FileBackupReady() {
+									return layout.Dimensions{}
+								}
+								return fixedWidthSuccessButton(gtx, th, theme, cards.backupFiles, "Backup Files", unit.Dp(120), func() {
+									u.runFileBackup(p)
+								})
+							}),
+						)
 					}),
 				)
 			})
@@ -293,11 +308,12 @@ func (u *UI) duplicateProfile(profile models.Profile) {
 		return
 	}
 	u.profileCards[clone.ID] = profileCardWidgets{
-		backup:    new(widget.Clickable),
-		edit:      new(widget.Clickable),
-		duplicate: new(widget.Clickable),
-		delete:    new(widget.Clickable),
-		more:      new(widget.Clickable),
+		backup:      new(widget.Clickable),
+		backupFiles: new(widget.Clickable),
+		edit:        new(widget.Clickable),
+		duplicate:   new(widget.Clickable),
+		delete:      new(widget.Clickable),
+		more:        new(widget.Clickable),
 	}
 	u.openHosts()
 }
@@ -349,6 +365,40 @@ func (u *UI) runBackup(p models.Profile) {
 		}
 		u.setBackupJobRecord(job.ID, record.ID)
 		u.finishJob(job.ID, "Backup complete: "+filepath.Base(record.FilePath), nil)
+	}()
+}
+
+func (u *UI) runFileBackup(p models.Profile) {
+	if !p.FileBackupReady() {
+		u.showInfo("Backup Files", "Enable file backup and add at least one path in host settings.")
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	job := u.addFileBackupJob(p, cancel)
+	u.backupTab = 1
+	u.openBackups()
+	go func() {
+		defer cancel()
+		result, err := u.core.BackupFiles(ctx, p, func(prog coreapp.FileBackupProgress) {
+			u.setFileBackupJobProgress(job.ID, prog)
+		})
+		u.invalidateBackupCache()
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				u.finishFileBackupJob(job.ID, "Backup Files canceled", nil)
+				return
+			}
+			status := "Backup Files failed"
+			if result.PartialFail {
+				status = "Backup Files partial failure"
+			}
+			u.finishFileBackupJob(job.ID, status, err)
+			return
+		}
+		if len(result.Records) > 0 {
+			u.setFileBackupJobRecord(job.ID, result.Records[len(result.Records)-1].ID)
+		}
+		u.finishFileBackupJob(job.ID, fmt.Sprintf("Backup Files complete (%d archives)", len(result.Records)), nil)
 	}()
 }
 

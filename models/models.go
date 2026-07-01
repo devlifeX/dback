@@ -17,10 +17,10 @@ const (
 type ConnectionType string
 
 const (
-	ConnectionTypeSSH        ConnectionType = "SSH"
-	ConnectionTypeJumpHost   ConnectionType = "JumpHost"
-	ConnectionTypeLocalhost  ConnectionType = "Localhost"
-	ConnectionTypeWordPress  ConnectionType = "WordPress"
+	ConnectionTypeSSH       ConnectionType = "SSH"
+	ConnectionTypeJumpHost  ConnectionType = "JumpHost"
+	ConnectionTypeLocalhost ConnectionType = "Localhost"
+	ConnectionTypeWordPress ConnectionType = "WordPress"
 )
 
 // DBType defines the database type (MySQL/MariaDB only)
@@ -74,6 +74,12 @@ type Profile struct {
 
 	// ImportProtected blocks restore/import to this host (production safety).
 	ImportProtected bool `json:"import_protected,omitempty"`
+
+	FileBackupEnabled     bool               `json:"file_backup_enabled,omitempty"`
+	FileBackupDestination string             `json:"file_backup_destination,omitempty"`
+	FileBackupCompression ArchiveCompression `json:"file_backup_compression,omitempty"`
+	FileBackupExclude     []string           `json:"file_backup_exclude,omitempty"`
+	FileBackupPaths       []FileBackupPath   `json:"file_backup_paths,omitempty"`
 
 	// Legacy fields — read-only for migration; not written on save.
 	ExportSettings *TransferSettings `json:"export_settings,omitempty"`
@@ -173,10 +179,10 @@ type FingerprintTable struct {
 }
 
 type BackupFingerprint struct {
-	CapturedAt time.Time                  `json:"captured_at"`
-	Mode       string                     `json:"mode"` // "fast" | "exact"
+	CapturedAt time.Time                   `json:"captured_at"`
+	Mode       string                      `json:"mode"` // "fast" | "exact"
 	Tables     map[string]FingerprintTable `json:"tables"`
-	TotalRows  int64                      `json:"total_rows"`
+	TotalRows  int64                       `json:"total_rows"`
 }
 
 type TableVerifyResult struct {
@@ -194,21 +200,28 @@ type LastVerified struct {
 }
 
 type ExportRecord struct {
-	ID             string         `json:"id"`
-	OperationID    string         `json:"operation_id,omitempty"`
-	ProfileID      string         `json:"profile_id"`
-	ProfileName    string         `json:"profile_name"`
-	DatabaseName   string         `json:"database_name"`
-	ExportDate     time.Time      `json:"export_date"`
-	FilePath       string         `json:"file_path"`
-	FileSize       string         `json:"file_size"`
-	FileSizeBytes  int64          `json:"file_size_bytes"`
-	ConnectionType ConnectionType `json:"connection_type,omitempty"`
-	Sha256         string             `json:"sha256,omitempty"`
-	Fingerprint    *BackupFingerprint `json:"fingerprint,omitempty"`
-	QuickVerified  *LastVerified      `json:"quick_verified,omitempty"`
-	DeepVerified   *LastVerified      `json:"deep_verified,omitempty"`
-	LastVerified   *LastVerified      `json:"last_verified,omitempty"` // legacy; prefer QuickVerified/DeepVerified
+	ID                 string             `json:"id"`
+	OperationID        string             `json:"operation_id,omitempty"`
+	ProfileID          string             `json:"profile_id"`
+	ProfileName        string             `json:"profile_name"`
+	DatabaseName       string             `json:"database_name"`
+	ExportType         ExportType         `json:"export_type,omitempty"`
+	FileBackupPathID   string             `json:"file_backup_path_id,omitempty"`
+	SourceLabel        string             `json:"source_label,omitempty"`
+	SourcePath         string             `json:"source_path,omitempty"`
+	CanonicalKey       string             `json:"canonical_key,omitempty"`
+	JobSequence        int                `json:"job_sequence,omitempty"`
+	VerificationMethod VerificationMethod `json:"verification_method,omitempty"`
+	ExportDate         time.Time          `json:"export_date"`
+	FilePath           string             `json:"file_path"`
+	FileSize           string             `json:"file_size"`
+	FileSizeBytes      int64              `json:"file_size_bytes"`
+	ConnectionType     ConnectionType     `json:"connection_type,omitempty"`
+	Sha256             string             `json:"sha256,omitempty"`
+	Fingerprint        *BackupFingerprint `json:"fingerprint,omitempty"`
+	QuickVerified      *LastVerified      `json:"quick_verified,omitempty"`
+	DeepVerified       *LastVerified      `json:"deep_verified,omitempty"`
+	LastVerified       *LastVerified      `json:"last_verified,omitempty"` // legacy; prefer QuickVerified/DeepVerified
 }
 
 type ProfileBundle struct {
@@ -256,14 +269,14 @@ type SyncActivity struct {
 
 // AppVaultPayload is the decrypted contents of the internal vault.
 type AppVaultPayload struct {
-	Version              int               `json:"version"`
-	Profiles             []Profile         `json:"profiles"`
-	Templates            []SQLTemplate     `json:"templates"`
-	History              []ExportRecord    `json:"history"`
-	Logs                 []LogEntry        `json:"logs"`
-	Sync                 *SyncSettings     `json:"sync,omitempty"`
-	SyncActivity         SyncActivity      `json:"sync_activity,omitempty"`
-	ImportDestByProfile  map[string]string `json:"import_dest_by_profile,omitempty"`
+	Version             int               `json:"version"`
+	Profiles            []Profile         `json:"profiles"`
+	Templates           []SQLTemplate     `json:"templates"`
+	History             []ExportRecord    `json:"history"`
+	Logs                []LogEntry        `json:"logs"`
+	Sync                *SyncSettings     `json:"sync,omitempty"`
+	SyncActivity        SyncActivity      `json:"sync_activity,omitempty"`
+	ImportDestByProfile map[string]string `json:"import_dest_by_profile,omitempty"`
 }
 
 // AppBundle exports hosts, templates, backup history metadata, and activity logs.

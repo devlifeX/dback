@@ -39,9 +39,12 @@ func (c *templateOptionCache) rebuild(revision uint64, templates []models.SQLTem
 type backupViewCache struct {
 	dataRevision uint64
 	hostFilter   string
+	typeFilter   string
 	records      []models.ExportRecord
 	hostValues   []string
 	hostLabels   []string
+	typeValues   []string
+	typeLabels   []string
 }
 
 func (c *backupViewCache) rebuild(u *UI) {
@@ -49,15 +52,19 @@ func (c *backupViewCache) rebuild(u *UI) {
 		return
 	}
 	rev := u.core.DataRevision()
-	filter := u.backupHostFilter
-	if c.dataRevision == rev && c.hostFilter == filter && c.records != nil {
+	hostFilter := u.backupHostFilter
+	typeFilter := u.backupTypeFilter
+	if c.dataRevision == rev && c.hostFilter == hostFilter && c.typeFilter == typeFilter && c.records != nil {
 		return
 	}
 	history := u.core.History()
-	c.records = filterBackupsByHost(sortBackupsNewestFirst(history), filter)
+	filtered := filterBackupsByHost(sortBackupsNewestFirst(history), hostFilter)
+	c.records = filterBackupsByType(filtered, typeFilter)
 	c.hostValues, c.hostLabels = sortedBackupHostOptions(u.core.Profiles())
+	c.typeValues, c.typeLabels = sortedBackupTypeOptions()
 	c.dataRevision = rev
-	c.hostFilter = filter
+	c.hostFilter = hostFilter
+	c.typeFilter = typeFilter
 }
 
 func unlockErrorMessage(err error) string {

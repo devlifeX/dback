@@ -23,36 +23,37 @@ var (
 )
 
 type SettingsForm struct {
-	ConnectionType widget.Enum
-	Host           widget.Editor
-	Port           widget.Editor
-	SSHUser        widget.Editor
-	SSHPassword    widget.Editor
-	AuthType       widget.Enum
-	KeyPath        widget.Editor
-	AuthKeyPEM     string
-	JumpHost       widget.Editor
-	JumpPort       widget.Editor
-	JumpUser       widget.Editor
-	JumpPassword   widget.Editor
-	JumpAuthType   widget.Enum
-	JumpKeyPath    widget.Editor
-	JumpAuthKeyPEM string
-	WPUrl          widget.Editor
-	WPKey          widget.Editor
-	DBHost         widget.Editor
-	DBPort         widget.Editor
-	DBUser         widget.Editor
-	DBPassword     widget.Editor
-	DBType         widget.Enum
-	IsDocker       widget.Bool
-	ContainerID    widget.Editor
-	TargetDB       widget.Editor
-	Destination    widget.Editor
+	ConnectionType  widget.Enum
+	Host            widget.Editor
+	Port            widget.Editor
+	SSHUser         widget.Editor
+	SSHPassword     widget.Editor
+	AuthType        widget.Enum
+	KeyPath         widget.Editor
+	AuthKeyPEM      string
+	JumpHost        widget.Editor
+	JumpPort        widget.Editor
+	JumpUser        widget.Editor
+	JumpPassword    widget.Editor
+	JumpAuthType    widget.Enum
+	JumpKeyPath     widget.Editor
+	JumpAuthKeyPEM  string
+	WPUrl           widget.Editor
+	WPKey           widget.Editor
+	DBHost          widget.Editor
+	DBPort          widget.Editor
+	DBUser          widget.Editor
+	DBPassword      widget.Editor
+	DBType          widget.Enum
+	IsDocker        widget.Bool
+	ContainerID     widget.Editor
+	TargetDB        widget.Editor
+	Destination     widget.Editor
 	ImportProtected widget.Bool
 
 	defaultDestination string
 	scrollList         widget.List
+	fileBackup         *FileBackupForm
 
 	selectKeyBtn        widget.Clickable
 	selectJumpKeyBtn    widget.Clickable
@@ -106,6 +107,7 @@ func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
 	}
 	setEditorText(&f.Destination, dest)
 	f.ImportProtected.Value = p.ImportProtected
+	f.fileBackup = newFileBackupForm(p, defaultDest)
 	return f
 }
 
@@ -145,7 +147,7 @@ func (f *SettingsForm) profile() models.Profile {
 		ContainerID:     strings.TrimSpace(editorText(&f.ContainerID)),
 		TargetDBName:    strings.TrimSpace(editorText(&f.TargetDB)),
 		Destination:     strings.TrimSpace(editorText(&f.Destination)),
-		ImportProtected:   f.ImportProtected.Value,
+		ImportProtected: f.ImportProtected.Value,
 	}
 }
 
@@ -491,7 +493,7 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 			return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Subtitle1(th, "Backup Files")
+						lbl := material.Subtitle1(th, "Database Backup")
 						lbl.Color = theme.Text
 						return lbl.Layout(gtx)
 					}),
@@ -521,6 +523,13 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 				)
 			})
 		}))
+
+		if !isWordPress && f.fileBackup != nil {
+			sections = append(sections, layout.Rigid(vgap(theme)))
+			sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return f.fileBackup.layout(gtx, th, theme, u)
+			}))
+		}
 
 		sections = append(sections, layout.Rigid(vgap(theme)))
 		sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {

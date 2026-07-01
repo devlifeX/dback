@@ -171,6 +171,9 @@ func (a *App) SaveProfile(profile models.Profile) error {
 			return err
 		}
 	}
+	if err := normalizeProfileFileBackup(&profile); err != nil {
+		return err
+	}
 	profile.ExportSettings = nil
 	profile.ImportSettings = nil
 
@@ -367,6 +370,7 @@ func (a *App) Backup(ctx context.Context, profile models.Profile, progress Progr
 		ProfileID:      profile.ID,
 		ProfileName:    profile.Name,
 		DatabaseName:   profile.TargetDBName,
+		ExportType:     models.ExportTypeDatabase,
 		ExportDate:     time.Now(),
 		FilePath:       fullPath,
 		FileSize:       formatSize(size),
@@ -395,6 +399,13 @@ func (a *App) Backup(ctx context.Context, profile models.Profile, progress Progr
 		progress("Verifying backup integrity...", size, size)
 	}
 	applyAutoQuickVerify(&record)
+	if record.VerificationMethod == "" {
+		if record.QuickVerified != nil && record.QuickVerified.Passed {
+			record.VerificationMethod = models.VerifyQuick
+		} else if record.Sha256 != "" {
+			record.VerificationMethod = models.VerifySHA256
+		}
+	}
 	if err := a.UpdateHistoryRecord(record); err != nil {
 		return record, err
 	}

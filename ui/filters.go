@@ -72,4 +72,33 @@ func filterBackupsByHost(records []models.ExportRecord, profileID string) []mode
 	return out
 }
 
+const backupTypeFilterAll = ""
+
+func filterBackupsByType(records []models.ExportRecord, exportType string) []models.ExportRecord {
+	if exportType == "" || exportType == backupTypeFilterAll {
+		return records
+	}
+	var out []models.ExportRecord
+	for _, r := range records {
+		if string(r.EffectiveExportType()) == exportType {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func exportTypeLabel(t models.ExportType) string {
+	switch t {
+	case models.ExportTypeFiles:
+		return "Files"
+	default:
+		return "DB"
+	}
+}
+
+func sortedBackupTypeOptions() (values, labels []string) {
+	return []string{backupTypeFilterAll, string(models.ExportTypeDatabase), string(models.ExportTypeFiles)},
+		[]string{"All types", "Database", "Files"}
+}
+
 const backupFilterAll = ""

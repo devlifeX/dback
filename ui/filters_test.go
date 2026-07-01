@@ -53,6 +53,31 @@ func TestFilterBackupsByHost(t *testing.T) {
 	}
 }
 
+func TestFilterBackupsByType(t *testing.T) {
+	records := []models.ExportRecord{
+		{ID: "db", ExportType: models.ExportTypeDatabase},
+		{ID: "files", ExportType: models.ExportTypeFiles},
+		{ID: "legacy"},
+	}
+	got := filterBackupsByType(records, string(models.ExportTypeFiles))
+	if len(got) != 1 || got[0].ID != "files" {
+		t.Fatalf("expected files only, got %#v", got)
+	}
+	got = filterBackupsByType(records, string(models.ExportTypeDatabase))
+	if len(got) != 2 {
+		t.Fatalf("expected database + legacy, got %d", len(got))
+	}
+}
+
+func TestExportTypeLabel(t *testing.T) {
+	if exportTypeLabel(models.ExportTypeFiles) != "Files" {
+		t.Fatal("expected Files label")
+	}
+	if exportTypeLabel(models.ExportTypeDatabase) != "DB" {
+		t.Fatal("expected DB label")
+	}
+}
+
 func TestCollectGroups(t *testing.T) {
 	profiles := []models.Profile{
 		{Group: "Beta"},

@@ -88,14 +88,32 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 		u.backupHostFilter = u.backupHostSelect.Value
 		u.invalidateBackupCache()
 	}
+	u.backupTypeSelect.Update(gtx)
+	if u.backupTypeSelect.Value == "" {
+		u.backupTypeSelect.Value = backupTypeFilterAll
+	}
+	if u.backupTypeFilter != u.backupTypeSelect.Value {
+		u.backupTypeFilter = u.backupTypeSelect.Value
+		u.invalidateBackupCache()
+	}
 	u.backupCache.rebuild(u)
 	records := u.backupCache.records
 	hostValues := u.backupCache.hostValues
 	hostLabels := u.backupCache.hostLabels
+	typeValues := u.backupCache.typeValues
+	typeLabels := u.backupCache.typeLabels
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return labeledEnumDropdownField(gtx, th, theme, &u.backupHostSelect, "Host filter", hostValues, hostLabels, &u.backupHostDropdown, u.invalidate, nil)
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return labeledEnumDropdownField(gtx, th, theme, &u.backupHostSelect, "Host filter", hostValues, hostLabels, &u.backupHostDropdown, u.invalidate, nil)
+				}),
+				layout.Rigid(hgap(theme)),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return labeledEnumDropdownField(gtx, th, theme, &u.backupTypeSelect, "Type filter", typeValues, typeLabels, &u.backupTypeDropdown, u.invalidate, nil)
+				}),
+			)
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -124,13 +142,17 @@ func (u *UI) layoutBackupFiles(gtx layout.Context, th *material.Theme, theme *Ap
 								return backupTableRow(gtx, th, theme, selected, []string{
 									formatRelativeTime(rec.ExportDate),
 									rec.ProfileName,
-									rec.DatabaseName,
+									exportTypeLabel(rec.EffectiveExportType()),
+									rec.SourceDisplay(),
 									rec.FileSize,
 									u.backupQuickVerifyStatus(rec),
 									u.backupDeepVerifyStatus(rec),
 								}, func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											if !rec.SupportsImport() {
+												return layout.Dimensions{}
+											}
 											return secondaryButton(gtx, th, theme, rowMenu.import_, "Import", func() {
 												u.openBackupDetail(rec)
 											})
@@ -201,6 +223,12 @@ func (u *UI) layoutJobsTable(gtx layout.Context, th *material.Theme, theme *AppT
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return progressBar(gtx, theme, job.Progress)
 					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if len(j.SubItems) == 0 {
+							return layout.Dimensions{}
+						}
+						return layoutJobsSubItems(gtx, th, theme, j.SubItems)
+					}),
 					layout.Rigid(vgap(theme)),
 				)
 			}))
@@ -234,6 +262,10 @@ func (u *UI) rememberImportDest(sourceProfileID, destProfileID string) {
 }
 
 func (u *UI) openBackupDetail(record models.ExportRecord) {
+	if !record.SupportsImport() {
+		u.openBackupFolder(record.FilePath)
+		return
+	}
 	u.selectedBackup = &record
 	u.view = ViewBackupDetail
 	importable := importableProfiles(u.core.Profiles())
@@ -261,7 +293,7 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 		labels = append(labels, label)
 	}
 
-	canImport := len(profiles) > 0
+	canImport := record.SupportsImport() && len(profiles) > 0
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -347,6 +379,9 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 				}),
 				layout.Rigid(hgap(theme)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if !record.SupportsImport() {
+						return layout.Dimensions{}
+					}
 					return secondaryButton(gtx, th, theme, &u.verifyBackupBtn, "Deep verify", func() {
 						u.runDeepVerifyPrompt(*record)
 					})
@@ -357,6 +392,10 @@ func (u *UI) layoutBackupDetail(gtx layout.Context, th *material.Theme) layout.D
 }
 
 func (u *UI) runRestore(record models.ExportRecord) {
+	if !record.SupportsImport() {
+		u.showError(fmt.Errorf("file backups cannot be imported as databases"))
+		return
+	}
 	profiles := importableProfiles(u.core.Profiles())
 	var dest models.Profile
 	for _, p := range profiles {
@@ -408,12 +447,13 @@ type backupTableColumn struct {
 }
 
 var backupTableColumns = []backupTableColumn{
-	{Label: "When", Weight: 1.2},
-	{Label: "Profile", Weight: 1.5},
-	{Label: "Database", Weight: 1.2},
-	{Label: "Size", Weight: 0.8},
-	{Label: "Verify", Weight: 0.9},
-	{Label: "Deep verify", Weight: 1.0},
+	{Label: "When", Weight: 1.0},
+	{Label: "Profile", Weight: 1.2},
+	{Label: "Type", Weight: 0.6},
+	{Label: "Source", Weight: 1.1},
+	{Label: "Size", Weight: 0.7},
+	{Label: "Verify", Weight: 0.8},
+	{Label: "Deep verify", Weight: 0.9},
 	{Label: "Actions", MinWidth: unit.Dp(180)},
 }
 
@@ -473,8 +513,9 @@ func (u *UI) layoutBackupRowMoreButton(gtx layout.Context, th *material.Theme, t
 
 	verifyFG := theme.Success
 	folderFG := theme.Link
-	items := []menuPopupItem{
-		{
+	items := []menuPopupItem{}
+	if rec.SupportsImport() {
+		items = append(items, menuPopupItem{
 			label: "Deep verify",
 			fg:    &verifyFG,
 			btn:   menu.verify,
@@ -482,17 +523,17 @@ func (u *UI) layoutBackupRowMoreButton(gtx layout.Context, th *material.Theme, t
 				u.backupMenuOpenID = ""
 				u.runDeepVerifyPrompt(rec)
 			},
-		},
-		{
-			label: "Folder",
-			fg:    &folderFG,
-			btn:   menu.folder,
-			onClick: func() {
-				u.backupMenuOpenID = ""
-				u.openBackupFolder(rec.FilePath)
-			},
-		},
+		})
 	}
+	items = append(items, menuPopupItem{
+		label: "Folder",
+		fg:    &folderFG,
+		btn:   menu.folder,
+		onClick: func() {
+			u.backupMenuOpenID = ""
+			u.openBackupFolder(rec.FilePath)
+		},
+	})
 
 	if u.menuCloseArea.Clicked(gtx) {
 		u.backupMenuOpenID = ""

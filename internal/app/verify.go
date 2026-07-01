@@ -84,6 +84,16 @@ func applyAutoQuickVerify(record *models.ExportRecord) {
 
 // BackupVerifyStatus returns quick verify display state: verifying, done, failed, or none.
 func BackupVerifyStatus(record models.ExportRecord) string {
+	if record.EffectiveExportType() == models.ExportTypeFiles {
+		if record.Sha256 != "" {
+			result, err := verify.QuickCheck(record.FilePath, record.Sha256)
+			if err != nil || !result.Passed {
+				return "failed"
+			}
+			return "done"
+		}
+		return "none"
+	}
 	if record.QuickVerified != nil {
 		if record.QuickVerified.Passed {
 			return "done"
@@ -112,6 +122,9 @@ func BackupVerifyStatus(record models.ExportRecord) string {
 // BackupDeepVerifyStatus returns deep verify display state:
 // matched (SHA256 OK and rows match), row_diff (SHA256 OK but row counts differ), or none.
 func BackupDeepVerifyStatus(record models.ExportRecord) string {
+	if record.EffectiveExportType() == models.ExportTypeFiles {
+		return "none"
+	}
 	if record.DeepVerified != nil {
 		if record.DeepVerified.Passed {
 			return "matched"

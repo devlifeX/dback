@@ -10,6 +10,7 @@ import (
 type Executor interface {
 	RunCommandStream(cmd string) (io.Reader, io.Reader, Session, error)
 	RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader, Session, error)
+	RunCommandPipe(cmd string) (io.WriteCloser, io.Reader, io.Reader, Session, error)
 	RunCommand(cmd string) (string, error)
 	Close() error
 }

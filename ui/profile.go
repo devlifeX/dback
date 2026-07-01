@@ -129,6 +129,9 @@ func (u *UI) profileFromEditors() models.Profile {
 	p.TargetDBName = host.TargetDBName
 	p.Destination = host.Destination
 	p.ImportProtected = host.ImportProtected
+	if u.hostForm.fileBackup != nil {
+		p = u.hostForm.fileBackup.applyToProfile(p)
+	}
 	qs := u.queryForm.settings()
 	p.PreImportQuery = qs.PreImportQuery
 	p.RunQueryBeforeImport = qs.RunQueryBeforeImport

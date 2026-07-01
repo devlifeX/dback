@@ -61,6 +61,26 @@ func (c *LocalClient) RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader
 	return stdin, stderr, &localSession{cmd: command}, nil
 }
 
+func (c *LocalClient) RunCommandPipe(cmd string) (io.WriteCloser, io.Reader, io.Reader, Session, error) {
+	command := localCmd(cmd)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	stderr, err := command.StderrPipe()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err := command.Start(); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return stdin, stdout, stderr, &localSession{cmd: command}, nil
+}
+
 type localSession struct {
 	cmd *exec.Cmd
 }

@@ -343,6 +343,39 @@ func (c *Client) RunCommandPipeInput(cmd string) (io.WriteCloser, io.Reader, Ses
 	return stdin, stderr, wrapSession(session), nil
 }
 
+// RunCommandPipe executes a command with stdin and stdout pipes.
+func (c *Client) RunCommandPipe(cmd string) (io.WriteCloser, io.Reader, io.Reader, Session, error) {
+	session, err := c.conn.NewSession()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, nil, err
+	}
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, nil, err
+	}
+
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, nil, err
+	}
+
+	if err := session.Start(cmd); err != nil {
+		session.Close()
+		return nil, nil, nil, nil, err
+	}
+
+	return stdin, stdout, stderr, wrapSession(session), nil
+}
+
 // RunCommand executes a command and returns combined stdout/stderr
 func (c *Client) RunCommand(cmd string) (string, error) {
 	session, err := c.conn.NewSession()

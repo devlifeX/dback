@@ -25,13 +25,13 @@ type Store struct {
 	vaultSalt string
 	revision  uint64
 
-	profiles  []models.Profile
-	templates []models.SQLTemplate
-	history   []models.ExportRecord
-	logs      []models.LogEntry
-	sync                 *models.SyncSettings
-	syncActivity         models.SyncActivity
-	importDestByProfile  map[string]string
+	profiles            []models.Profile
+	templates           []models.SQLTemplate
+	history             []models.ExportRecord
+	logs                []models.LogEntry
+	sync                *models.SyncSettings
+	syncActivity        models.SyncActivity
+	importDestByProfile map[string]string
 }
 
 func New(baseDir string) *Store {
@@ -765,6 +765,10 @@ func normalizeProfile(p models.Profile) models.Profile {
 	}
 	if p.DBPort == "" {
 		p.DBPort = "3306"
+	}
+	p.FileBackupCompression = models.NormalizeArchiveCompression(p.FileBackupCompression)
+	for i := range p.FileBackupPaths {
+		_ = p.FileBackupPaths[i].Normalize()
 	}
 	return p
 }
