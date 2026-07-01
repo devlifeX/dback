@@ -32,6 +32,9 @@ type Store struct {
 	sync                *models.SyncSettings
 	syncActivity        models.SyncActivity
 	importDestByProfile map[string]string
+	remoteDestinations  []models.RemoteDestination
+	appSettingsDestinationID string
+	remoteDestinationsMigrated bool
 }
 
 func New(baseDir string) *Store {
@@ -173,6 +176,17 @@ func (s *Store) LoadSyncSettings() (*models.SyncSettings, error) {
 	return s.sync.Clone(), nil
 }
 
+func cloneRemoteDestinations(src []models.RemoteDestination) []models.RemoteDestination {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]models.RemoteDestination, len(src))
+	for i, d := range src {
+		out[i] = d.Clone()
+	}
+	return out
+}
+
 func (s *Store) SaveSyncSettings(settings models.SyncSettings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -180,6 +194,20 @@ func (s *Store) SaveSyncSettings(settings models.SyncSettings) error {
 		return ErrVaultLocked
 	}
 	s.sync = settings.Clone()
+	if s.appSettingsDestinationID != "" {
+		for i, d := range s.remoteDestinations {
+			if d.ID == s.appSettingsDestinationID {
+				s.remoteDestinations[i] = models.RemoteDestinationFromSyncSettings(d.ID, d.Name, settings)
+				break
+			}
+		}
+	} else if len(s.remoteDestinations) == 0 && models.SyncSettingsConfigured(&settings) {
+		id := fmt.Sprintf("%d", time.Now().UnixNano())
+		dest := models.RemoteDestinationFromSyncSettings(id, "Default", settings)
+		s.remoteDestinations = []models.RemoteDestination{dest}
+		s.appSettingsDestinationID = id
+		s.remoteDestinationsMigrated = true
+	}
 	s.bumpRevisionLocked()
 	return s.persistVaultLocked()
 }
@@ -307,11 +335,13 @@ func (s *Store) ExportProfiles(path string, profiles []models.Profile, includeSe
 
 // AppImportData holds decoded app bundle contents for merge preview.
 type AppImportData struct {
-	Profiles  []models.Profile
-	Templates []models.SQLTemplate
-	History   []models.ExportRecord
-	Logs      []models.LogEntry
-	Sync      *models.SyncSettings
+	Profiles                 []models.Profile
+	Templates                []models.SQLTemplate
+	History                  []models.ExportRecord
+	Logs                     []models.LogEntry
+	Sync                     *models.SyncSettings
+	RemoteDestinations       []models.RemoteDestination
+	AppSettingsDestinationID string
 }
 
 // TemplateConflict describes an imported template that replaces an existing one.
@@ -350,7 +380,8 @@ func (s *Store) ImportAppDataBytes(raw []byte, includeSecrets bool, passphrase s
 }
 
 func appBundleHasPayload(b models.AppBundle) bool {
-	return b.Encrypted || len(b.Profiles) > 0 || len(b.Templates) > 0 || len(b.History) > 0 || len(b.Logs) > 0
+	return b.Encrypted || len(b.Profiles) > 0 || len(b.Templates) > 0 || len(b.History) > 0 || len(b.Logs) > 0 ||
+		len(b.RemoteDestinations) > 0 || b.AppSettingsDestinationID != "" || b.Sync != nil
 }
 
 func (s *Store) importProfileBundle(bundle models.ProfileBundle, includeSecrets bool, passphrase string) ([]models.Profile, error) {
@@ -381,11 +412,13 @@ func (s *Store) decodeAppBundle(bundle models.AppBundle, includeSecrets bool, pa
 			return AppImportData{}, err
 		}
 		return AppImportData{
-			Profiles:  flattenProfiles(decoded.Profiles),
-			Templates: decoded.Templates,
-			History:   decoded.History,
-			Logs:      decoded.Logs,
-			Sync:      decoded.Sync.Clone(),
+			Profiles:                 flattenProfiles(decoded.Profiles),
+			Templates:                decoded.Templates,
+			History:                  decoded.History,
+			Logs:                     decoded.Logs,
+			Sync:                     decoded.Sync.Clone(),
+			RemoteDestinations:       cloneRemoteDestinations(decoded.RemoteDestinations),
+			AppSettingsDestinationID: decoded.AppSettingsDestinationID,
 		}, nil
 	}
 	profiles := flattenProfiles(bundle.Profiles)
@@ -393,11 +426,13 @@ func (s *Store) decodeAppBundle(bundle models.AppBundle, includeSecrets bool, pa
 		profiles = stripSecrets(profiles)
 	}
 	return AppImportData{
-		Profiles:  profiles,
-		Templates: append([]models.SQLTemplate(nil), bundle.Templates...),
-		History:   append([]models.ExportRecord(nil), bundle.History...),
-		Logs:      append([]models.LogEntry(nil), bundle.Logs...),
-		Sync:      bundle.Sync.Clone(),
+		Profiles:                 profiles,
+		Templates:                append([]models.SQLTemplate(nil), bundle.Templates...),
+		History:                  append([]models.ExportRecord(nil), bundle.History...),
+		Logs:                     append([]models.LogEntry(nil), bundle.Logs...),
+		Sync:                     bundle.Sync.Clone(),
+		RemoteDestinations:       cloneRemoteDestinations(bundle.RemoteDestinations),
+		AppSettingsDestinationID: bundle.AppSettingsDestinationID,
 	}, nil
 }
 
@@ -414,18 +449,20 @@ func (s *Store) MarshalAppDataBundle(data AppImportData, includeSecrets bool, pa
 		return nil, ErrIncludeSecretsNoPassphrase
 	}
 	payload := AppImportData{
-		Profiles:  flattenProfiles(data.Profiles),
-		Templates: append([]models.SQLTemplate(nil), data.Templates...),
-		History:   append([]models.ExportRecord(nil), data.History...),
-		Logs:      append([]models.LogEntry(nil), data.Logs...),
-		Sync:      data.Sync.Clone(),
+		Profiles:                 flattenProfiles(data.Profiles),
+		Templates:                append([]models.SQLTemplate(nil), data.Templates...),
+		History:                  append([]models.ExportRecord(nil), data.History...),
+		Logs:                     append([]models.LogEntry(nil), data.Logs...),
+		Sync:                     data.Sync.Clone(),
+		RemoteDestinations:       cloneRemoteDestinations(data.RemoteDestinations),
+		AppSettingsDestinationID: data.AppSettingsDestinationID,
 	}
 	for i := range payload.Profiles {
 		payload.Profiles[i].ExportSettings = nil
 		payload.Profiles[i].ImportSettings = nil
 	}
 	if includeSecrets && passphrase != "" {
-		bundle, err := secrets.EncryptAppBundle(payload.Profiles, payload.Templates, payload.History, payload.Logs, payload.Sync, passphrase)
+		bundle, err := secrets.EncryptAppBundle(payload.Profiles, payload.Templates, payload.History, payload.Logs, payload.Sync, payload.RemoteDestinations, payload.AppSettingsDestinationID, passphrase)
 		if err != nil {
 			return nil, err
 		}
@@ -433,6 +470,7 @@ func (s *Store) MarshalAppDataBundle(data AppImportData, includeSecrets bool, pa
 	}
 	if !includeSecrets {
 		payload.Profiles = stripSecrets(payload.Profiles)
+		payload.RemoteDestinations = stripRemoteDestinationSecrets(payload.RemoteDestinations)
 		if payload.Sync != nil {
 			payload.Sync = &models.SyncSettings{
 				Endpoint:    payload.Sync.Endpoint,
@@ -444,13 +482,15 @@ func (s *Store) MarshalAppDataBundle(data AppImportData, includeSecrets bool, pa
 		}
 	}
 	bundle := models.AppBundle{
-		Version:    CurrentVersion,
-		ExportedAt: time.Now(),
-		Profiles:   payload.Profiles,
-		Templates:  payload.Templates,
-		History:    payload.History,
-		Logs:       payload.Logs,
-		Sync:       payload.Sync,
+		Version:                  CurrentVersion,
+		ExportedAt:               time.Now(),
+		Profiles:                 payload.Profiles,
+		Templates:                payload.Templates,
+		History:                  payload.History,
+		Logs:                     payload.Logs,
+		Sync:                     payload.Sync,
+		RemoteDestinations:       payload.RemoteDestinations,
+		AppSettingsDestinationID: payload.AppSettingsDestinationID,
 	}
 	return json.MarshalIndent(bundle, "", "  ")
 }
@@ -792,4 +832,18 @@ func stripSecrets(profiles []models.Profile) []models.Profile {
 		profiles[i].WPKey = ""
 	}
 	return profiles
+}
+
+func stripRemoteDestinationSecrets(destinations []models.RemoteDestination) []models.RemoteDestination {
+	if len(destinations) == 0 {
+		return nil
+	}
+	out := make([]models.RemoteDestination, len(destinations))
+	for i, d := range destinations {
+		out[i] = d.Clone()
+		if out[i].S3 != nil {
+			out[i].S3.SecretKey = ""
+		}
+	}
+	return out
 }

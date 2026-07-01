@@ -19,7 +19,7 @@ func (u *UI) layoutSettings(gtx layout.Context, th *material.Theme) layout.Dimen
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return tabBar(gtx, th, theme,
 					func(gtx layout.Context) layout.Dimensions {
-						return tabButton(gtx, th, theme, &u.tabSettingsExport, "Export", u.settingsTab == 0, func() {
+						return tabButton(gtx, th, theme, &u.tabSettingsExport, "Export JSON", u.settingsTab == 0, func() {
 							u.settingsTab = 0
 							u.invalidate()
 						})
@@ -48,13 +48,13 @@ func (u *UI) layoutSettingsExport(gtx layout.Context, th *material.Theme, theme 
 	return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				lbl := material.Subtitle1(th, "App Data Transfer")
+				lbl := material.Subtitle1(th, "Export JSON")
 				lbl.Color = theme.Text
 				return lbl.Layout(gtx)
 			}),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return mutedLabel(gtx, th, theme, "Export or import hosts, templates, backup history, and activity logs. Backup .sql.gz files are not included. Exports are encrypted by default; history and log metadata may still contain sensitive host names and paths.")
+				return mutedLabel(gtx, th, theme, "Export or import hosts, templates, backup history, and activity logs as JSON. Backup archive files are not included. Exports are encrypted by default; history and log metadata may still contain sensitive host names and paths.")
 			}),
 			layout.Rigid(vgap(theme)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

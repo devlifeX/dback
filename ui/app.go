@@ -109,11 +109,22 @@ type UI struct {
 	testSyncBtn             widget.Clickable
 	syncPushBtn             widget.Clickable
 	syncPullBtn             widget.Clickable
-	syncForm                *SyncForm
+	syncDestForm            *RemoteDestinationForm
+	syncDestinations        []models.RemoteDestination
+	syncAppSettingsDestID   string
+	syncAppSettingsSelect   *widget.Enum
+	syncAppSettingsDropdown DropdownState
+	syncShowDestEditor      bool
+	syncEditingDestID       string
 	syncConnectionOK        bool
 	syncPushPending         bool
-	syncSavedBaseline       *models.SyncSettings
 	syncActivity            models.SyncActivity
+	syncAddDestBtn          widget.Clickable
+	syncSaveDestBtn         widget.Clickable
+	syncCancelDestBtn       widget.Clickable
+	syncTestDestBtn         widget.Clickable
+	syncDestEditBtns        map[string]*widget.Clickable
+	syncDestDeleteBtns      map[string]*widget.Clickable
 	settingsList            widget.List
 	tabConnection           widget.Clickable
 	tabQuery                widget.Clickable
@@ -170,12 +181,13 @@ type UI struct {
 }
 
 type profileCardWidgets struct {
-	backup      *widget.Clickable
-	backupFiles *widget.Clickable
-	edit        *widget.Clickable
-	duplicate   *widget.Clickable
-	delete      *widget.Clickable
-	more        *widget.Clickable
+	backup       *widget.Clickable
+	backupFiles  *widget.Clickable
+	uploadRemote *widget.Clickable
+	edit         *widget.Clickable
+	duplicate    *widget.Clickable
+	delete       *widget.Clickable
+	more         *widget.Clickable
 }
 
 type backupRowMenuWidgets struct {

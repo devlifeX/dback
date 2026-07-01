@@ -3,6 +3,7 @@ package sync
 import (
 	"testing"
 
+	"dback/internal/remote"
 	"dback/models"
 )
 
@@ -25,11 +26,11 @@ func TestNormalizeEndpoint(t *testing.T) {
 }
 
 func TestValidateSettingsIncomplete(t *testing.T) {
-	err := validateSettings(models.SyncSettings{
-		Endpoint: "s3.amazonaws.com",
-		Bucket:   "bucket",
+	_, err := remote.NewS3Provider(models.RemoteDestination{
+		Type: models.RemoteProviderS3,
+		S3:   &models.S3DestinationConfig{Endpoint: "s3.amazonaws.com", Bucket: "bucket"},
 	})
-	if err != ErrSyncIncomplete {
-		t.Fatalf("expected ErrSyncIncomplete, got %v", err)
+	if err != remote.ErrIncomplete {
+		t.Fatalf("expected ErrIncomplete, got %v", err)
 	}
 }

@@ -81,6 +81,10 @@ type Profile struct {
 	FileBackupExclude     []string           `json:"file_backup_exclude,omitempty"`
 	FileBackupPaths       []FileBackupPath   `json:"file_backup_paths,omitempty"`
 
+	RemoteUploadDestinationIDs []string `json:"remote_upload_destination_ids,omitempty"`
+	RemoteAutoUploadDB         bool     `json:"remote_auto_upload_db,omitempty"`
+	RemoteAutoUploadFiles      bool     `json:"remote_auto_upload_files,omitempty"`
+
 	// Legacy fields — read-only for migration; not written on save.
 	ExportSettings *TransferSettings `json:"export_settings,omitempty"`
 	ImportSettings *TransferSettings `json:"import_settings,omitempty"`
@@ -222,6 +226,7 @@ type ExportRecord struct {
 	QuickVerified      *LastVerified      `json:"quick_verified,omitempty"`
 	DeepVerified       *LastVerified      `json:"deep_verified,omitempty"`
 	LastVerified       *LastVerified      `json:"last_verified,omitempty"` // legacy; prefer QuickVerified/DeepVerified
+	RemoteUploads      []RemoteUploadState `json:"remote_uploads,omitempty"`
 }
 
 type ProfileBundle struct {
@@ -274,9 +279,12 @@ type AppVaultPayload struct {
 	Templates           []SQLTemplate     `json:"templates"`
 	History             []ExportRecord    `json:"history"`
 	Logs                []LogEntry        `json:"logs"`
-	Sync                *SyncSettings     `json:"sync,omitempty"`
-	SyncActivity        SyncActivity      `json:"sync_activity,omitempty"`
-	ImportDestByProfile map[string]string `json:"import_dest_by_profile,omitempty"`
+	Sync                         *SyncSettings        `json:"sync,omitempty"`
+	SyncActivity                 SyncActivity         `json:"sync_activity,omitempty"`
+	ImportDestByProfile          map[string]string    `json:"import_dest_by_profile,omitempty"`
+	RemoteDestinations           []RemoteDestination  `json:"remote_destinations,omitempty"`
+	AppSettingsDestinationID     string               `json:"app_settings_destination_id,omitempty"`
+	RemoteDestinationsMigrated   bool                 `json:"remote_destinations_migrated,omitempty"`
 }
 
 // AppBundle exports hosts, templates, backup history metadata, and activity logs.
@@ -291,8 +299,10 @@ type AppBundle struct {
 	Templates        []SQLTemplate  `json:"templates,omitempty"`
 	History          []ExportRecord `json:"history,omitempty"`
 	Logs             []LogEntry     `json:"logs,omitempty"`
-	Sync             *SyncSettings  `json:"sync,omitempty"`
-	EncryptedPayload string         `json:"encrypted_payload,omitempty"`
+	Sync                       *SyncSettings       `json:"sync,omitempty"`
+	RemoteDestinations         []RemoteDestination `json:"remote_destinations,omitempty"`
+	AppSettingsDestinationID   string              `json:"app_settings_destination_id,omitempty"`
+	EncryptedPayload           string              `json:"encrypted_payload,omitempty"`
 }
 
 type BackupHistory struct {

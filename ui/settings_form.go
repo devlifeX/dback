@@ -54,6 +54,7 @@ type SettingsForm struct {
 	defaultDestination string
 	scrollList         widget.List
 	fileBackup         *FileBackupForm
+	remoteUpload       *RemoteUploadForm
 
 	selectKeyBtn        widget.Clickable
 	selectJumpKeyBtn    widget.Clickable
@@ -70,7 +71,7 @@ type SettingsForm struct {
 	dbPasswordToggle    widget.Clickable
 }
 
-func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
+func newSettingsForm(p models.Profile, defaultDest string, destinations []models.RemoteDestination) *SettingsForm {
 	f := &SettingsForm{defaultDestination: defaultDest}
 	f.ConnectionType.Value = defaultString(string(p.ConnectionType), string(models.ConnectionTypeSSH))
 	setEditorText(&f.Host, p.Host)
@@ -108,6 +109,7 @@ func newSettingsForm(p models.Profile, defaultDest string) *SettingsForm {
 	setEditorText(&f.Destination, dest)
 	f.ImportProtected.Value = p.ImportProtected
 	f.fileBackup = newFileBackupForm(p, defaultDest)
+	f.remoteUpload = newRemoteUploadForm(p, destinations)
 	return f
 }
 
@@ -528,6 +530,25 @@ func (f *SettingsForm) layout(gtx layout.Context, th *material.Theme, theme *App
 			sections = append(sections, layout.Rigid(vgap(theme)))
 			sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return f.fileBackup.layout(gtx, th, theme, u)
+			}))
+		}
+
+		if f.remoteUpload != nil {
+			sections = append(sections, layout.Rigid(vgap(theme)))
+			sections = append(sections, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return card(gtx, theme, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Subtitle1(th, "Remote Upload")
+							lbl.Color = theme.Text
+							return lbl.Layout(gtx)
+						}),
+						layout.Rigid(vgap(theme)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return f.remoteUpload.layout(gtx, th, theme, u.invalidate)
+						}),
+					)
+				})
 			}))
 		}
 

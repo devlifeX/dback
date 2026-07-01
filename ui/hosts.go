@@ -139,12 +139,13 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 		cards, ok := u.profileCards[p.ID]
 		if !ok {
 			cards = profileCardWidgets{
-				backup:      new(widget.Clickable),
-				backupFiles: new(widget.Clickable),
-				edit:        new(widget.Clickable),
-				duplicate:   new(widget.Clickable),
-				delete:      new(widget.Clickable),
-				more:        new(widget.Clickable),
+				backup:       new(widget.Clickable),
+				backupFiles:  new(widget.Clickable),
+				uploadRemote: new(widget.Clickable),
+				edit:         new(widget.Clickable),
+				duplicate:    new(widget.Clickable),
+				delete:       new(widget.Clickable),
+				more:         new(widget.Clickable),
 			}
 			u.profileCards[p.ID] = cards
 		}
@@ -185,6 +186,17 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 					}),
 					layout.Rigid(spacer(theme, unit.Dp(8))),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if label := u.pendingUploadLabel(p.ID); label != "" {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return mutedLabel(gtx, th, theme, label)
+								}),
+								layout.Rigid(vgap(theme)),
+							)
+						}
+						return layout.Dimensions{}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return fixedWidthSuccessButton(gtx, th, theme, cards.backup, "Backup", unit.Dp(120), func() {
@@ -198,6 +210,15 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 								}
 								return fixedWidthSuccessButton(gtx, th, theme, cards.backupFiles, "Backup Files", unit.Dp(120), func() {
 									u.runFileBackup(p)
+								})
+							}),
+							layout.Rigid(hgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if len(p.RemoteUploadDestinationIDs) == 0 {
+									return layout.Dimensions{}
+								}
+								return fixedWidthSecondaryButton(gtx, th, theme, cards.uploadRemote, "Upload", unit.Dp(120), func() {
+									u.runRemoteUpload(p)
 								})
 							}),
 						)
@@ -308,12 +329,13 @@ func (u *UI) duplicateProfile(profile models.Profile) {
 		return
 	}
 	u.profileCards[clone.ID] = profileCardWidgets{
-		backup:      new(widget.Clickable),
-		backupFiles: new(widget.Clickable),
-		edit:        new(widget.Clickable),
-		duplicate:   new(widget.Clickable),
-		delete:      new(widget.Clickable),
-		more:        new(widget.Clickable),
+		backup:       new(widget.Clickable),
+		backupFiles:  new(widget.Clickable),
+		uploadRemote: new(widget.Clickable),
+		edit:         new(widget.Clickable),
+		duplicate:    new(widget.Clickable),
+		delete:       new(widget.Clickable),
+		more:         new(widget.Clickable),
 	}
 	u.openHosts()
 }
@@ -365,6 +387,7 @@ func (u *UI) runBackup(p models.Profile) {
 		}
 		u.setBackupJobRecord(job.ID, record.ID)
 		u.finishJob(job.ID, "Backup complete: "+filepath.Base(record.FilePath), nil)
+		u.maybeAutoRemoteUpload(p, []models.ExportRecord{record})
 	}()
 }
 
@@ -399,6 +422,58 @@ func (u *UI) runFileBackup(p models.Profile) {
 			u.setFileBackupJobRecord(job.ID, result.Records[len(result.Records)-1].ID)
 		}
 		u.finishFileBackupJob(job.ID, fmt.Sprintf("Backup Files complete (%d archives)", len(result.Records)), nil)
+		u.maybeAutoRemoteUpload(p, result.Records)
+	}()
+}
+
+func (u *UI) maybeAutoRemoteUpload(p models.Profile, records []models.ExportRecord) {
+	if len(p.RemoteUploadDestinationIDs) == 0 {
+		return
+	}
+	if !p.RemoteAutoUploadDB && !p.RemoteAutoUploadFiles {
+		return
+	}
+	u.runRemoteUploadRecords(p, records)
+}
+
+func (u *UI) runRemoteUpload(p models.Profile) {
+	if len(p.RemoteUploadDestinationIDs) == 0 {
+		u.showInfo("Remote Upload", "Select remote destinations in host settings first.")
+		return
+	}
+	u.runRemoteUploadRecords(p, nil)
+}
+
+func (u *UI) runRemoteUploadRecords(p models.Profile, records []models.ExportRecord) {
+	ctx, cancel := context.WithCancel(context.Background())
+	job := u.addJob("Remote Upload", p.Name, cancel)
+	go func() {
+		defer cancel()
+		var recordIDs []string
+		for _, rec := range records {
+			recordIDs = append(recordIDs, rec.ID)
+		}
+		err := u.core.UploadProfileBackups(ctx, p.ID, recordIDs, func(prog coreapp.RemoteUploadProgress) {
+			status := fmt.Sprintf("Uploading to remote (%s)", prog.Status)
+			if prog.Error != "" {
+				status = prog.Error
+			}
+			u.updateJob(job.ID, status, 0, prog.Error)
+		})
+		u.invalidateBackupCache()
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				u.finishJob(job.ID, "Remote upload canceled", nil)
+				return
+			}
+			if errors.Is(err, coreapp.ErrRemoteUploadRunning) {
+				u.finishJob(job.ID, "Remote upload already running", err)
+				return
+			}
+			u.finishJob(job.ID, "Remote upload failed", err)
+			return
+		}
+		u.finishJob(job.ID, "Remote upload complete", nil)
 	}()
 }
 
@@ -407,7 +482,8 @@ func (u *UI) openProfileEditor(p models.Profile) {
 	setEditorText(&u.profileName, p.Name)
 	setEditorText(&u.profileGroup, p.Group)
 	defaultDest := paths.DefaultBackupDestination()
-	u.hostForm = newSettingsForm(p, defaultDest)
+	destinations, _ := u.core.ListRemoteDestinations()
+	u.hostForm = newSettingsForm(p, defaultDest, destinations)
 	u.queryForm = newQueryForm(p)
 	u.profileTab = 0
 	u.view = ViewProfileEditor

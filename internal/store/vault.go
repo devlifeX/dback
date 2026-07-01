@@ -132,10 +132,13 @@ func (s *Store) Unlock(passphrase string) error {
 			return err
 		}
 		s.dataKey = key
-		s.applyPayloadLocked(payload)
+		migrated := s.applyPayloadLocked(payload)
 		s.setMasterKeyLocked(passphrase)
 		s.unlocked = true
 		s.bumpRevisionLocked()
+		if migrated {
+			_ = s.persistVaultLocked()
+		}
 		_ = s.removeLegacyPlaintextLocked()
 		log.Printf("store.Unlock: vault unlocked (profiles=%d templates=%d)", len(payload.Profiles), len(payload.Templates))
 		return nil
@@ -168,7 +171,8 @@ func (s *Store) Unlock(passphrase string) error {
 	return ErrVaultNotFound
 }
 
-func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) {
+func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) bool {
+	migrated := migrateRemoteDestinations(&payload)
 	s.profiles = flattenProfiles(payload.Profiles)
 	s.templates = append([]models.SQLTemplate(nil), payload.Templates...)
 	if len(s.templates) == 0 {
@@ -178,11 +182,16 @@ func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) {
 	s.logs = append([]models.LogEntry(nil), payload.Logs...)
 	s.sync = payload.Sync.Clone()
 	s.syncActivity = payload.SyncActivity
+	s.remoteDestinations = cloneRemoteDestinations(payload.RemoteDestinations)
+	s.appSettingsDestinationID = payload.AppSettingsDestinationID
+	s.remoteDestinationsMigrated = payload.RemoteDestinationsMigrated
+	s.syncLegacyFromAppSettingsLocked()
 	if len(payload.ImportDestByProfile) > 0 {
 		s.importDestByProfile = cloneStringMap(payload.ImportDestByProfile)
 	} else {
 		s.importDestByProfile = map[string]string{}
 	}
+	return migrated
 }
 
 func (s *Store) persistVaultLocked() error {
@@ -211,14 +220,17 @@ func (s *Store) currentPayloadLocked() models.AppVaultPayload {
 		profiles[i].ImportSettings = nil
 	}
 	return models.AppVaultPayload{
-		Version:             CurrentVersion,
-		Profiles:            profiles,
-		Templates:           append([]models.SQLTemplate(nil), s.templates...),
-		History:             append([]models.ExportRecord(nil), s.history...),
-		Logs:                append([]models.LogEntry(nil), s.logs...),
-		Sync:                s.sync.Clone(),
-		SyncActivity:        s.syncActivity,
-		ImportDestByProfile: cloneStringMap(s.importDestByProfile),
+		Version:                    CurrentVersion,
+		Profiles:                   profiles,
+		Templates:                  append([]models.SQLTemplate(nil), s.templates...),
+		History:                    append([]models.ExportRecord(nil), s.history...),
+		Logs:                       append([]models.LogEntry(nil), s.logs...),
+		Sync:                       s.sync.Clone(),
+		SyncActivity:               s.syncActivity,
+		ImportDestByProfile:        cloneStringMap(s.importDestByProfile),
+		RemoteDestinations:         cloneRemoteDestinations(s.remoteDestinations),
+		AppSettingsDestinationID:   s.appSettingsDestinationID,
+		RemoteDestinationsMigrated: s.remoteDestinationsMigrated,
 	}
 }
 
@@ -404,6 +416,9 @@ func (s *Store) Lock() {
 	s.logs = nil
 	s.sync = nil
 	s.syncActivity = models.SyncActivity{}
+	s.remoteDestinations = nil
+	s.appSettingsDestinationID = ""
+	s.remoteDestinationsMigrated = false
 }
 
 func (s *Store) setMasterKeyLocked(passphrase string) {

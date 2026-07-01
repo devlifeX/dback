@@ -160,16 +160,22 @@ func stripProfileSecrets(p models.Profile) models.Profile {
 }
 
 type appPlainPayload struct {
-	Profiles  []models.Profile      `json:"profiles"`
-	Secrets   appSecretPayload      `json:"secrets"`
-	Templates []models.SQLTemplate  `json:"templates"`
-	History   []models.ExportRecord `json:"history"`
-	Logs      []models.LogEntry     `json:"logs"`
-	Sync      *models.SyncSettings  `json:"sync,omitempty"`
+	Profiles                 []models.Profile           `json:"profiles"`
+	Secrets                  appSecretPayload           `json:"secrets"`
+	Templates                []models.SQLTemplate       `json:"templates"`
+	History                  []models.ExportRecord      `json:"history"`
+	Logs                     []models.LogEntry          `json:"logs"`
+	Sync                     *models.SyncSettings       `json:"sync,omitempty"`
+	RemoteDestinations       []models.RemoteDestination `json:"remote_destinations,omitempty"`
+	AppSettingsDestinationID string                     `json:"app_settings_destination_id,omitempty"`
+}
+
+type remoteSecretPayload struct {
+	SecretKey string `json:"secret_key,omitempty"`
 }
 
 // EncryptAppBundle encrypts profile secrets and app metadata into an encrypted AppBundle.
-func EncryptAppBundle(profiles []models.Profile, templates []models.SQLTemplate, history []models.ExportRecord, logs []models.LogEntry, sync *models.SyncSettings, passphrase string) (models.AppBundle, error) {
+func EncryptAppBundle(profiles []models.Profile, templates []models.SQLTemplate, history []models.ExportRecord, logs []models.LogEntry, sync *models.SyncSettings, remoteDestinations []models.RemoteDestination, appSettingsDestinationID, passphrase string) (models.AppBundle, error) {
 	if passphrase == "" {
 		return models.AppBundle{}, errors.New("passphrase required for encrypted export")
 	}
@@ -192,14 +198,31 @@ func EncryptAppBundle(profiles []models.Profile, templates []models.SQLTemplate,
 		stripped[i] = stripProfileSecrets(p)
 	}
 
-	inner, err := json.Marshal(appPlainPayload{
-		Profiles:  stripped,
-		Secrets:   appSecretPayload{Profiles: secretsList},
-		Templates: templates,
-		History:   history,
-		Logs:      logs,
-		Sync:      sync,
-	})
+	strippedRemote, remoteSecrets := stripRemoteDestinations(remoteDestinations)
+
+	innerPayload := struct {
+		Profiles                 []models.Profile           `json:"profiles"`
+		Secrets                  appSecretPayload           `json:"secrets"`
+		RemoteSecrets            []remoteSecretPayload      `json:"remote_secrets,omitempty"`
+		Templates                []models.SQLTemplate       `json:"templates"`
+		History                  []models.ExportRecord      `json:"history"`
+		Logs                     []models.LogEntry          `json:"logs"`
+		Sync                     *models.SyncSettings       `json:"sync,omitempty"`
+		RemoteDestinations       []models.RemoteDestination `json:"remote_destinations,omitempty"`
+		AppSettingsDestinationID string                     `json:"app_settings_destination_id,omitempty"`
+	}{
+		Profiles:                 stripped,
+		Secrets:                  appSecretPayload{Profiles: secretsList},
+		RemoteSecrets:            remoteSecrets,
+		Templates:                templates,
+		History:                  history,
+		Logs:                     logs,
+		Sync:                     sync,
+		RemoteDestinations:       strippedRemote,
+		AppSettingsDestinationID: appSettingsDestinationID,
+	}
+
+	inner, err := json.Marshal(innerPayload)
 	if err != nil {
 		return models.AppBundle{}, err
 	}
@@ -263,7 +286,17 @@ func DecryptAppBundle(bundle models.AppBundle, passphrase string) (models.AppBun
 		return models.AppBundle{}, errors.New("decryption failed: wrong passphrase or corrupted bundle")
 	}
 
-	var payload appPlainPayload
+	var payload struct {
+		Profiles                 []models.Profile           `json:"profiles"`
+		Secrets                  appSecretPayload           `json:"secrets"`
+		RemoteSecrets            []remoteSecretPayload      `json:"remote_secrets,omitempty"`
+		Templates                []models.SQLTemplate       `json:"templates"`
+		History                  []models.ExportRecord      `json:"history"`
+		Logs                     []models.LogEntry          `json:"logs"`
+		Sync                     *models.SyncSettings       `json:"sync,omitempty"`
+		RemoteDestinations       []models.RemoteDestination `json:"remote_destinations,omitempty"`
+		AppSettingsDestinationID string                     `json:"app_settings_destination_id,omitempty"`
+	}
 	if err := json.Unmarshal(plain, &payload); err != nil {
 		return models.AppBundle{}, err
 	}
@@ -277,13 +310,46 @@ func DecryptAppBundle(bundle models.AppBundle, passphrase string) (models.AppBun
 			payload.Profiles[i].JumpAuthKeyPEM = s.JumpAuthKeyPEM
 		}
 	}
+	remoteDestinations := restoreRemoteDestinations(payload.RemoteDestinations, payload.RemoteSecrets)
 	return models.AppBundle{
-		Version:    bundle.Version,
-		ExportedAt: bundle.ExportedAt,
-		Profiles:   payload.Profiles,
-		Templates:  payload.Templates,
-		History:    payload.History,
-		Logs:       payload.Logs,
-		Sync:       payload.Sync,
+		Version:                  bundle.Version,
+		ExportedAt:               bundle.ExportedAt,
+		Profiles:                 payload.Profiles,
+		Templates:                payload.Templates,
+		History:                  payload.History,
+		Logs:                     payload.Logs,
+		Sync:                     payload.Sync,
+		RemoteDestinations:       remoteDestinations,
+		AppSettingsDestinationID: payload.AppSettingsDestinationID,
 	}, nil
+}
+
+func stripRemoteDestinations(destinations []models.RemoteDestination) ([]models.RemoteDestination, []remoteSecretPayload) {
+	if len(destinations) == 0 {
+		return nil, nil
+	}
+	stripped := make([]models.RemoteDestination, len(destinations))
+	secrets := make([]remoteSecretPayload, len(destinations))
+	for i, d := range destinations {
+		stripped[i] = d.Clone()
+		if stripped[i].S3 != nil {
+			secrets[i].SecretKey = stripped[i].S3.SecretKey
+			stripped[i].S3.SecretKey = ""
+		}
+	}
+	return stripped, secrets
+}
+
+func restoreRemoteDestinations(destinations []models.RemoteDestination, secrets []remoteSecretPayload) []models.RemoteDestination {
+	if len(destinations) == 0 {
+		return nil
+	}
+	out := make([]models.RemoteDestination, len(destinations))
+	for i, d := range destinations {
+		out[i] = d.Clone()
+		if out[i].S3 != nil && i < len(secrets) {
+			out[i].S3.SecretKey = secrets[i].SecretKey
+		}
+	}
+	return out
 }

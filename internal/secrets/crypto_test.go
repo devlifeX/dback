@@ -15,7 +15,7 @@ func TestEncryptAppBundleWithSyncSettings(t *testing.T) {
 		SecretKey:   "secret-key",
 		UseSSL:      true,
 	}
-	bundle, err := EncryptAppBundle(nil, nil, nil, nil, syncSettings, "master-key-12345678")
+	bundle, err := EncryptAppBundle(nil, nil, nil, nil, syncSettings, nil, "", "master-key-12345678")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestEncryptAppBundleWithSyncSettings(t *testing.T) {
 func TestDecryptAppBundleWithoutSyncBackwardCompatible(t *testing.T) {
 	bundle, err := EncryptAppBundle(
 		[]models.Profile{{ID: "p1", Name: "host", SSHPassword: "secret"}},
-		nil, nil, nil, nil, "master-key-12345678",
+		nil, nil, nil, nil, nil, "", "master-key-12345678",
 	)
 	if err != nil {
 		t.Fatal(err)

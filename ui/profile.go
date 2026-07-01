@@ -132,6 +132,9 @@ func (u *UI) profileFromEditors() models.Profile {
 	if u.hostForm.fileBackup != nil {
 		p = u.hostForm.fileBackup.applyToProfile(p)
 	}
+	if u.hostForm.remoteUpload != nil {
+		p = u.hostForm.remoteUpload.applyToProfile(p)
+	}
 	qs := u.queryForm.settings()
 	p.PreImportQuery = qs.PreImportQuery
 	p.RunQueryBeforeImport = qs.RunQueryBeforeImport

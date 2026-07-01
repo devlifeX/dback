@@ -9,7 +9,18 @@ import (
 )
 
 func (a *App) SyncSettings() (*models.SyncSettings, error) {
-	return a.store.LoadSyncSettings()
+	destID, err := a.store.AppSettingsDestinationID()
+	if err != nil {
+		return nil, err
+	}
+	if destID == "" {
+		return nil, nil
+	}
+	dest, err := a.store.RemoteDestinationByID(destID)
+	if err != nil {
+		return nil, err
+	}
+	return dest.ToSyncSettings(), nil
 }
 
 func (a *App) SyncActivity() (models.SyncActivity, error) {
@@ -28,32 +39,37 @@ func (a *App) TestSyncConnection(ctx context.Context, cfg models.SyncSettings) e
 
 // SyncPush encrypts with the vault master key from the current unlock session.
 func (a *App) SyncPush(ctx context.Context) error {
-	cfg, err := a.store.LoadSyncSettings()
+	dest, err := a.appSettingsDestination()
 	if err != nil {
 		return err
 	}
-	if cfg == nil {
-		return store.ErrSyncNotConfigured
-	}
-	data, err := a.store.MarshalAppDataBundleForSync(a.currentAppImportData(cfg))
+	data, err := a.store.MarshalAppDataBundleForSync(a.currentAppImportData(dest))
 	if err != nil {
 		return err
 	}
-	if err := sync.Push(ctx, *cfg, data); err != nil {
+	if err := sync.PushDestination(ctx, dest, data); err != nil {
 		return err
 	}
 	return a.store.RecordSyncPush()
 }
 
 func (a *App) SyncDownload(ctx context.Context) ([]byte, error) {
-	cfg, err := a.store.LoadSyncSettings()
+	dest, err := a.appSettingsDestination()
 	if err != nil {
 		return nil, err
 	}
-	if cfg == nil {
-		return nil, store.ErrSyncNotConfigured
+	return sync.PullDestination(ctx, dest)
+}
+
+func (a *App) appSettingsDestination() (models.RemoteDestination, error) {
+	destID, err := a.store.AppSettingsDestinationID()
+	if err != nil {
+		return models.RemoteDestination{}, err
 	}
-	return sync.Pull(ctx, *cfg)
+	if destID == "" {
+		return models.RemoteDestination{}, store.ErrSyncNotConfigured
+	}
+	return a.store.RemoteDestinationByID(destID)
 }
 
 // PreviewSyncImport decrypts with the vault master key from the current unlock session.
@@ -71,13 +87,18 @@ func (a *App) RecordSyncPull() error {
 	return a.store.RecordSyncPull()
 }
 
-func (a *App) currentAppImportData(syncSettings *models.SyncSettings) store.AppImportData {
+func (a *App) currentAppImportData(dest models.RemoteDestination) store.AppImportData {
+	syncSettings := dest.ToSyncSettings()
+	destinations, _ := a.store.LoadRemoteDestinations()
+	appDestID, _ := a.store.AppSettingsDestinationID()
 	return store.AppImportData{
-		Profiles:  a.Profiles(),
-		Templates: a.Templates(),
-		History:   a.History(),
-		Logs:      a.Logs(),
-		Sync:      syncSettings.Clone(),
+		Profiles:                 a.Profiles(),
+		Templates:                a.Templates(),
+		History:                  a.History(),
+		Logs:                     a.Logs(),
+		Sync:                     syncSettings,
+		RemoteDestinations:       destinations,
+		AppSettingsDestinationID: appDestID,
 	}
 }
 
@@ -105,7 +126,17 @@ func (a *App) applyImportedAppData(imported store.AppImportData) error {
 	if err := a.store.SaveLogs(logs); err != nil {
 		return err
 	}
-	if imported.Sync != nil {
+	for _, dest := range imported.RemoteDestinations {
+		if err := a.store.SaveRemoteDestination(dest); err != nil {
+			return err
+		}
+	}
+	if imported.AppSettingsDestinationID != "" {
+		if err := a.store.SetAppSettingsDestinationID(imported.AppSettingsDestinationID); err != nil {
+			return err
+		}
+	}
+	if imported.Sync != nil && len(imported.RemoteDestinations) == 0 {
 		if err := a.store.SaveSyncSettings(*imported.Sync); err != nil {
 			return err
 		}

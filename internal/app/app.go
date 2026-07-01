@@ -286,11 +286,17 @@ func (a *App) ImportProfiles(path string, includeSecrets bool, passphrase string
 }
 
 func (a *App) ExportAppData(path string, includeSecrets bool, passphrase string) error {
+	destinations, _ := a.store.LoadRemoteDestinations()
+	appDestID, _ := a.store.AppSettingsDestinationID()
+	syncSettings, _ := a.SyncSettings()
 	return a.store.ExportAppData(path, store.AppImportData{
-		Profiles:  a.Profiles(),
-		Templates: a.Templates(),
-		History:   a.History(),
-		Logs:      a.Logs(),
+		Profiles:                 a.Profiles(),
+		Templates:                a.Templates(),
+		History:                  a.History(),
+		Logs:                     a.Logs(),
+		Sync:                     syncSettings,
+		RemoteDestinations:       destinations,
+		AppSettingsDestinationID: appDestID,
 	}, includeSecrets, passphrase)
 }
 
