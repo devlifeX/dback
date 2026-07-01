@@ -78,9 +78,29 @@ echo "Tidying modules..."
 go mod tidy
 
 ARGS=()
+USER_ARGS=()
+DEBUG=false
+for arg in "$@"; do
+    case "$arg" in
+        --debug|-debug)
+            DEBUG=true
+            ;;
+        *)
+            USER_ARGS+=("$arg")
+            ;;
+    esac
+done
 if [[ "${DBACK_DEBUG}" == "1" || "${DBACK_DEBUG}" == "true" ]]; then
-    ARGS+=(--debug)
+    DEBUG=true
+fi
+if [[ "$DEBUG" == true ]]; then
+    export DBACK_DEBUG=1
+    echo "Debug mode enabled (stderr logging via --debug / DBACK_DEBUG=1)"
 fi
 
 echo "Running DBack..."
-go run . "${ARGS[@]}" "$@"
+if [[ "$DEBUG" == true ]]; then
+    go run . --debug "${USER_ARGS[@]}"
+else
+    go run . "${USER_ARGS[@]}"
+fi

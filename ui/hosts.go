@@ -11,7 +11,9 @@ import (
 	"time"
 
 	coreapp "dback/internal/app"
+	"dback/internal/debug"
 	"dback/internal/paths"
+	"dback/internal/remote"
 	"dback/models"
 
 	"gioui.org/layout"
@@ -217,11 +219,42 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 								if len(p.RemoteUploadDestinationIDs) == 0 {
 									return layout.Dimensions{}
 								}
+								uploadState := u.hostUploadState(p.ID)
+								if uploadState.Running || u.isHostUploadRunning(p.ID) {
+									return fixedWidthDisabledButton(gtx, th, theme, "Uploading...", unit.Dp(120))
+								}
 								return fixedWidthSecondaryButton(gtx, th, theme, cards.uploadRemote, "Upload", unit.Dp(120), func() {
 									u.runRemoteUpload(p)
 								})
 							}),
 						)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						uploadState := u.hostUploadState(p.ID)
+						if uploadState.Running {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(vgap(theme)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return progressBar(gtx, theme, uploadState.Progress)
+								}),
+								layout.Rigid(vgap(theme)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if uploadState.Status == "" {
+										return layout.Dimensions{}
+									}
+									return mutedLabel(gtx, th, theme, uploadState.Status)
+								}),
+							)
+						}
+						if uploadState.Result != "" {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(vgap(theme)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return uploadResultLabel(gtx, th, theme, uploadState.Result, uploadState.IsError)
+								}),
+							)
+						}
+						return layout.Dimensions{}
 					}),
 				)
 			})
@@ -445,36 +478,193 @@ func (u *UI) runRemoteUpload(p models.Profile) {
 }
 
 func (u *UI) runRemoteUploadRecords(p models.Profile, records []models.ExportRecord) {
+	if u.isHostUploadRunning(p.ID) {
+		u.finishHostUpload(p.ID, "Upload already running", true)
+		u.invalidate()
+		return
+	}
+
+	var filterIDs []string
+	for _, rec := range records {
+		filterIDs = append(filterIDs, rec.ID)
+	}
+
+	u.setHostUploadRunning(p.ID)
+	u.updateHostUploadProgress(p.ID, -1, "Checking remote backups...")
+	u.invalidate()
+	debug.Log("DEBUG", "RemoteUpload.UI", "prepare_start", fmt.Sprintf("host=%q profile_id=%s filter_records=%d timeout=%s", p.Name, p.ID, len(filterIDs), remote.PrepareUploadTimeout), p.Name, "", "")
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), remote.PrepareUploadTimeout)
+		defer cancel()
+
+		plan, err := u.core.PrepareProfileUpload(ctx, p.ID, filterIDs)
+		u.invalidateBackupCache()
+		if err != nil {
+			msg := "Could not check remote backups: " + err.Error()
+			if errors.Is(err, context.DeadlineExceeded) {
+				msg = "Remote backup check timed out. Check your S3 connection and try again."
+			}
+			debug.Log("DEBUG", "RemoteUpload.UI", "prepare_failed", fmt.Sprintf("host=%q profile_id=%s", p.Name, p.ID), p.Name, "", err.Error())
+			u.finishHostUpload(p.ID, msg, true)
+			u.invalidate()
+			return
+		}
+
+		debug.Log(
+			"DEBUG",
+			"RemoteUpload.UI",
+			"prepare_done",
+			fmt.Sprintf("retry=%d stale=%d latest_stale=%q", len(plan.RetryRecordIDs), len(plan.StaleRemoteRecordIDs), plan.LatestStaleRecordID),
+			p.Name,
+			"",
+			"",
+		)
+
+		if len(plan.RetryRecordIDs) == 0 && len(plan.StaleRemoteRecordIDs) == 0 {
+			u.finishHostUpload(p.ID, "All backups already uploaded", false)
+			u.invalidate()
+			return
+		}
+
+		if len(plan.StaleRemoteRecordIDs) > 1 {
+			debug.Log("DEBUG", "RemoteUpload.UI", "prompt_missing", fmt.Sprintf("stale_records=%d", len(plan.StaleRemoteRecordIDs)), p.Name, "", "")
+			u.showRemoteUploadMissingDialog(p, plan)
+			return
+		}
+
+		uploadIDs := mergeRecordIDs(plan.RetryRecordIDs, plan.StaleRemoteRecordIDs)
+		debug.Log("DEBUG", "RemoteUpload.UI", "upload_start", fmt.Sprintf("record_ids=%v", uploadIDs), p.Name, "", "")
+		u.startRemoteUpload(p, uploadIDs)
+	}()
+}
+
+func (u *UI) showRemoteUploadMissingDialog(p models.Profile, plan coreapp.RemoteUploadPlan) {
+	u.hostUploadMu.Lock()
+	delete(u.hostUploadStates, p.ID)
+	u.hostUploadMu.Unlock()
+
+	count := len(plan.StaleRemoteRecordIDs)
+	msg := fmt.Sprintf("%d backups exist locally but are missing on remote.", count)
+	if count == 1 {
+		msg = "1 backup exists locally but is missing on remote."
+	}
+	u.pendingRemoteUpload = &pendingRemoteUploadChoice{
+		profile:  p,
+		retryIDs: append([]string(nil), plan.RetryRecordIDs...),
+		staleIDs: append([]string(nil), plan.StaleRemoteRecordIDs...),
+		latestID: plan.LatestStaleRecordID,
+	}
+	u.showDialog(DialogState{
+		Kind:    DialogRemoteUploadMissing,
+		Title:   "Missing on remote",
+		Message: msg + " Upload the latest backup only, or upload all?",
+	})
+	u.invalidate()
+}
+
+func (u *UI) confirmRemoteUploadChoice(uploadAll bool) {
+	choice := u.pendingRemoteUpload
+	u.pendingRemoteUpload = nil
+	if choice == nil {
+		return
+	}
+	var uploadIDs []string
+	if uploadAll {
+		uploadIDs = mergeRecordIDs(choice.retryIDs, choice.staleIDs)
+	} else {
+		uploadIDs = mergeRecordIDs(choice.retryIDs, []string{choice.latestID})
+	}
+	u.startRemoteUpload(choice.profile, uploadIDs)
+}
+
+func mergeRecordIDs(groups ...[]string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, group := range groups {
+		for _, id := range group {
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func (u *UI) startRemoteUpload(p models.Profile, recordIDs []string) {
+	u.setHostUploadRunning(p.ID)
+	u.updateHostUploadProgress(p.ID, -1, "Starting upload...")
+	u.invalidate()
+	debug.Log("DEBUG", "RemoteUpload.UI", "upload_exec", fmt.Sprintf("record_ids=%v", recordIDs), p.Name, "", "")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	job := u.addJob("Remote Upload", p.Name, cancel)
 	go func() {
 		defer cancel()
-		var recordIDs []string
-		for _, rec := range records {
-			recordIDs = append(recordIDs, rec.ID)
-		}
-		err := u.core.UploadProfileBackups(ctx, p.ID, recordIDs, func(prog coreapp.RemoteUploadProgress) {
-			status := fmt.Sprintf("Uploading to remote (%s)", prog.Status)
-			if prog.Error != "" {
-				status = prog.Error
+		result, err := u.core.UploadProfileBackups(ctx, p.ID, recordIDs, func(prog coreapp.RemoteUploadProgress) {
+			status := formatRemoteUploadStatus(prog)
+			progress := float64(-1)
+			if prog.Total > 0 {
+				progress = float64(prog.Current) / float64(prog.Total)
 			}
-			u.updateJob(job.ID, status, 0, prog.Error)
+			u.updateHostUploadProgress(p.ID, progress, status)
+			u.updateJob(job.ID, status, progress, prog.Error)
+			u.invalidate()
 		})
 		u.invalidateBackupCache()
+
+		message := coreapp.FormatRemoteUploadResultMessage(result)
+
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
+				u.finishHostUpload(p.ID, "Remote upload canceled", false)
 				u.finishJob(job.ID, "Remote upload canceled", nil)
+				u.invalidate()
 				return
 			}
 			if errors.Is(err, coreapp.ErrRemoteUploadRunning) {
+				u.finishHostUpload(p.ID, "Upload already running", true)
 				u.finishJob(job.ID, "Remote upload already running", err)
+				u.invalidate()
 				return
 			}
+			u.finishHostUpload(p.ID, message, true)
 			u.finishJob(job.ID, "Remote upload failed", err)
+			u.invalidate()
 			return
 		}
-		u.finishJob(job.ID, "Remote upload complete", nil)
+		u.finishHostUpload(p.ID, message, false)
+		u.finishJob(job.ID, message, nil)
+		u.invalidate()
 	}()
+}
+
+func formatRemoteUploadStatus(prog coreapp.RemoteUploadProgress) string {
+	if prog.Total > 0 {
+		if prog.RecordIndex > 0 && prog.RecordTotal > 0 {
+			return fmt.Sprintf("Uploading backup %d/%d (%d/%d)...", prog.RecordIndex, prog.RecordTotal, prog.Current, prog.Total)
+		}
+		return fmt.Sprintf("Uploading (%d/%d)...", prog.Current, prog.Total)
+	}
+	if prog.Status == models.RemoteUploadUploading {
+		return "Uploading..."
+	}
+	if prog.Error != "" {
+		return prog.Error
+	}
+	return "Uploading..."
+}
+
+func uploadResultLabel(gtx layout.Context, th *material.Theme, theme *AppTheme, message string, isError bool) layout.Dimensions {
+	lbl := material.Body2(th, message)
+	if isError {
+		lbl.Color = theme.Danger
+	} else {
+		lbl.Color = theme.Success
+	}
+	return lbl.Layout(gtx)
 }
 
 func (u *UI) openProfileEditor(p models.Profile) {

@@ -332,6 +332,29 @@ func fixedWidthSecondaryButton(gtx layout.Context, th *material.Theme, theme *Ap
 	})
 }
 
+func fixedWidthDisabledButton(gtx layout.Context, th *material.Theme, theme *AppTheme, label string, width unit.Dp) layout.Dimensions {
+	macro := op.Record(gtx.Ops)
+	dims := layout.Inset{
+		Top: unit.Dp(10), Bottom: unit.Dp(10),
+		Left: unit.Dp(16), Right: unit.Dp(16),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		w := gtx.Dp(width)
+		if gtx.Constraints.Max.X > w {
+			gtx.Constraints.Min.X = w
+			gtx.Constraints.Max.X = w
+		}
+		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Body2(th, label)
+			lbl.Color = theme.TextMuted
+			return lbl.Layout(gtx)
+		})
+	})
+	call := macro.Stop()
+	borderedRoundedRect(gtx, dims.Size, gtx.Dp(theme.RadiusSm), theme.SurfaceAlt, theme.Border, gtx.Dp(unit.Dp(1)))
+	call.Add(gtx.Ops)
+	return dims
+}
+
 func disabledButton(gtx layout.Context, th *material.Theme, theme *AppTheme, label string) layout.Dimensions {
 	macro := op.Record(gtx.Ops)
 	dims := layout.Inset{

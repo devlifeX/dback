@@ -139,6 +139,8 @@ type UI struct {
 	dialogCancelBtn         widget.Clickable
 	dialogSyncPullBtn       widget.Clickable
 	dialogForcePushBtn      widget.Clickable
+	dialogUploadLatestBtn   widget.Clickable
+	dialogUploadAllBtn      widget.Clickable
 	dialogHostList          widget.List
 	connectionTestCancelBtn widget.Clickable
 	connectionTestCloseBtn  widget.Clickable
@@ -176,6 +178,11 @@ type UI struct {
 	templateCache        templateOptionCache
 	backupCache          backupViewCache
 	hostConnTest         hostConnectionTestState
+
+	hostUploadMu     sync.Mutex
+	hostUploadStates map[string]hostUploadUIState
+
+	pendingRemoteUpload *pendingRemoteUploadChoice
 
 	invalidate func()
 }

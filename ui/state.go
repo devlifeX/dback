@@ -53,6 +53,7 @@ const (
 	DialogUpdateAvailable
 	DialogVerifyReport
 	DialogDeepVerifyConfirm
+	DialogRemoteUploadMissing
 )
 
 type DialogState struct {
@@ -66,6 +67,13 @@ type DialogState struct {
 	VerifyFingerprintMode string
 	OnOK                  func()
 	OnCancel              func()
+}
+
+type pendingRemoteUploadChoice struct {
+	profile  models.Profile
+	retryIDs []string
+	staleIDs []string
+	latestID string
 }
 
 type PendingFilePick struct {

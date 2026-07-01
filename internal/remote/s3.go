@@ -5,9 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"dback/internal/debug"
 	"dback/models"
 
 	"github.com/minio/minio-go/v7"
@@ -38,6 +42,22 @@ func NormalizeEndpoint(endpoint string) string {
 	return endpoint
 }
 
+func s3HTTPTransport() *http.Transport {
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
 type S3Provider struct {
 	dest   models.RemoteDestination
 	cfg    models.S3DestinationConfig
@@ -57,9 +77,10 @@ func NewS3Provider(dest models.RemoteDestination) (*S3Provider, error) {
 	}
 	endpoint := NormalizeEndpoint(cfg.Endpoint)
 	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretKey, ""),
-		Secure: cfg.UseSSL,
-		Region: strings.TrimSpace(cfg.Region),
+		Creds:     credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretKey, ""),
+		Secure:    cfg.UseSSL,
+		Region:    strings.TrimSpace(cfg.Region),
+		Transport: s3HTTPTransport(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create s3 client: %w", err)
@@ -78,12 +99,17 @@ func (p *S3Provider) bucket() string {
 // TestConnection verifies bucket access and read/write permissions under dback/.
 func (p *S3Provider) TestConnection(ctx context.Context) error {
 	bucket := p.bucket()
+	debug.Log("DEBUG", "S3.TestConnection", "start", fmt.Sprintf("endpoint=%s bucket=%q ssl=%v", NormalizeEndpoint(p.cfg.Endpoint), bucket, p.cfg.UseSSL), "", "", "")
+	start := time.Now()
 	exists, err := p.client.BucketExists(ctx, bucket)
 	if err != nil {
+		debug.Log("DEBUG", "S3.TestConnection", "bucket_exists_failed", fmt.Sprintf("bucket=%q elapsed=%s", bucket, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
 		return fmt.Errorf("check bucket: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("bucket %q does not exist", bucket)
+		err := fmt.Errorf("bucket %q does not exist", bucket)
+		debug.Log("DEBUG", "S3.TestConnection", "bucket_missing", fmt.Sprintf("bucket=%q elapsed=%s", bucket, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
+		return err
 	}
 	payload := []byte("dback-connection-test")
 	if _, err := p.client.PutObject(ctx, bucket, testObjectKey, bytes.NewReader(payload), int64(len(payload)), minio.PutObjectOptions{
@@ -92,19 +118,42 @@ func (p *S3Provider) TestConnection(ctx context.Context) error {
 		return fmt.Errorf("write test object: %w", err)
 	}
 	if err := p.client.RemoveObject(ctx, bucket, testObjectKey, minio.RemoveObjectOptions{}); err != nil {
+		debug.Log("DEBUG", "S3.TestConnection", "cleanup_failed", fmt.Sprintf("bucket=%q elapsed=%s", bucket, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
 		return fmt.Errorf("remove test object: %w", err)
 	}
+	debug.Log("DEBUG", "S3.TestConnection", "ok", fmt.Sprintf("bucket=%q elapsed=%s", bucket, time.Since(start).Round(time.Millisecond)), "", "", "")
 	return nil
 }
 
 func (p *S3Provider) PutObject(ctx context.Context, key string, r io.Reader, size int64, contentType string) (string, error) {
+	debug.Log("DEBUG", "S3.PutObject", "start", fmt.Sprintf("endpoint=%s bucket=%q key=%q size=%d content_type=%q", NormalizeEndpoint(p.cfg.Endpoint), p.bucket(), key, size, contentType), "", "", "")
+	start := time.Now()
 	info, err := p.client.PutObject(ctx, p.bucket(), key, r, size, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
 	if err != nil {
+		debug.Log("DEBUG", "S3.PutObject", "failed", fmt.Sprintf("key=%q elapsed=%s", key, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
 		return "", fmt.Errorf("upload object: %w", err)
 	}
+	debug.Log("DEBUG", "S3.PutObject", "ok", fmt.Sprintf("key=%q etag=%q elapsed=%s", key, info.ETag, time.Since(start).Round(time.Millisecond)), "", "", "")
 	return info.ETag, nil
+}
+
+func (p *S3Provider) ObjectExists(ctx context.Context, key string) (bool, error) {
+	debug.Log("DEBUG", "S3.StatObject", "start", fmt.Sprintf("endpoint=%s bucket=%q key=%q", NormalizeEndpoint(p.cfg.Endpoint), p.bucket(), key), "", "", "")
+	start := time.Now()
+	_, err := p.client.StatObject(ctx, p.bucket(), key, minio.StatObjectOptions{})
+	if err == nil {
+		debug.Log("DEBUG", "S3.StatObject", "found", fmt.Sprintf("key=%q elapsed=%s", key, time.Since(start).Round(time.Millisecond)), "", "", "")
+		return true, nil
+	}
+	resp := minio.ToErrorResponse(err)
+	if resp.Code == "NoSuchKey" || resp.StatusCode == 404 {
+		debug.Log("DEBUG", "S3.StatObject", "missing", fmt.Sprintf("key=%q elapsed=%s", key, time.Since(start).Round(time.Millisecond)), "", "", "")
+		return false, nil
+	}
+	debug.Log("DEBUG", "S3.StatObject", "failed", fmt.Sprintf("key=%q code=%q status=%d elapsed=%s", key, resp.Code, resp.StatusCode, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
+	return false, fmt.Errorf("stat object: %w", err)
 }
 
 // PushAppData uploads encrypted app settings bundle.

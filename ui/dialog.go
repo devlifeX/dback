@@ -42,6 +42,9 @@ func (u *UI) layoutDialog(gtx layout.Context, th *material.Theme) layout.Dimensi
 				if d.Kind == DialogDeepVerifyConfirm {
 					maxW = unit.Dp(560)
 				}
+				if d.Kind == DialogRemoteUploadMissing {
+					maxW = unit.Dp(480)
+				}
 				gtx.Constraints.Max.X = gtx.Dp(maxW)
 				if d.Kind == DialogConnectionTest {
 					return u.layoutConnectionTestCard(gtx, th, theme)
@@ -174,6 +177,43 @@ func (u *UI) layoutDialogCard(gtx layout.Context, th *material.Theme, theme *App
 									return secondaryButton(gtx, th, theme, &u.dialogCancelBtn, "Cancel", func() {
 										u.syncPushPending = false
 										u.closeDialog()
+									})
+								})
+							}),
+						)
+					}
+					if d.Kind == DialogRemoteUploadMissing {
+						choice := u.pendingRemoteUpload
+						staleCount := 0
+						if choice != nil {
+							staleCount = len(choice.staleIDs)
+						}
+						latestLabel := "Upload latest only"
+						allLabel := "Upload all"
+						if staleCount > 0 {
+							allLabel = fmt.Sprintf("Upload all (%d)", staleCount)
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return wideSuccessButton(gtx, th, theme, &u.dialogUploadLatestBtn, latestLabel, func() {
+									u.closeDialog()
+									u.confirmRemoteUploadChoice(false)
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return wideSuccessButton(gtx, th, theme, &u.dialogUploadAllBtn, allLabel, func() {
+									u.closeDialog()
+									u.confirmRemoteUploadChoice(true)
+								})
+							}),
+							layout.Rigid(vgap(theme)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return secondaryButton(gtx, th, theme, &u.dialogCancelBtn, "Cancel", func() {
+										u.pendingRemoteUpload = nil
+										u.closeDialog()
+										u.invalidate()
 									})
 								})
 							}),

@@ -19,6 +19,7 @@ type remoteUploadDestRow struct {
 }
 
 type RemoteUploadForm struct {
+	profileID       string
 	rows            []remoteUploadDestRow
 	autoUploadDB    widget.Bool
 	autoUploadFiles widget.Bool
@@ -26,7 +27,7 @@ type RemoteUploadForm struct {
 }
 
 func newRemoteUploadForm(p models.Profile, destinations []models.RemoteDestination) *RemoteUploadForm {
-	f := &RemoteUploadForm{allDestinations: destinations}
+	f := &RemoteUploadForm{profileID: p.ID, allDestinations: destinations}
 	f.autoUploadDB.Value = p.RemoteAutoUploadDB
 	f.autoUploadFiles.Value = p.RemoteAutoUploadFiles
 
@@ -129,6 +130,10 @@ func (f *RemoteUploadForm) layout(gtx layout.Context, th *material.Theme, theme 
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return f.layoutS3FolderID(gtx, th, theme)
+		}),
+		layout.Rigid(vgap(theme)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return mutedLabel(gtx, th, theme, "Select destinations in upload order. Each backup is mirrored to all selected destinations.")
 		}),
 		layout.Rigid(vgap(theme)),
@@ -142,6 +147,30 @@ func (f *RemoteUploadForm) layout(gtx layout.Context, th *material.Theme, theme 
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return checkboxField(gtx, th, theme, &f.autoUploadFiles, "Auto upload after File backup")
+		}),
+	)
+}
+
+func (f *RemoteUploadForm) layoutS3FolderID(gtx layout.Context, th *material.Theme, theme *AppTheme) layout.Dimensions {
+	if f.profileID == "" {
+		return mutedLabel(gtx, th, theme, "S3 folder ID will be created after saving this host.")
+	}
+	prefix := fmt.Sprintf("dback/backups/%s/", f.profileID)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Body2(th, "S3 folder ID: "+f.profileID)
+			lbl.Color = theme.Text
+			return lbl.Layout(gtx)
+		}),
+		layout.Rigid(vgap(theme)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Body2(th, "Path prefix: "+prefix)
+			lbl.Color = theme.Text
+			return lbl.Layout(gtx)
+		}),
+		layout.Rigid(vgap(theme)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return mutedLabel(gtx, th, theme, "Backups for this host are stored under this ID on S3, not the host name.")
 		}),
 	)
 }
