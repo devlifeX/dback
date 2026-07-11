@@ -21,6 +21,7 @@ const (
 
 type Config struct {
 	DataDir         string
+	DB              DBConfig
 	Listen          string
 	PassphraseFile  string
 	Passphrase      string
@@ -64,6 +65,7 @@ func Load() (Config, error) {
 		}
 	}
 	cfg.DataDir = dataDir
+	cfg.DB = LoadDBConfig(dataDir)
 
 	if cfg.Passphrase == "" && cfg.PassphraseFile != "" {
 		raw, err := os.ReadFile(cfg.PassphraseFile)

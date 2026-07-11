@@ -12,7 +12,7 @@ func TestMigrateRemoteDestinationsOnce(t *testing.T) {
 			Endpoint: "minio.local:9000", Bucket: "bucket", AccessKeyID: "key", SecretKey: "secret",
 		},
 	}
-	if !migrateRemoteDestinations(&payload) {
+	if !MigrateRemoteDestinations(&payload) {
 		t.Fatal("expected migration to run")
 	}
 	if len(payload.RemoteDestinations) != 1 {
@@ -24,14 +24,14 @@ func TestMigrateRemoteDestinationsOnce(t *testing.T) {
 	if !payload.RemoteDestinationsMigrated {
 		t.Fatal("expected migrated flag")
 	}
-	if migrateRemoteDestinations(&payload) {
+	if MigrateRemoteDestinations(&payload) {
 		t.Fatal("expected no second migration")
 	}
 }
 
 func TestMigrateRemoteDestinationsEmptySync(t *testing.T) {
 	payload := models.AppVaultPayload{}
-	if migrateRemoteDestinations(&payload) {
+	if MigrateRemoteDestinations(&payload) {
 		t.Fatal("expected no migration without sync settings")
 	}
 	if !payload.RemoteDestinationsMigrated {

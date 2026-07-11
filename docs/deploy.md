@@ -37,6 +37,21 @@ dback serve
 | `DBACK_RATE_LIMIT_BURST` | `40` | Rate limit burst |
 | `DBACK_METRICS` | `true` | Expose `GET /metrics` (Prometheus) |
 | `DBACK_AUDIT_CAP` | `500` | In-memory audit ring buffer |
+| `DBACK_DB_DRIVER` | `sqlite` | Application database driver (`sqlite` or `mysql`) |
+| `DBACK_DB_DSN` | `{DBACK_DATA_DIR}/dback.db` | Full database DSN (overrides host/user vars) |
+| `DBACK_DB_HOST` | `127.0.0.1` | MySQL host (when driver is `mysql` and DSN unset) |
+| `DBACK_DB_PORT` | `3306` | MySQL port |
+| `DBACK_DB_USER` | `dback` | MySQL user |
+| `DBACK_DB_PASSWORD` | — | MySQL password |
+| `DBACK_DB_NAME` | `dback` | MySQL database name |
+
+## Database storage
+
+Application state (hosts, tasks, destinations, history, etc.) is stored in **SQLite** by default at `{DBACK_DATA_DIR}/dback.db`. For multi-instance server deployments, set `DBACK_DB_DRIVER=mysql` and provide a DSN or MySQL connection variables.
+
+Secrets (SSH passwords, S3 keys, notification tokens) are encrypted at the field level using the vault master passphrase (Argon2id + AES-GCM).
+
+On first unlock after upgrade, an existing `app_data.vault.json` is imported into the database automatically and archived as `app_data.vault.json.migrated.bak`.
 
 ## systemd
 

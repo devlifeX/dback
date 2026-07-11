@@ -78,7 +78,7 @@ func TestFlattenProfileSplitsDifferentImportSettings(t *testing.T) {
 		ImportSettings: &importSettings,
 	}
 
-	out := flattenProfile(profile)
+	out := FlattenProfile(profile)
 	if len(out) != 2 {
 		t.Fatalf("expected two hosts, got %d: %#v", len(out), out)
 	}
@@ -185,7 +185,7 @@ func TestFlattenProfilesKeepsWordPress(t *testing.T) {
 		{ID: "wp", Name: "WP Site", ConnectionType: models.ConnectionTypeWordPress, WPUrl: "https://example.com", WPKey: "secret"},
 		{ID: "ssh", Name: "SSH Host", ConnectionType: models.ConnectionTypeSSH, Host: "10.0.0.1"},
 	}
-	out := flattenProfiles(profiles)
+	out := FlattenProfiles(profiles)
 	if len(out) != 2 {
 		t.Fatalf("expected 2 profiles, got %#v", out)
 	}

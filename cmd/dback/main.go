@@ -18,6 +18,7 @@ import (
 	"dback/internal/metrics"
 	"dback/internal/notify"
 	"dback/internal/operation"
+	"dback/internal/store"
 	"dback/internal/trigger"
 
 	apiv1 "dback/internal/api/v1"
@@ -272,7 +273,7 @@ func runUnlockStatus(args []string) int {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
 		return 1
 	}
-	application, err := app.New(cfg.DataDir)
+	application, err := app.NewWithOptions(store.Options{BaseDir: cfg.DataDir, DB: cfg.DB})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "app: %v\n", err)
 		return 1
@@ -409,7 +410,7 @@ func runNotify(args []string) int {
 }
 
 func openApp(cfg config.Config) (*app.App, func(), error) {
-	application, err := app.New(cfg.DataDir)
+	application, err := app.NewWithOptions(store.Options{BaseDir: cfg.DataDir, DB: cfg.DB})
 	if err != nil {
 		return nil, nil, err
 	}

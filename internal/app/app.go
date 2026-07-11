@@ -15,6 +15,7 @@ import (
 	"dback/backend/ssh"
 	"dback/backend/transfer"
 	"dback/backend/wordpress"
+	"dback/internal/config"
 	"dback/internal/debug"
 	"dback/internal/paths"
 	"dback/internal/store"
@@ -24,7 +25,7 @@ import (
 type ProgressFunc = transfer.ProgressFunc
 
 type App struct {
-	store *store.Store
+	store store.Repository
 
 	mu        sync.Mutex
 	profiles  []models.Profile
@@ -34,10 +35,22 @@ type App struct {
 }
 
 func New(baseDir string) (*App, error) {
+	return NewWithOptions(store.Options{
+		BaseDir: baseDir,
+		DB:      config.LoadDBConfig(baseDir),
+	})
+}
+
+func NewWithOptions(opts store.Options) (*App, error) {
+	baseDir := opts.BaseDir
 	knownHostsPath := filepath.Join(baseDir, "ssh_known_hosts")
 	log.Printf("app.New: baseDir=%q knownHostsFile=%q", baseDir, knownHostsPath)
 	ssh.SetKnownHostsFile(knownHostsPath)
-	return &App{store: store.New(baseDir)}, nil
+	repo, err := store.Open(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &App{store: repo}, nil
 }
 
 func (a *App) HasVault() bool {

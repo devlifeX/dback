@@ -15,3 +15,11 @@ All notable changes to the `/api/v1` contract are documented here.
 - OpenAPI spec at `GET /api/v1/openapi.json`
 - Vault ETag/`If-Match` via `W/"<revision>"` on mutating endpoints
 - Go SDK at `sdk/go/dback/`
+
+## [Unreleased]
+
+### Changed
+
+- Application persistence moved from encrypted JSON vault file to SQLite (default) or MySQL with field-level secret encryption.
+- Existing `app_data.vault.json` is auto-imported on first unlock and archived as `.migrated.bak`.
+- New env vars: `DBACK_DB_DRIVER`, `DBACK_DB_DSN`, `DBACK_DB_HOST`, `DBACK_DB_PORT`, `DBACK_DB_USER`, `DBACK_DB_PASSWORD`, `DBACK_DB_NAME`.

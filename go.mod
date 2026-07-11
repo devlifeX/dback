@@ -6,8 +6,10 @@ require (
 	gioui.org v0.8.0
 	gioui.org/x v0.8.0
 	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.17.11
+	github.com/mattn/go-sqlite3 v1.14.47
 	github.com/minio/minio-go/v7 v7.0.82
 	github.com/prometheus/client_golang v1.20.5
 	github.com/robfig/cron/v3 v3.0.1
@@ -17,6 +19,7 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.2.0 // indirect
 	gioui.org/shader v1.0.8 // indirect
 	git.wow.st/gmp/jni v0.0.0-20210610011705-34026c7e22d0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

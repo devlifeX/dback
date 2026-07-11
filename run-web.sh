@@ -20,6 +20,14 @@ DATA_DIR="${DBACK_DATA_DIR:-${DEV_DIR}/data}"
 LISTEN="${DBACK_LISTEN:-127.0.0.1:14127}"
 PASSPHRASE="${DBACK_PASSPHRASE:-dev-passphrase}"
 API_TOKEN="${DBACK_API_TOKEN:-dev-token}"
+DB_DRIVER="${DBACK_DB_DRIVER:-sqlite}"
+if [[ -n "${DBACK_DB_DSN:-}" ]]; then
+	DB_DSN="$DBACK_DB_DSN"
+elif [[ "$DB_DRIVER" == "sqlite" ]]; then
+	DB_DSN="${DATA_DIR}/dback.db?_foreign_keys=on&_busy_timeout=5000"
+else
+	DB_DSN=""
+fi
 SERVER_BIN="${ROOT}/dist/dback-server"
 WEB_DIR="${ROOT}/web"
 VITE_PORT="${DBACK_VITE_PORT:-5173}"
@@ -137,6 +145,8 @@ export DBACK_DATA_DIR="$DATA_DIR"
 export DBACK_PASSPHRASE="$PASSPHRASE"
 export DBACK_API_TOKEN="$API_TOKEN"
 export DBACK_LISTEN="$LISTEN"
+export DBACK_DB_DRIVER="$DB_DRIVER"
+export DBACK_DB_DSN="$DB_DSN"
 if [[ "$DEBUG" == true ]]; then
 	export DBACK_DEBUG=1
 fi
@@ -190,6 +200,8 @@ DBACK_DATA_DIR=$DATA_DIR
 DBACK_PASSPHRASE=$PASSPHRASE
 DBACK_API_TOKEN=$API_TOKEN
 DBACK_LISTEN=$LISTEN
+DBACK_DB_DRIVER=$DB_DRIVER
+DBACK_DB_DSN=$DB_DSN
 EOF
 
 echo ""
@@ -198,6 +210,7 @@ echo "  UI:     http://127.0.0.1:${VITE_PORT}"
 echo "  API:    http://${LISTEN}"
 echo "  Token:  $API_TOKEN"
 echo "  Data:   $DATA_DIR"
+echo "  DB:     ${DB_DRIVER} (${DB_DSN})"
 echo "  Creds:  ${DEV_DIR}/credentials.env"
 echo ""
 echo "Press Ctrl+C to stop API + Vite."

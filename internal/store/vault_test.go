@@ -11,7 +11,7 @@ import (
 
 const testMasterKey = "test-master-key"
 
-func unlockStore(t *testing.T, s *Store) {
+func unlockStore(t *testing.T, s Repository) {
 	t.Helper()
 	if s.HasVault() {
 		if err := s.Unlock(testMasterKey); err != nil {
@@ -56,12 +56,12 @@ func TestCreateVaultAndUnlock(t *testing.T) {
 	if len(got) != 1 || got[0].SSHPassword != "secret" {
 		t.Fatalf("expected decrypted profile secret, got %#v", got)
 	}
-	raw, err := os.ReadFile(s.VaultPath())
+	raw, err := os.ReadFile(filepath.Join(dir, "dback.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), "secret") {
-		t.Fatal("vault file must not contain plaintext secrets")
+		t.Fatal("database must not contain plaintext secrets")
 	}
 }
 
