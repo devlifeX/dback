@@ -46,6 +46,10 @@ type FileBackupResult struct {
 
 // BackupFiles archives configured paths sequentially for a host.
 func (a *App) BackupFiles(ctx context.Context, profile models.Profile, progress FileBackupProgressFunc) (FileBackupResult, error) {
+	return a.BackupFilesWithOperationID(ctx, "", profile, progress)
+}
+
+func (a *App) BackupFilesWithOperationID(ctx context.Context, operationID string, profile models.Profile, progress FileBackupProgressFunc) (FileBackupResult, error) {
 	if !profile.SupportsFileBackup() {
 		return FileBackupResult{}, fmt.Errorf("file backup is not supported for this connection type")
 	}
@@ -59,7 +63,9 @@ func (a *App) BackupFiles(ctx context.Context, profile models.Profile, progress 
 		return FileBackupResult{}, err
 	}
 
-	operationID := newID()
+	if operationID == "" {
+		operationID = newID()
+	}
 	started := time.Now()
 	dest := paths.EffectiveBackupDestination(profile.EffectiveFileBackupDestination(paths.DefaultBackupDestination()))
 	if err := os.MkdirAll(dest, 0755); err != nil {

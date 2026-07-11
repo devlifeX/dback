@@ -1,0 +1,15 @@
+[Unit]
+Description=DBack control plane
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/dback/dback.env
+ExecStart=/usr/bin/dback serve
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=35
+
+[Install]
+WantedBy=multi-user.target

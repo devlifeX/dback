@@ -13,7 +13,7 @@ import (
 	"dback/models"
 )
 
-const CurrentVersion = 3
+const CurrentVersion = 5
 
 type Store struct {
 	baseDir string
@@ -36,6 +36,9 @@ type Store struct {
 	remoteDestinations  []models.RemoteDestination
 	appSettingsDestinationID string
 	remoteDestinationsMigrated bool
+	tasks                      []models.Task
+	taskRuns                   []models.TaskRunRecord
+	notifyChannels             []models.NotifyChannel
 }
 
 func New(baseDir string) *Store {

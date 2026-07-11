@@ -332,7 +332,13 @@ func (a *App) ImportAppData(path string, includeSecrets bool, passphrase string)
 }
 
 func (a *App) Backup(ctx context.Context, profile models.Profile, progress ProgressFunc) (models.ExportRecord, error) {
-	operationID := newID()
+	return a.BackupWithOperationID(ctx, "", profile, progress)
+}
+
+func (a *App) BackupWithOperationID(ctx context.Context, operationID string, profile models.Profile, progress ProgressFunc) (models.ExportRecord, error) {
+	if operationID == "" {
+		operationID = newID()
+	}
 	started := time.Now()
 	dest := paths.EffectiveBackupDestination(profile.Destination)
 	if err := os.MkdirAll(dest, 0755); err != nil {

@@ -4,22 +4,22 @@ overview: "تبدیل DBack به Control Plane قابل deploy روی سرور: 
 todos:
   - id: phase-0-core
     content: "Phase 0: Operation core, bounded execution queue, persisted status, typed EventBus, headless binary/config, graceful daemon, Gio adapters"
-    status: pending
+    status: completed
   - id: phase-1-triggers
     content: "Phase 1: Task/Trigger model, restart semantics, bounded profile fan-out, typed artifact passing, headless backup→upload chains"
-    status: pending
+    status: completed
   - id: phase-2-events-notify
     content: "Phase 2: Independent EventBus + subscribers; notify providers with typed schema/validation (Telegram/Slack/Bale/Webhook)"
-    status: pending
+    status: completed
   - id: phase-3-api
     content: "Phase 3: HTTP API v1, Bearer auth/redaction, OpenAPI-first codegen, Go/TS clients, resources, operations/SSE"
-    status: pending
+    status: completed
   - id: phase-4-web
     content: "Phase 4: React 19 feature-based SPA — design system/app shell, Dashboard, Hosts, Operations/SSE, Tasks workflow, Notifications, Templates, Settings"
-    status: pending
+    status: completed
   - id: phase-5-hardening
     content: "Phase 5: reverse-proxy/TLS docs, rate-limit tuning, audit/metrics, load/restart integration tests, production docs"
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -393,8 +393,8 @@ Subscribers (قابل افزودن بدون تغییر Engine):
 | Subscriber | نقش |
 |------------|-----|
 | `notify.Router` | Telegram, Slack, Bale, Webhook |
-| `audit.Writer` | تغییرات config + operation summary (فاز 5) |
-| `metrics.Collector` | Prometheus-style (فاز 5) |
+| `audit.Writer` | تغییرات config + operation summary |
+| `metrics.Collector` | Prometheus-style `/metrics` |
 | آینده: Email, PagerDuty | فقط subscriber جدید |
 
 ---
@@ -927,6 +927,8 @@ On fire: `TaskRunner` ابتدا persisted `ActionSpec`ها را با registry �
 
 **خروجی:** `dback run operation backup_db --profile X` و `dback serve` (بدون trigger/notify/web).
 
+**وضعیت (2026-07): ✅ انجام شد** — `cmd/dback`، `internal/controlplane/`، `internal/event/`، `internal/daemon/`، `internal/config/`، adapters v1، systemd unit. Gio هنوز از root `main.go` است؛ wiring کامل UI→Dispatcher و `cmd/dback-gui` split برای بعد.
+
 ---
 
 ### فاز 1 — Triggers + Tasks
@@ -947,6 +949,8 @@ On fire: `TaskRunner` ابتدا persisted `ActionSpec`ها را با registry �
 
 **خروجی:** schedule شبانه backup+upload از طریق Task — نه BackupSchedule اختصاصی.
 
+**وضعیت (2026-07): ✅ انجام شد** — `models/task.go`، vault v4 (`Tasks`/`TaskRuns`)، `internal/store/tasks.go`، `internal/app/tasks.go`، `internal/trigger/` (registry + cron/interval/on_boot/one_shot + restart semantics)، `internal/controlplane/taskrunner.go`، CLI `dback task list|run|enable|disable`، trigger registry در `dback serve`. تست‌ها: schedule/DST، overlap skip، vault round-trip، WordPress+backup_files validation.
+
 ---
 
 ### فاز 2 — EventBus subscribers + Notifications
@@ -964,6 +968,8 @@ On fire: `TaskRunner` ابتدا persisted `ActionSpec`ها را با registry �
 | Tests | provider `httptest`، routing/filter، retry/timeout، redaction و SSRF |
 
 **خروجی:** خطای operation → Telegram/Slack/Bale/webhook.
+
+**وضعیت (2026-07): ✅ انجام شد** — `models/notify.go`، vault v5 (`NotifyChannels`)، `internal/notify/` (Telegram/Slack/Bale/Webhook providers، Router، retry، redaction، SSRF guard)، `NotifyRouter` subscriber روی `operation.completed/failed/canceled` و `task.skipped` در `dback serve`، CLI `dback notify test --channel <id>`. تست‌ها: httptest providers، routing/filter، retry، redaction، SSRF، secret merge.
 
 ---
 
@@ -985,6 +991,19 @@ On fire: `TaskRunner` ابتدا persisted `ActionSpec`ها را با registry �
 | **بدون SPA** — تست با curl + SDK integration tests |
 
 **خروجی:** automation-ready API؛ پایه SDK/TF/K8s.
+
+**وضعیت (2026-07): ✅ اسکلت اصلی انجام شد** — `internal/api/v1/` (chi router، Bearer auth، JSON limits، ETag/If-Match، secret-redacted DTOs)، endpoints: operations (create/list/get/cancel/**retry**/logs + SSE stream + heartbeat)، tasks (CRUD+run+runs)، hosts (CRUD+test-connection)، templates، backups (list/get/quick-verify)، destinations، notifications (CRUD+test)، logs، sync (settings/push/pull)، system؛ `GET /api/v1/openapi.json`؛ Go SDK `sdk/go/dback/`؛ `docs/api-versioning.md`، `api/CHANGELOG.md`؛ wired در `dback serve`.
+
+**اصلاحات 2026-07 (پس از بازبینی):** notify create/update حالا پاسخ redact‌شده برمی‌گرداند؛ operation retry حالا params اصلی (record_ids/stale_policy) را از `OperationRecord.Params` بازپخش می‌کند نه DefaultParams؛ `/health/ready` واقعاً unlock بودن vault را بررسی می‌کند.
+
+**باقی‌مانده‌ی فاز 3 (کم‌وکسر شناسایی‌شده):**
+- backups: **deep verify** و **restore** endpoint ندارند (متدهای `App.DeepVerify`/`App.Restore` موجودند ولی نیاز به DTO انتخاب destination + اجرای async از طریق dispatcher دارند).
+- sync: **preview/import/export** endpoint ندارند (فقط settings/push/pull).
+- **storage usage** و **notification delivery summaries** endpoint ندارند.
+- operations: endpoint مستقل `/artifacts` نیست (artifact فقط inline در DTO عملیات است).
+- OpenAPI ناقص است (فقط ~۱۲ path؛ retry/logs/templates/backups/destinations/notifications/logs/sync در spec نیستند) و CI diff-check/ogen codegen پیاده نشده — spec دستی است.
+- Go SDK فقط ۳ متد دارد (version/list/create operation)؛ بقیه‌ی endpointها پوشش داده نشده.
+- TypeScript client در فاز 4a.
 
 ---
 
@@ -1009,16 +1028,46 @@ Gio: thin adapter به Dispatcher (no new features Gio-only).
 
 **خروجی:** `http://127.0.0.1:14127` به‌صورت پیش‌فرض؛ برای دسترسی شبکه bind و reverse proxy صریح — UI اصلی.
 
+**وضعیت (2026-07): ⚠️ MVP خواندنی انجام شد (نه UI کامل)** — `web/` React 19 + Vite + TS strict + Tailwind v4؛ build/typecheck/lint سبز؛ feature-based routes (Dashboard، Hosts، Operations+SSE، Tasks، Notifications، Templates، Settings/About)؛ API client layer (token gate memory-only)؛ app shell (sidebar/header/theme)؛ `DBACK_WEB_ROOT` SPA serving از `dback serve`؛ `web/README.md`. dependencyهای فاز کامل (react-hook-form, zod, @tanstack/react-table, radix primitives) نصب شده‌اند.
+
+**اصلاح 2026-07 (پس از بازبینی):** خط `*.json` در `.gitignore` ریشه، فایل‌های حیاتی build وب (`web/package.json`, `package-lock.json`, `tsconfig*.json`, `.oxlintrc.json`) را ignore می‌کرد → با `!web/*.json`/`!web/**/*.json` رفع شد تا repo پس از clone قابل build باشد.
+
+**باقی‌مانده‌ی فاز 4 (کم‌وکسر شناسایی‌شده — فعلاً read-only است):**
+- فرم‌ها با **React Hook Form + Zod** ساخته نشده‌اند (deps نصب است ولی استفاده نمی‌شود؛ فقط TokenGate فرم دارد).
+- CRUD UI برای Hosts/Tasks/Notifications/Templates/Destinations وجود ندارد (empty stateها کاربر را به API ارجاع می‌دهند).
+- **Workflow editor** تسک‌ها (trigger/action forms، next-run preview، reorder) پیاده نشده.
+- **Notification provider forms** (Telegram/Slack/Bale/Webhook) با secret write-only و subscriptions پیاده نشده.
+- shadcn primitives ناقص (۵ از ~۱۵)؛ Data Table واقعی TanStack نیست (جدول HTML ساده)؛ error boundary و lazy route ندارد؛ generated OpenAPI client نیست.
+- Dashboard: storage usage، recent notifications، health probe واقعی و running-ops widget ندارد.
+- Operation detail: artifacts/progress/started-by رندر نمی‌شود.
+- Sub-phaseهای 4h (Playwright E2E، embedded binary) برای فاز 5 polish.
+
 ---
 
 ### فاز 5 — Production hardening
 
-- TLS docs/reverse-proxy examples، rate limit tuning و security headers
-- Metrics subscriber (Prometheus)
-- Audit subscriber + retention/compaction verification
-- Integration: trigger tick → chain → event → notify (mock providers)
-- Docs: deploy, API reference, OpenAPI
-- load/race/restart tests برای queue، persistence و SSE
+**هدف:** آماده‌سازی deploy production — observability، audit، security baseline و مستندات.
+
+| Item | Detail |
+|------|--------|
+| Security | security headers (CSP, X-Frame-Options, …)؛ per-IP rate limit (`DBACK_RATE_LIMIT_RPS/BURST`) با کلید IP واقعی (نه `RemoteAddr` با پورت) |
+| Metrics | `internal/metrics/` — Prometheus subscriber روی EventBus؛ `GET /metrics` (قابل غیرفعال با `DBACK_METRICS`) |
+| Audit | `internal/audit/` — ring buffer در حافظه؛ `GET /api/v1/system/audit`؛ cap با `DBACK_AUDIT_CAP` |
+| Integration | `internal/integration/pipeline_test.go` — event → notify با stub sender |
+| Docs | [`docs/deploy.md`](docs/deploy.md)، [`docs/reverse-proxy.md`](docs/reverse-proxy.md) (Caddy/nginx TLS)، [`packaging/dback.env.example`](packaging/dback.env.example) |
+| Config | envهای جدید در `internal/config/` برای rate limit، metrics و audit |
+| Wiring | `dback serve` — audit + metrics subscribers؛ notify router `SetMetrics` برای delivery failures |
+
+**خروجی:** deploy امن پشت reverse proxy با observability پایه.
+
+**وضعیت (2026-07): ✅ انجام شد** — security headers + rate limit middleware در `internal/api/v1/hardening.go`؛ Prometheus collector (`dback_operations_total`, `dback_operations_active`, …)؛ audit writer + API؛ مستندات deploy/reverse-proxy؛ env example؛ integration test pipeline notify؛ **249** تست Go سبز.
+
+**باقی‌مانده‌ی فاز 5 (کم‌وکسر — polish / v1.1):**
+- integration end-to-end **trigger tick → chain → event → notify** (فعلاً فقط event → notify تست شده).
+- load/race/restart tests اختصاصی برای SSE reconnect و queue تحت فشار (تکیه بر تست‌های فاز 0/1 برای overlap/restart/DST).
+- audit persistence/compaction روی دیسک (فعلاً in-memory ring buffer).
+- محدود کردن `/metrics` در سطح اپ (فعلاً فقط ACL در مستندات reverse proxy).
+- Playwright E2E و embedded web binary (از فاز 4h — اختیاری).
 
 ---
 
@@ -1117,3 +1166,9 @@ flowchart LR
 | 2026-07 | **v2.1 — Typed Event payloads + Operation Params interface; API versioning policy (compat, deprecation, OpenAPI, SDK)** |
 | 2026-07 | **v2.2 — اجرایی‌سازی بدون overengineering: chain artifacts، trigger restart semantics، bounded queue/fan-out، persisted operation state، batched vault، headless split، security baseline، SSE progress/cancel، Web a11y/tests** |
 | 2026-07 | **v2.3 — معماری کامل Web UI: React 19، Feature-Based structure، shadcn design system، Query/Zustand boundaries، REST/SSE adapters، route/page specs، workflow editor و production quality gates** |
+| 2026-07 | **v2.4 — Phase 0 + Phase 1 implemented: headless daemon/CLI، Task/Trigger vault persistence، trigger registry با restart semantics، task CLI، bounded fan-out chains** |
+| 2026-07 | **v2.5 — Phase 2 implemented: notify providers (Telegram/Slack/Bale/Webhook)، EventBus NotifyRouter، vault channels، SSRF/redaction/retry، `dback notify test`** |
+| 2026-07 | **v2.6 — Phase 3 implemented: `/api/v1` REST+SSE، Bearer auth، ETag، OpenAPI embed، Go SDK، vault-backed CRUD resources** |
+| 2026-07 | **v2.7 — Phase 4 implemented: React 19 SPA (`web/`)، feature pages، SSE client، token bootstrap، `DBACK_WEB_ROOT` static serving** |
+| 2026-07 | **v2.8 — بازبینی فاز 0–4: رفع `.gitignore` که configهای build وب را حذف می‌کرد، redact پاسخ notify create/update، retry با params اصلی، `/health/ready` واقعی؛ به‌روزرسانی صادقانه‌ی وضعیت فاز 3/4 با فهرست کم‌وکسرهای باقی‌مانده** |
+| 2026-07 | **v2.9 — Phase 5 implemented: Prometheus metrics subscriber، audit ring buffer + API، security headers + per-IP rate limit، deploy/reverse-proxy docs، `dback.env.example`، integration test event→notify؛ رفع باگ rate limit (کلید IP به‌جای RemoteAddr:port)** |

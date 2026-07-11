@@ -1,0 +1,172 @@
+openapi: 3.0.3
+info:
+  title: DBack Control Plane API
+  version: 1.0.0
+  description: REST API for DBack server control plane (v1).
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    Operation:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        profile_id:
+          type: string
+        status:
+          type: string
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+    NotifyChannel:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+paths:
+  /version:
+    get:
+      summary: API version
+      security: []
+      responses:
+        "200":
+          description: Version info
+  /openapi.json:
+    get:
+      summary: OpenAPI document
+      security: []
+      responses:
+        "200":
+          description: OpenAPI JSON
+  /operations:
+    get:
+      summary: List operations
+      responses:
+        "200":
+          description: Paginated operations
+    post:
+      summary: Create operation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, profile_id]
+              properties:
+                kind:
+                  type: string
+                profile_id:
+                  type: string
+      responses:
+        "202":
+          description: Accepted
+  /operations/stream:
+    get:
+      summary: SSE operation events
+      responses:
+        "200":
+          description: text/event-stream
+  /operations/{id}:
+    get:
+      summary: Get operation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Operation
+  /operations/{id}/cancel:
+    post:
+      summary: Cancel operation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Canceled
+  /tasks:
+    get:
+      summary: List tasks
+      responses:
+        "200":
+          description: Task list
+    post:
+      summary: Create task
+      responses:
+        "201":
+          description: Created
+  /tasks/{id}/run:
+    post:
+      summary: Run task now
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Started
+  /hosts:
+    get:
+      summary: List hosts (secret-redacted)
+      responses:
+        "200":
+          description: Host list
+  /notifications:
+    get:
+      summary: List notification channels
+      responses:
+        "200":
+          description: Channels
+  /notifications/{id}/test:
+    post:
+      summary: Test notification channel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sent
+  /system/revision:
+    get:
+      summary: Vault data revision for ETag
+      responses:
+        "200":
+          description: Revision

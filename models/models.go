@@ -304,6 +304,9 @@ type AppVaultPayload struct {
 	RemoteDestinations           []RemoteDestination  `json:"remote_destinations,omitempty"`
 	AppSettingsDestinationID     string               `json:"app_settings_destination_id,omitempty"`
 	RemoteDestinationsMigrated   bool                 `json:"remote_destinations_migrated,omitempty"`
+	Tasks                        []Task               `json:"tasks,omitempty"`
+	TaskRuns                     []TaskRunRecord      `json:"task_runs,omitempty"`
+	NotifyChannels               []NotifyChannel      `json:"notify_channels,omitempty"`
 }
 
 // AppBundle exports hosts, templates, backup history metadata, and activity logs.

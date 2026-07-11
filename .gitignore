@@ -17,6 +17,9 @@ dist/
 *.sql.gz
 export_history.json
 *.json
+# keep web tooling configs tracked (they must be committed for the SPA to build)
+!web/**/*.json
+!web/*.json
 *.log
 .cursor/plans*
 HANDOFF.md

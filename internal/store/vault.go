@@ -192,6 +192,9 @@ func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) bool {
 		s.importDestByProfile = map[string]string{}
 	}
 	s.hostSort = payload.HostSort
+	s.tasks = append([]models.Task(nil), payload.Tasks...)
+	s.taskRuns = append([]models.TaskRunRecord(nil), payload.TaskRuns...)
+	s.notifyChannels = append([]models.NotifyChannel(nil), payload.NotifyChannels...)
 	return migrated
 }
 
@@ -233,6 +236,9 @@ func (s *Store) currentPayloadLocked() models.AppVaultPayload {
 		RemoteDestinations:         cloneRemoteDestinations(s.remoteDestinations),
 		AppSettingsDestinationID:   s.appSettingsDestinationID,
 		RemoteDestinationsMigrated: s.remoteDestinationsMigrated,
+		Tasks:                      append([]models.Task(nil), s.tasks...),
+		TaskRuns:                   append([]models.TaskRunRecord(nil), s.taskRuns...),
+		NotifyChannels:             append([]models.NotifyChannel(nil), s.notifyChannels...),
 	}
 }
 
@@ -421,6 +427,10 @@ func (s *Store) Lock() {
 	s.remoteDestinations = nil
 	s.appSettingsDestinationID = ""
 	s.remoteDestinationsMigrated = false
+	s.tasks = nil
+	s.taskRuns = nil
+	s.notifyChannels = nil
+	s.importDestByProfile = nil
 }
 
 func (s *Store) setMasterKeyLocked(passphrase string) {
