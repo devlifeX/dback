@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import { destinationsApi } from '@/api/settings'
@@ -18,6 +18,12 @@ export function DestinationsTab() {
 
   const destinations = useQuery({ queryKey: ['destinations'], queryFn: destinationsApi.list })
 
+  const editDestination = useQuery({
+    queryKey: ['destinations', selectedDest?.id],
+    queryFn: () => destinationsApi.get(selectedDest!.id),
+    enabled: destDialog === 'edit' && !!selectedDest?.id,
+  })
+
   const saveDest = useMutationWithRevision({
     mutationFn: (d: RemoteDestination, etag) => destinationsApi.save(d, etag),
     invalidateKeys: [['destinations']],
@@ -30,6 +36,12 @@ export function DestinationsTab() {
     onSuccess: () => { toast.success('Destination deleted'); setDestDialog(null) },
   })
 
+  const testDest = useMutation({
+    mutationFn: (id: string) => destinationsApi.test(id),
+    onSuccess: () => toast.success('Destination connection OK'),
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   const destItems = destinations.data?.items ?? []
 
   const destColumns: ColumnDef<RemoteDestination>[] = [
@@ -40,6 +52,7 @@ export function DestinationsTab() {
       header: '',
       cell: ({ row }) => (
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={testDest.isPending} onClick={() => testDest.mutate(row.original.id)}>Test</Button>
           <Button size="sm" variant="outline" onClick={() => { setSelectedDest(row.original); setDestDialog('edit') }}>Edit</Button>
           <Button size="sm" variant="destructive" onClick={() => { setSelectedDest(row.original); setDestDialog('delete') }}>Delete</Button>
         </div>
@@ -59,7 +72,18 @@ export function DestinationsTab() {
       <Dialog open={destDialog === 'create' || destDialog === 'edit'} onOpenChange={(o) => !o && setDestDialog(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{destDialog === 'edit' ? 'Edit destination' : 'New destination'}</DialogTitle></DialogHeader>
-          <DestinationForm destination={selectedDest ?? undefined} pending={saveDest.isPending} onCancel={() => setDestDialog(null)} onSubmit={(v) => saveDest.mutate(v)} />
+          {destDialog === 'edit' && editDestination.isLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : destDialog === 'edit' && editDestination.isError ? (
+            <ErrorAlert message="Could not load destination" />
+          ) : (
+            <DestinationForm
+              destination={destDialog === 'edit' ? editDestination.data : undefined}
+              pending={saveDest.isPending}
+              onCancel={() => setDestDialog(null)}
+              onSubmit={(v) => saveDest.mutate(v)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

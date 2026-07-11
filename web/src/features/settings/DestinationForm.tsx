@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -6,6 +7,13 @@ import { FormField } from '@/components/forms/FormField'
 import { FormSection } from '@/components/forms/FormSection'
 import { SecretField } from '@/components/forms/SecretField'
 import type { RemoteDestination } from '@/api/types'
+
+const emptyDestination: RemoteDestination = {
+  id: '',
+  name: '',
+  type: 's3',
+  s3: { endpoint: '', bucket: '', access_key_id: '', secret_key: '', use_ssl: true },
+}
 
 export function DestinationForm({
   destination,
@@ -18,14 +26,13 @@ export function DestinationForm({
   onCancel: () => void
   pending?: boolean
 }) {
-  const { register, handleSubmit, control, watch, setValue } = useForm<RemoteDestination>({
-    defaultValues: destination ?? {
-      id: '',
-      name: '',
-      type: 's3',
-      s3: { endpoint: '', bucket: '', access_key_id: '', secret_key: '', use_ssl: true },
-    },
+  const { register, handleSubmit, control, watch, setValue, reset } = useForm<RemoteDestination>({
+    defaultValues: destination ?? emptyDestination,
   })
+
+  useEffect(() => {
+    reset(destination ?? emptyDestination)
+  }, [destination, reset])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

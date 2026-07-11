@@ -3,6 +3,7 @@ import type { Paginated, RemoteDestination } from './types'
 
 export const destinationsApi = {
   list: () => apiRequest<Paginated<RemoteDestination>>('/api/v1/destinations'),
+  get: (id: string) => apiRequest<RemoteDestination>(`/api/v1/destinations/${id}`),
   save: (d: RemoteDestination, etag?: string) =>
     apiRequest<RemoteDestination>(d.id ? `/api/v1/destinations/${d.id}` : '/api/v1/destinations', {
       method: d.id ? 'PUT' : 'POST',

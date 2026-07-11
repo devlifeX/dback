@@ -134,11 +134,25 @@ func (h *Handler) mountDestinations(r chi.Router) {
 	r.Get("/", h.listDestinations)
 	r.Post("/", h.createDestination)
 	r.Route("/{id}", func(r chi.Router) {
+		r.Get("/", h.getDestination)
 		r.Get("/usage", h.destinationUsage)
 		r.Put("/", h.updateDestination)
 		r.Delete("/", h.deleteDestination)
 		r.Post("/test", h.testDestination)
 	})
+}
+
+func (h *Handler) getDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireVaultUnlocked(w, h.App) {
+		return
+	}
+	dest, err := h.App.RemoteDestinationByID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	setRevisionETag(w, h.App.DataRevision())
+	writeJSON(w, http.StatusOK, dest)
 }
 
 func (h *Handler) listDestinations(w http.ResponseWriter, r *http.Request) {
