@@ -156,6 +156,95 @@ func (p *S3Provider) ObjectExists(ctx context.Context, key string) (bool, error)
 	return false, fmt.Errorf("stat object: %w", err)
 }
 
+func (p *S3Provider) ListObjects(ctx context.Context, prefix string) ([]ObjectEntry, error) {
+	prefix = strings.TrimPrefix(prefix, "/")
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	debug.Log("DEBUG", "S3.ListObjects", "start", fmt.Sprintf("endpoint=%s bucket=%q prefix=%q", NormalizeEndpoint(p.cfg.Endpoint), p.bucket(), prefix), "", "", "")
+	start := time.Now()
+	opts := minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: false,
+	}
+	seen := map[string]struct{}{}
+	var entries []ObjectEntry
+	for obj := range p.client.ListObjects(ctx, p.bucket(), opts) {
+		if obj.Err != nil {
+			debug.Log("DEBUG", "S3.ListObjects", "failed", fmt.Sprintf("prefix=%q elapsed=%s", prefix, time.Since(start).Round(time.Millisecond)), "", "", obj.Err.Error())
+			return nil, fmt.Errorf("list objects: %w", obj.Err)
+		}
+		key := obj.Key
+		if key == "" {
+			continue
+		}
+		if strings.HasSuffix(key, "/") {
+			dirKey := key
+			if _, ok := seen[dirKey]; ok {
+				continue
+			}
+			seen[dirKey] = struct{}{}
+			entries = append(entries, ObjectEntry{
+				Key:   dirKey,
+				Name:  strings.TrimSuffix(strings.TrimPrefix(key, prefix), "/"),
+				IsDir: true,
+			})
+			continue
+		}
+		if prefix != "" && key == strings.TrimSuffix(prefix, "/") {
+			continue
+		}
+		name := strings.TrimPrefix(key, prefix)
+		if strings.Contains(name, "/") {
+			part := strings.SplitN(name, "/", 2)[0]
+			dirKey := prefix + part + "/"
+			if _, ok := seen[dirKey]; ok {
+				continue
+			}
+			seen[dirKey] = struct{}{}
+			entries = append(entries, ObjectEntry{
+				Key:   dirKey,
+				Name:  part,
+				IsDir: true,
+			})
+			continue
+		}
+		entries = append(entries, ObjectEntry{
+			Key:          key,
+			Name:         name,
+			Size:         obj.Size,
+			IsDir:        false,
+			LastModified: obj.LastModified,
+		})
+	}
+	debug.Log("DEBUG", "S3.ListObjects", "ok", fmt.Sprintf("prefix=%q count=%d elapsed=%s", prefix, len(entries), time.Since(start).Round(time.Millisecond)), "", "", "")
+	return entries, nil
+}
+
+func (p *S3Provider) GetObject(ctx context.Context, key string) (io.ReadCloser, ObjectMeta, error) {
+	debug.Log("DEBUG", "S3.GetObject", "start", fmt.Sprintf("endpoint=%s bucket=%q key=%q", NormalizeEndpoint(p.cfg.Endpoint), p.bucket(), key), "", "", "")
+	start := time.Now()
+	obj, err := p.client.GetObject(ctx, p.bucket(), key, minio.GetObjectOptions{})
+	if err != nil {
+		debug.Log("DEBUG", "S3.GetObject", "failed", fmt.Sprintf("key=%q elapsed=%s", key, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
+		return nil, ObjectMeta{}, fmt.Errorf("get object: %w", err)
+	}
+	info, err := obj.Stat()
+	if err != nil {
+		_ = obj.Close()
+		debug.Log("DEBUG", "S3.GetObject", "stat_failed", fmt.Sprintf("key=%q elapsed=%s", key, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
+		return nil, ObjectMeta{}, fmt.Errorf("stat object: %w", err)
+	}
+	meta := ObjectMeta{
+		Key:          key,
+		Size:         info.Size,
+		ContentType:  info.ContentType,
+		LastModified: info.LastModified,
+	}
+	debug.Log("DEBUG", "S3.GetObject", "ok", fmt.Sprintf("key=%q size=%d elapsed=%s", key, info.Size, time.Since(start).Round(time.Millisecond)), "", "", "")
+	return obj, meta, nil
+}
+
 // PushAppData uploads encrypted app settings bundle.
 func PushAppData(ctx context.Context, dest models.RemoteDestination, data []byte) error {
 	provider, err := NewProvider(dest)

@@ -243,6 +243,16 @@ export type LogEntry = {
 }
 
 export type StorageInfo = {
+  local: {
+    bytes: number
+    files: number
+    roots: number
+  }
+  remote: {
+    bytes: number
+    objects: number
+    destinations: number
+  }
   backup_records: number
   backup_bytes: number
   hosts: number

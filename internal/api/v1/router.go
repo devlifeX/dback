@@ -52,6 +52,7 @@ func (h *Handler) Router() http.Handler {
 			secured.Route("/hosts", func(r chi.Router) { h.mountHosts(r) })
 			secured.Route("/templates", func(r chi.Router) { h.mountTemplates(r) })
 			secured.Route("/backups", func(r chi.Router) { h.mountBackups(r) })
+			secured.Route("/storage", func(r chi.Router) { h.mountStorage(r) })
 			secured.Route("/destinations", func(r chi.Router) { h.mountDestinations(r) })
 			secured.Route("/notifications", func(r chi.Router) { h.mountNotifications(r) })
 			secured.Route("/logs", func(r chi.Router) { h.mountLogs(r) })

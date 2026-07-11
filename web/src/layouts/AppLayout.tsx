@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Bell,
   Database,
+  FolderOpen,
   HardDrive,
   LayoutDashboard,
   Menu,
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils'
 import { clearApiToken } from '@/api/client'
 import { useNavigate } from 'react-router-dom'
 import { SETTINGS_TABS, settingsPath } from '@/features/settings/settings-nav'
+import { STORAGE_TABS, storagePath } from '@/features/storage/storage-nav'
 
 type NavItem = {
   to: string
@@ -33,6 +35,12 @@ const nav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/hosts', label: 'Hosts', icon: Server },
   { to: '/backups', label: 'Backups', icon: HardDrive },
+  {
+    to: storagePath('local'),
+    label: 'Storage',
+    icon: FolderOpen,
+    children: STORAGE_TABS.map(({ segment, label }) => ({ to: storagePath(segment), label })),
+  },
   { to: '/operations', label: 'Operations', icon: PlayCircle },
   { to: '/tasks', label: 'Tasks', icon: Workflow },
   { to: '/notifications', label: 'Notifications', icon: Bell },
@@ -48,6 +56,7 @@ const nav: NavItem[] = [
 function NavItems({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname } = useLocation()
   const inSettings = pathname.startsWith('/settings')
+  const inStorage = pathname.startsWith('/storage')
 
   return (
     <nav className="flex flex-col gap-1 p-2">
@@ -60,7 +69,7 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
             className={({ isActive }) =>
               cn(
                 'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                (children ? inSettings : isActive)
+                (children ? (to.startsWith('/settings') ? inSettings : inStorage) : isActive)
                   ? 'bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))]'
                   : 'hover:bg-[hsl(var(--muted))]',
               )

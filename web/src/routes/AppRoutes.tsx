@@ -8,6 +8,9 @@ import { OperationDetailPage, OperationsPage } from '@/features/operations/Opera
 import { TaskDetailPage, TasksPage } from '@/features/tasks/TasksPage'
 import { NotificationDetailPage, NotificationsPage } from '@/features/notifications/NotificationsPage'
 import { TemplatesPage } from '@/features/templates/TemplatesPage'
+import { StorageLayout } from '@/features/storage/StorageLayout'
+import { LocalStoragePage } from '@/features/storage/LocalStoragePage'
+import { RemoteStoragePage } from '@/features/storage/RemoteStoragePage'
 import { AboutPage } from '@/features/settings/SettingsPage'
 import { SettingsLayout } from '@/features/settings/SettingsLayout'
 import { GeneralTab } from '@/features/settings/tabs/GeneralTab'
@@ -56,6 +59,11 @@ export function AppRoutes() {
         <Route path="hosts/:id" element={withBoundary(<HostRoute />, 'Host error')} />
         <Route path="backups" element={withBoundary(<BackupsPage />)} />
         <Route path="backups/:id" element={withBoundary(<BackupRoute />, 'Backup error')} />
+        <Route path="storage" element={withBoundary(<StorageLayout />)}>
+          <Route index element={<Navigate to="local" replace />} />
+          <Route path="local" element={<LocalStoragePage />} />
+          <Route path="remote" element={<RemoteStoragePage />} />
+        </Route>
         <Route path="operations" element={withBoundary(<OperationsPage />)} />
         <Route path="operations/:id" element={withBoundary(<OperationRoute />, 'Operation error')} />
         <Route path="tasks" element={withBoundary(<TasksPage />)} />

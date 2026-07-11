@@ -57,11 +57,23 @@ export function DashboardPage() {
           <p className="text-sm">{healthOk ? 'Server reachable and ready' : 'Checking…'}</p>
           <Badge status={healthOk ? 'succeeded' : 'queued'} />
         </Widget>
-        <Widget title="Storage" loading={storage.isLoading} error={storage.isError}>
-          <p className="text-3xl font-semibold">{formatBytes(storage.data?.backup_bytes)}</p>
+        <Widget title="Storage (local)" loading={storage.isLoading} error={storage.isError}>
+          <p className="text-3xl font-semibold">{formatBytes(storage.data?.local?.bytes)}</p>
           <p className="text-sm text-[hsl(var(--muted-foreground))]">
-            {storage.data?.backup_records ?? 0} backups · {storage.data?.hosts ?? 0} hosts
+            {storage.data?.local?.files ?? 0} files · {storage.data?.local?.roots ?? 0} folders
           </p>
+          <Button asChild variant="ghost" className="mt-1 h-auto p-0 text-sm text-[hsl(var(--primary))]">
+            <Link to="/storage/local">Browse local</Link>
+          </Button>
+        </Widget>
+        <Widget title="Storage (remote)" loading={storage.isLoading} error={storage.isError}>
+          <p className="text-3xl font-semibold">{formatBytes(storage.data?.remote?.bytes)}</p>
+          <p className="text-sm text-[hsl(var(--muted-foreground))]">
+            {storage.data?.remote?.objects ?? 0} objects · {storage.data?.remote?.destinations ?? 0} destinations
+          </p>
+          <Button asChild variant="ghost" className="mt-1 h-auto p-0 text-sm text-[hsl(var(--primary))]">
+            <Link to="/storage/remote">Browse remote</Link>
+          </Button>
         </Widget>
         <Widget title="Hosts" loading={hosts.isLoading} error={hosts.isError}>
           <p className="text-3xl font-semibold">{hosts.data?.meta.total ?? 0}</p>

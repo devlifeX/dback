@@ -254,15 +254,21 @@ func (h *Handler) systemStorage(w http.ResponseWriter, r *http.Request) {
 	if !requireVaultUnlocked(w, h.App) {
 		return
 	}
-	var backupBytes int64
-	for _, rec := range h.App.History() {
-		if rec.FileSizeBytes > 0 {
-			backupBytes += rec.FileSizeBytes
-		}
-	}
+	local := h.App.LocalStorageSummary()
+	remote := h.App.RemoteStorageSummary()
 	writeJSON(w, http.StatusOK, map[string]any{
+		"local": map[string]any{
+			"bytes": local.Bytes,
+			"files": local.Files,
+			"roots": local.Roots,
+		},
+		"remote": map[string]any{
+			"bytes":        remote.Bytes,
+			"objects":      remote.Objects,
+			"destinations": remote.Destinations,
+		},
 		"backup_records": len(h.App.History()),
-		"backup_bytes":   backupBytes,
+		"backup_bytes":   local.Bytes,
 		"hosts":          len(h.App.Profiles()),
 	})
 }

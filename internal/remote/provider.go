@@ -17,12 +17,20 @@ const StatObjectTimeout = 10 * time.Second
 // PrepareUploadTimeout bounds the remote presence scan before upload.
 const PrepareUploadTimeout = 60 * time.Second
 
+// ListObjectsTimeout bounds remote directory listings.
+const ListObjectsTimeout = 60 * time.Second
+
+// GetObjectTimeout bounds remote object downloads.
+const GetObjectTimeout = 5 * time.Minute
+
 // Provider abstracts remote object storage backends.
 type Provider interface {
 	Type() models.RemoteProviderType
 	TestConnection(ctx context.Context) error
 	PutObject(ctx context.Context, key string, r io.Reader, size int64, contentType string) (etag string, err error)
 	ObjectExists(ctx context.Context, key string) (bool, error)
+	ListObjects(ctx context.Context, prefix string) ([]ObjectEntry, error)
+	GetObject(ctx context.Context, key string) (io.ReadCloser, ObjectMeta, error)
 }
 
 // NewProvider builds a provider for the given destination.
