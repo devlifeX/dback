@@ -122,6 +122,13 @@ func paginateSlice[T any](items []T, limit, offset int) ([]T, ListMeta) {
 	return items[offset:end], ListMeta{Total: total, Limit: limit, Offset: offset}
 }
 
+func paginatedResponse[T any](items []T, meta ListMeta) Paginated {
+	if items == nil {
+		items = []T{}
+	}
+	return Paginated{Items: items, Meta: meta}
+}
+
 type OperationDTO struct {
 	ID         string                 `json:"id"`
 	Kind       string                 `json:"kind"`

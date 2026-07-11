@@ -3,6 +3,7 @@ package v1
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"dback/models"
 
@@ -25,7 +26,7 @@ func (h *Handler) listTemplates(w http.ResponseWriter, r *http.Request) {
 	}
 	templates := h.App.Templates()
 	setRevisionETag(w, h.App.DataRevision())
-	writeJSON(w, http.StatusOK, Paginated{Items: templates, Meta: ListMeta{Total: len(templates)}})
+	writeJSON(w, http.StatusOK, paginatedResponse(templates, ListMeta{Total: len(templates)}))
 }
 
 func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +88,7 @@ func (h *Handler) mountBackups(r chi.Router) {
 	r.Get("/", h.listBackups)
 	r.Route("/{id}", func(r chi.Router) {
 		r.Get("/", h.getBackup)
+		r.Get("/download", h.downloadBackup)
 		r.Post("/verify/quick", h.quickVerifyBackup)
 	})
 }
@@ -99,7 +101,7 @@ func (h *Handler) listBackups(w http.ResponseWriter, r *http.Request) {
 	history := h.App.History()
 	page, meta := paginateSlice(history, limit, offset)
 	setRevisionETag(w, h.App.DataRevision())
-	writeJSON(w, http.StatusOK, Paginated{Items: page, Meta: meta})
+	writeJSON(w, http.StatusOK, paginatedResponse(page, meta))
 }
 
 func (h *Handler) getBackup(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +134,7 @@ func (h *Handler) mountDestinations(r chi.Router) {
 	r.Get("/", h.listDestinations)
 	r.Post("/", h.createDestination)
 	r.Route("/{id}", func(r chi.Router) {
+		r.Get("/usage", h.destinationUsage)
 		r.Put("/", h.updateDestination)
 		r.Delete("/", h.deleteDestination)
 		r.Post("/test", h.testDestination)
@@ -152,7 +155,7 @@ func (h *Handler) listDestinations(w http.ResponseWriter, r *http.Request) {
 		items = append(items, redactDestination(d))
 	}
 	setRevisionETag(w, h.App.DataRevision())
-	writeJSON(w, http.StatusOK, Paginated{Items: items, Meta: ListMeta{Total: len(items)}})
+	writeJSON(w, http.StatusOK, paginatedResponse(items, ListMeta{Total: len(items)}))
 }
 
 func (h *Handler) createDestination(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +206,8 @@ func (h *Handler) deleteDestination(w http.ResponseWriter, r *http.Request) {
 	if !checkMutationPrecondition(w, r, h.App.DataRevision()) {
 		return
 	}
-	if err := h.App.DeleteRemoteDestination(chi.URLParam(r, "id"), false); err != nil {
+	force := strings.EqualFold(r.URL.Query().Get("force"), "true")
+	if err := h.App.DeleteRemoteDestination(chi.URLParam(r, "id"), force); err != nil {
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 		return
 	}
@@ -247,7 +251,7 @@ func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setRevisionETag(w, h.App.DataRevision())
-	writeJSON(w, http.StatusOK, Paginated{Items: channels, Meta: ListMeta{Total: len(channels)}})
+	writeJSON(w, http.StatusOK, paginatedResponse(channels, ListMeta{Total: len(channels)}))
 }
 
 func (h *Handler) getNotification(w http.ResponseWriter, r *http.Request) {
@@ -358,7 +362,7 @@ func (h *Handler) listLogs(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseLimitOffset(r, 100, 1000)
 	logs := h.App.Logs()
 	page, meta := paginateSlice(logs, limit, offset)
-	writeJSON(w, http.StatusOK, Paginated{Items: page, Meta: meta})
+	writeJSON(w, http.StatusOK, paginatedResponse(page, meta))
 }
 
 func (h *Handler) mountSync(r chi.Router) {
@@ -366,6 +370,10 @@ func (h *Handler) mountSync(r chi.Router) {
 	r.Put("/settings", h.putSyncSettings)
 	r.Post("/push", h.syncPush)
 	r.Post("/pull", h.syncPull)
+	r.Post("/test", h.syncTestConnection)
+	r.Get("/activity", h.syncActivity)
+	r.Post("/preview", h.syncImportPreview)
+	r.Post("/import", h.syncImportApply)
 }
 
 func (h *Handler) getSyncSettings(w http.ResponseWriter, r *http.Request) {
@@ -426,6 +434,7 @@ func (h *Handler) mountSystem(r chi.Router) {
 	r.Get("/version", h.systemVersion)
 	r.Get("/revision", h.systemRevision)
 	r.Get("/audit", h.listAudit)
+	r.Get("/storage", h.systemStorage)
 }
 
 func (h *Handler) systemVersion(w http.ResponseWriter, _ *http.Request) {
@@ -443,10 +452,10 @@ func (h *Handler) systemRevision(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 	if h.Audit == nil {
-		writeJSON(w, http.StatusOK, Paginated{Items: []any{}, Meta: ListMeta{}})
+		writeJSON(w, http.StatusOK, paginatedResponse([]any{}, ListMeta{}))
 		return
 	}
 	limit, _ := parseLimitOffset(r, 100, 500)
 	entries := h.Audit.List(limit)
-	writeJSON(w, http.StatusOK, Paginated{Items: entries, Meta: ListMeta{Total: len(entries), Limit: limit}})
+	writeJSON(w, http.StatusOK, paginatedResponse(entries, ListMeta{Total: len(entries), Limit: limit}))
 }

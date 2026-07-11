@@ -31,7 +31,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setRevisionETag(w, h.App.DataRevision())
-	writeJSON(w, http.StatusOK, Paginated{Items: tasks, Meta: ListMeta{Total: len(tasks)}})
+	writeJSON(w, http.StatusOK, paginatedResponse(tasks, ListMeta{Total: len(tasks)}))
 }
 
 func (h *Handler) getTask(w http.ResponseWriter, r *http.Request) {
@@ -138,5 +138,5 @@ func (h *Handler) listTaskRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, meta := paginateSlice(runs, limit, offset)
-	writeJSON(w, http.StatusOK, Paginated{Items: page, Meta: meta})
+	writeJSON(w, http.StatusOK, paginatedResponse(page, meta))
 }

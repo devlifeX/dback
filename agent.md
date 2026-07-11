@@ -143,7 +143,7 @@ flowchart TB
 
 **Vault versions:** v4 tasks, v5 notify channels — see `internal/store/`.
 
-**Web UI:** Feature-based SPA under `web/src/features/`. Dev proxy in `web/vite.config.ts` forwards `/api` and `/health` to `:14127`. MVP is read-only; CRUD forms deferred — see plan phase 4 gaps.
+**Web UI:** Feature-based SPA under `web/src/features/` with full management CRUD (Phase 6). Dev: `./run-web.sh` → http://127.0.0.1:5173, token `dev-token`.
 
 **Do (Control Plane):**
 

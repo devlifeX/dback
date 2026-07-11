@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import {
   Bell,
   Database,
+  HardDrive,
   LayoutDashboard,
   Menu,
   Moon,
@@ -22,6 +23,7 @@ import { useNavigate } from 'react-router-dom'
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/hosts', label: 'Hosts', icon: Server },
+  { to: '/backups', label: 'Backups', icon: HardDrive },
   { to: '/operations', label: 'Operations', icon: PlayCircle },
   { to: '/tasks', label: 'Tasks', icon: Workflow },
   { to: '/notifications', label: 'Notifications', icon: Bell },

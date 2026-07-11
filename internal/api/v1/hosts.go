@@ -17,6 +17,14 @@ func (h *Handler) mountHosts(r chi.Router) {
 		r.Put("/", h.updateHost)
 		r.Delete("/", h.deleteHost)
 		r.Post("/test-connection", h.testHostConnection)
+		r.Post("/duplicate", h.duplicateHost)
+		r.Get("/uploads/pending", h.listPendingUploads)
+		r.Post("/uploads/plan", h.planProfileUpload)
+		r.Get("/import-destination", h.getImportDestination)
+		r.Put("/import-destination", h.setImportDestination)
+		r.Post("/query", h.runHostQuery)
+		r.Get("/wordpress-plugin", h.downloadWordPressPlugin)
+		r.Post("/generate-wp-key", h.generateWPKey)
 	})
 }
 
@@ -30,7 +38,7 @@ func (h *Handler) listHosts(w http.ResponseWriter, r *http.Request) {
 		items = append(items, hostFromModel(p))
 	}
 	setRevisionETag(w, h.App.DataRevision())
-	writeJSON(w, http.StatusOK, Paginated{Items: items, Meta: ListMeta{Total: len(items)}})
+	writeJSON(w, http.StatusOK, paginatedResponse(items, ListMeta{Total: len(items)}))
 }
 
 func (h *Handler) getHost(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,6 @@
 # DBack Web UI
 
-Primary management interface for the DBack Control Plane (React 19 + Vite + TypeScript).
+Primary management interface for the DBack Control Plane (React 19 + Vite + TypeScript). Full feature parity with Desktop for server management.
 
 ## Quick start (recommended)
 

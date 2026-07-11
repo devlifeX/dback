@@ -39,10 +39,7 @@ func (h *Handler) listOperations(w http.ResponseWriter, r *http.Request) {
 	for _, rec := range all {
 		items = append(items, operationFromRecord(rec))
 	}
-	writeJSON(w, http.StatusOK, Paginated{
-		Items: items,
-		Meta:  ListMeta{Total: len(items), Limit: limit, Offset: offset},
-	})
+	writeJSON(w, http.StatusOK, paginatedResponse(items, ListMeta{Total: len(items), Limit: limit, Offset: offset}))
 }
 
 type createOperationRequest struct {
@@ -65,6 +62,12 @@ func (h *Handler) createOperation(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_operation", err.Error())
 		return
+	}
+	switch p := spec.Params.(type) {
+	case operation.RestoreParams:
+		spec.ProfileID = p.DestinationProfileID
+	case operation.DeepVerifyParams:
+		spec.ProfileID = p.DestinationProfileID
 	}
 	if spec.TriggerRef == "" {
 		spec.TriggerRef = "api"
@@ -146,7 +149,7 @@ func (h *Handler) operationLogs(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	page, meta := paginateSlice(filtered, limit, offset)
-	writeJSON(w, http.StatusOK, Paginated{Items: page, Meta: meta})
+	writeJSON(w, http.StatusOK, paginatedResponse(page, meta))
 }
 
 func (h *Handler) streamOperations(w http.ResponseWriter, r *http.Request) {

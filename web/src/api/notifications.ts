@@ -3,6 +3,7 @@ import type { NotifyChannel, Paginated } from './types'
 
 export const notificationsApi = {
   list: () => apiRequest<Paginated<NotifyChannel>>('/api/v1/notifications'),
+  get: (id: string) => apiRequest<NotifyChannel>(`/api/v1/notifications/${id}`),
   save: (ch: NotifyChannel, etag?: string) =>
     apiRequest<NotifyChannel>(ch.id ? `/api/v1/notifications/${ch.id}` : '/api/v1/notifications', {
       method: ch.id ? 'PUT' : 'POST',

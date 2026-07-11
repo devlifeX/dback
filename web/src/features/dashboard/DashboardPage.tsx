@@ -11,13 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/badge'
 import { PageHeader } from '@/components/shared/page'
 import { Button } from '@/components/ui/button'
+import { formatBytes } from '@/lib/utils'
 
 function Widget({ title, loading, error, children }: { title: string; loading?: boolean; error?: boolean; children: ReactNode }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
+      <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
       <CardContent>
         {loading ? <Skeleton className="h-20 w-full" /> : error ? <p className="text-sm text-[hsl(var(--destructive))]">Failed to load</p> : children}
       </CardContent>
@@ -27,6 +26,7 @@ function Widget({ title, loading, error, children }: { title: string; loading?: 
 
 export function DashboardPage() {
   const version = useQuery({ queryKey: ['version'], queryFn: systemApi.version })
+  const storage = useQuery({ queryKey: ['storage'], queryFn: systemApi.storage })
   const hosts = useQuery({ queryKey: ['hosts'], queryFn: hostsApi.list })
   const ops = useQuery({ queryKey: ['operations'], queryFn: operationsApi.list })
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: tasksApi.list })
@@ -38,6 +38,8 @@ export function DashboardPage() {
   const recent = operations.slice(0, 8)
   const enabledTasks = (tasks.data?.items ?? []).filter((t) => t.enabled).length
 
+  const healthOk = !version.isError && version.data
+
   return (
     <div>
       <PageHeader
@@ -45,18 +47,21 @@ export function DashboardPage() {
         description={version.data ? `API ${version.data.api} · ${version.data.version}` : 'Overview'}
         actions={
           <>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/operations">Operations</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link to="/hosts">Manage hosts</Link>
-            </Button>
+            <Button asChild variant="outline" size="sm"><Link to="/operations">Operations</Link></Button>
+            <Button asChild size="sm"><Link to="/hosts">Manage hosts</Link></Button>
           </>
         }
       />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Widget title="Health" loading={version.isLoading} error={version.isError}>
-          <p className="text-sm">Server reachable</p>
+          <p className="text-sm">{healthOk ? 'Server reachable and ready' : 'Checking…'}</p>
+          <Badge status={healthOk ? 'succeeded' : 'queued'} />
+        </Widget>
+        <Widget title="Storage" loading={storage.isLoading} error={storage.isError}>
+          <p className="text-3xl font-semibold">{formatBytes(storage.data?.backup_bytes)}</p>
+          <p className="text-sm text-[hsl(var(--muted-foreground))]">
+            {storage.data?.backup_records ?? 0} backups · {storage.data?.hosts ?? 0} hosts
+          </p>
         </Widget>
         <Widget title="Hosts" loading={hosts.isLoading} error={hosts.isError}>
           <p className="text-3xl font-semibold">{hosts.data?.meta.total ?? 0}</p>
@@ -75,25 +80,19 @@ export function DashboardPage() {
             {failed.length === 0 ? <li className="text-[hsl(var(--muted-foreground))]">None</li> : null}
             {failed.map((o) => (
               <li key={o.id}>
-                <Link className="hover:underline" to={`/operations/${o.id}`}>
-                  {o.kind} · {o.profile_id}
-                </Link>
+                <Link className="hover:underline" to={`/operations/${o.id}`}>{o.kind} · {o.profile_id}</Link>
               </li>
             ))}
           </ul>
         </Widget>
       </div>
       <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Recent operations</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Recent operations</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {recent.length === 0 ? <p className="text-sm text-[hsl(var(--muted-foreground))]">No operations yet</p> : null}
           {recent.map((o) => (
             <div key={o.id} className="flex items-center justify-between gap-2 text-sm">
-              <Link to={`/operations/${o.id}`} className="hover:underline">
-                {o.kind} · {o.profile_id}
-              </Link>
+              <Link to={`/operations/${o.id}`} className="hover:underline">{o.kind} · {o.profile_id}</Link>
               <Badge status={o.status} />
             </div>
           ))}

@@ -56,6 +56,8 @@ func (h *Handler) Router() http.Handler {
 			secured.Route("/notifications", func(r chi.Router) { h.mountNotifications(r) })
 			secured.Route("/logs", func(r chi.Router) { h.mountLogs(r) })
 			secured.Route("/sync", func(r chi.Router) { h.mountSync(r) })
+			secured.Route("/export", func(r chi.Router) { h.mountVaultExport(r) })
+			secured.Route("/import", func(r chi.Router) { h.mountVaultImport(r) })
 		})
 	})
 

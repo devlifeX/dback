@@ -2,6 +2,7 @@ package operation
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -11,6 +12,8 @@ const (
 	KindBackupDB    Kind = "backup_db"
 	KindBackupFiles Kind = "backup_files"
 	KindUpload      Kind = "upload"
+	KindRestore     Kind = "restore"
+	KindDeepVerify  Kind = "deep_verify"
 )
 
 type Status string
@@ -72,6 +75,40 @@ func (p UploadParams) EffectiveStalePolicy() UploadStalePolicy {
 		return UploadStaleNewOnly
 	}
 	return p.StalePolicy
+}
+
+type RestoreParams struct {
+	RecordID             string `json:"record_id"`
+	DestinationProfileID string `json:"destination_profile_id"`
+}
+
+func (RestoreParams) Kind() Kind { return KindRestore }
+
+func (p RestoreParams) Validate() error {
+	if strings.TrimSpace(p.RecordID) == "" {
+		return fmt.Errorf("record_id is required")
+	}
+	if strings.TrimSpace(p.DestinationProfileID) == "" {
+		return fmt.Errorf("destination_profile_id is required")
+	}
+	return nil
+}
+
+type DeepVerifyParams struct {
+	RecordID             string `json:"record_id"`
+	DestinationProfileID string `json:"destination_profile_id"`
+}
+
+func (DeepVerifyParams) Kind() Kind { return KindDeepVerify }
+
+func (p DeepVerifyParams) Validate() error {
+	if strings.TrimSpace(p.RecordID) == "" {
+		return fmt.Errorf("record_id is required")
+	}
+	if strings.TrimSpace(p.DestinationProfileID) == "" {
+		return fmt.Errorf("destination_profile_id is required")
+	}
+	return nil
 }
 
 type Spec struct {

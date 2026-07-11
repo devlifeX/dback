@@ -13,6 +13,8 @@ func RegisterAppHandlers(registry *Registry, application *app.App) {
 	registry.Register(operation.KindBackupDB, backupDBHandler(application))
 	registry.Register(operation.KindBackupFiles, backupFilesHandler(application))
 	registry.Register(operation.KindUpload, uploadHandler(application))
+	registry.Register(operation.KindRestore, restoreHandler(application))
+	registry.Register(operation.KindDeepVerify, deepVerifyHandler(application))
 }
 
 func backupDBHandler(application *app.App) Handler {
@@ -149,4 +151,96 @@ func artifactsFromRecords(records []models.ExportRecord) []operation.Artifact {
 		})
 	}
 	return out
+}
+
+func restoreHandler(application *app.App) Handler {
+	return func(ctx context.Context, spec operation.Spec, publishProgress func(message string, current, total int64)) (*operation.Result, error) {
+		params, ok := spec.Params.(operation.RestoreParams)
+		if !ok {
+			return nil, fmt.Errorf("invalid params for restore")
+		}
+		record, err := historyRecordByID(application, params.RecordID)
+		if err != nil {
+			return nil, err
+		}
+		destination, err := profileByID(application, params.DestinationProfileID)
+		if err != nil {
+			return nil, err
+		}
+		progress := func(message string, current, total int64) {
+			if publishProgress != nil {
+				publishProgress(message, current, total)
+			}
+		}
+		if err := application.Restore(ctx, record, destination, progress); err != nil {
+			return &operation.Result{
+				OperationID: spec.ID,
+				Kind:        operation.KindRestore,
+				Status:      operation.StatusFailed,
+				Error:       err.Error(),
+			}, err
+		}
+		return &operation.Result{
+			OperationID: spec.ID,
+			Kind:        operation.KindRestore,
+			Status:      operation.StatusSucceeded,
+			Artifacts: []operation.Artifact{{
+				Type: operation.ArtifactExportRecord,
+				ID:   record.ID,
+				Path: record.FilePath,
+			}},
+		}, nil
+	}
+}
+
+func deepVerifyHandler(application *app.App) Handler {
+	return func(ctx context.Context, spec operation.Spec, publishProgress func(message string, current, total int64)) (*operation.Result, error) {
+		params, ok := spec.Params.(operation.DeepVerifyParams)
+		if !ok {
+			return nil, fmt.Errorf("invalid params for deep_verify")
+		}
+		destination, err := profileByID(application, params.DestinationProfileID)
+		if err != nil {
+			return nil, err
+		}
+		progress := func(message string, current, total int64) {
+			if publishProgress != nil {
+				publishProgress(message, current, total)
+			}
+		}
+		last, err := application.DeepVerify(ctx, params.RecordID, destination, progress)
+		if err != nil {
+			return &operation.Result{
+				OperationID: spec.ID,
+				Kind:        operation.KindDeepVerify,
+				Status:      operation.StatusFailed,
+				Error:       err.Error(),
+			}, err
+		}
+		status := operation.StatusSucceeded
+		errMsg := ""
+		if !last.Passed {
+			status = operation.StatusFailed
+			errMsg = "deep verify found table row mismatches"
+		}
+		return &operation.Result{
+			OperationID: spec.ID,
+			Kind:        operation.KindDeepVerify,
+			Status:      status,
+			Error:       errMsg,
+			Artifacts: []operation.Artifact{{
+				Type: operation.ArtifactExportRecord,
+				ID:   params.RecordID,
+			}},
+		}, nil
+	}
+}
+
+func historyRecordByID(application *app.App, recordID string) (models.ExportRecord, error) {
+	for _, rec := range application.History() {
+		if rec.ID == recordID {
+			return rec, nil
+		}
+	}
+	return models.ExportRecord{}, fmt.Errorf("backup record %q not found", recordID)
 }

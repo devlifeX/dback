@@ -1,16 +1,23 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppLayout } from '@/layouts/AppLayout'
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { HostDetailPage, HostsPage } from '@/features/hosts/HostsPage'
+import { BackupDetailPage, BackupsPage } from '@/features/backups/BackupsPage'
 import { OperationDetailPage, OperationsPage } from '@/features/operations/OperationsPage'
 import { TaskDetailPage, TasksPage } from '@/features/tasks/TasksPage'
-import { NotificationsPage } from '@/features/notifications/NotificationsPage'
+import { NotificationDetailPage, NotificationsPage } from '@/features/notifications/NotificationsPage'
 import { TemplatesPage } from '@/features/templates/TemplatesPage'
 import { AboutPage, SettingsPage } from '@/features/settings/SettingsPage'
 
 function HostRoute() {
   const { id = '' } = useParams()
   return <HostDetailPage id={id} />
+}
+
+function BackupRoute() {
+  const { id = '' } = useParams()
+  return <BackupDetailPage id={id} />
 }
 
 function OperationRoute() {
@@ -23,22 +30,34 @@ function TaskRoute() {
   return <TaskDetailPage id={id} />
 }
 
+function NotificationRoute() {
+  const { id = '' } = useParams()
+  return <NotificationDetailPage id={id} />
+}
+
+function withBoundary(element: React.ReactNode, title?: string) {
+  return <ErrorBoundary fallbackTitle={title}>{element}</ErrorBoundary>
+}
+
 export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="hosts" element={<HostsPage />} />
-        <Route path="hosts/:id" element={<HostRoute />} />
-        <Route path="operations" element={<OperationsPage />} />
-        <Route path="operations/:id" element={<OperationRoute />} />
-        <Route path="tasks" element={<TasksPage />} />
-        <Route path="tasks/:id" element={<TaskRoute />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="templates" element={<TemplatesPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="about" element={<AboutPage />} />
+        <Route path="dashboard" element={withBoundary(<DashboardPage />)} />
+        <Route path="hosts" element={withBoundary(<HostsPage />)} />
+        <Route path="hosts/:id" element={withBoundary(<HostRoute />, 'Host error')} />
+        <Route path="backups" element={withBoundary(<BackupsPage />)} />
+        <Route path="backups/:id" element={withBoundary(<BackupRoute />, 'Backup error')} />
+        <Route path="operations" element={withBoundary(<OperationsPage />)} />
+        <Route path="operations/:id" element={withBoundary(<OperationRoute />, 'Operation error')} />
+        <Route path="tasks" element={withBoundary(<TasksPage />)} />
+        <Route path="tasks/:id" element={withBoundary(<TaskRoute />, 'Task error')} />
+        <Route path="notifications" element={withBoundary(<NotificationsPage />)} />
+        <Route path="notifications/:id" element={withBoundary(<NotificationRoute />, 'Notification error')} />
+        <Route path="templates" element={withBoundary(<TemplatesPage />)} />
+        <Route path="settings" element={withBoundary(<SettingsPage />)} />
+        <Route path="about" element={withBoundary(<AboutPage />)} />
         <Route path="*" element={<p className="text-sm">Page not found</p>} />
       </Route>
     </Routes>

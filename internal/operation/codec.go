@@ -13,6 +13,10 @@ func DefaultParams(kind Kind) (Params, error) {
 		return BackupFilesParams{}, nil
 	case KindUpload:
 		return UploadParams{StalePolicy: UploadStaleNewOnly}, nil
+	case KindRestore:
+		return RestoreParams{}, nil
+	case KindDeepVerify:
+		return DeepVerifyParams{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported operation kind %q", kind)
 	}
@@ -42,6 +46,18 @@ func DecodeParams(kind Kind, raw json.RawMessage) (Params, error) {
 		}
 		if p.StalePolicy == "" {
 			p.StalePolicy = UploadStaleNewOnly
+		}
+		return p, nil
+	case KindRestore:
+		var p RestoreParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		return p, nil
+	case KindDeepVerify:
+		var p DeepVerifyParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
 		}
 		return p, nil
 	default:
