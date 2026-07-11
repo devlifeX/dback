@@ -152,6 +152,28 @@ func TestVaultPersistsImportDestByProfile(t *testing.T) {
 	}
 }
 
+func TestVaultPersistsHostSort(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	unlockStore(t, s)
+
+	const sortKey = "name_asc"
+	if err := s.SetHostSort(sortKey); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.HostSort(); got != sortKey {
+		t.Fatalf("expected %q, got %q", sortKey, got)
+	}
+
+	s2 := New(dir)
+	if err := s2.Unlock(testMasterKey); err != nil {
+		t.Fatal(err)
+	}
+	if got := s2.HostSort(); got != sortKey {
+		t.Fatalf("host sort not persisted: %q", got)
+	}
+}
+
 func TestVaultPersistsTemplatesHistoryLogs(t *testing.T) {
 	dir := t.TempDir()
 	s := New(dir)

@@ -177,16 +177,29 @@ func (a *App) SaveProfile(profile models.Profile) error {
 	profile.ExportSettings = nil
 	profile.ImportSettings = nil
 
+	now := time.Now()
 	a.mu.Lock()
 	found := false
 	for i := range a.profiles {
 		if a.profiles[i].ID == profile.ID {
+			profile.CreatedAt = a.profiles[i].CreatedAt
+			if profile.CreatedAt.IsZero() {
+				profile.CreatedAt = a.profiles[i].ModifiedAt()
+			}
+			if profile.CreatedAt.IsZero() {
+				profile.CreatedAt = now
+			}
+			profile.UpdatedAt = now
 			a.profiles[i] = profile
 			found = true
 			break
 		}
 	}
 	if !found {
+		if profile.CreatedAt.IsZero() {
+			profile.CreatedAt = now
+		}
+		profile.UpdatedAt = now
 		a.profiles = append(a.profiles, profile)
 	}
 	profiles := append([]models.Profile(nil), a.profiles...)

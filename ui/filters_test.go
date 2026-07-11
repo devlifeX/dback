@@ -25,6 +25,37 @@ func TestFilterProfilesByGroupAndSearch(t *testing.T) {
 	}
 }
 
+func TestSortProfiles(t *testing.T) {
+	t1 := time.Unix(0, 100)
+	t2 := time.Unix(0, 200)
+	t3 := time.Unix(0, 300)
+	profiles := []models.Profile{
+		{ID: "1", Name: "Charlie", UpdatedAt: t2},
+		{ID: "2", Name: "Alpha", UpdatedAt: t3},
+		{ID: "3", Name: "Bravo", UpdatedAt: t1},
+	}
+
+	got := sortProfiles(profiles, hostSortModifiedDesc)
+	if got[0].Name != "Alpha" || got[1].Name != "Charlie" || got[2].Name != "Bravo" {
+		t.Fatalf("unexpected modified desc order: %#v", got)
+	}
+
+	got = sortProfiles(profiles, hostSortModifiedAsc)
+	if got[0].Name != "Bravo" || got[1].Name != "Charlie" || got[2].Name != "Alpha" {
+		t.Fatalf("unexpected modified asc order: %#v", got)
+	}
+
+	got = sortProfiles(profiles, hostSortNameAsc)
+	if got[0].Name != "Alpha" || got[1].Name != "Bravo" || got[2].Name != "Charlie" {
+		t.Fatalf("unexpected name asc order: %#v", got)
+	}
+
+	got = sortProfiles(profiles, hostSortNameDesc)
+	if got[0].Name != "Charlie" || got[1].Name != "Bravo" || got[2].Name != "Alpha" {
+		t.Fatalf("unexpected name desc order: %#v", got)
+	}
+}
+
 func TestSortBackupsNewestFirst(t *testing.T) {
 	now := time.Now()
 	records := []models.ExportRecord{

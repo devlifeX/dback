@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,9 +86,26 @@ type Profile struct {
 	RemoteAutoUploadDB         bool     `json:"remote_auto_upload_db,omitempty"`
 	RemoteAutoUploadFiles      bool     `json:"remote_auto_upload_files,omitempty"`
 
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+
 	// Legacy fields — read-only for migration; not written on save.
 	ExportSettings *TransferSettings `json:"export_settings,omitempty"`
 	ImportSettings *TransferSettings `json:"import_settings,omitempty"`
+}
+
+// ModifiedAt returns the best-known modification time for sorting hosts.
+func (p Profile) ModifiedAt() time.Time {
+	if !p.UpdatedAt.IsZero() {
+		return p.UpdatedAt
+	}
+	if !p.CreatedAt.IsZero() {
+		return p.CreatedAt
+	}
+	if ns, err := strconv.ParseInt(strings.TrimSpace(p.ID), 10, 64); err == nil && ns > 0 {
+		return time.Unix(0, ns)
+	}
+	return time.Time{}
 }
 
 // TransferSettings legacy nested settings (migration only).
@@ -282,6 +300,7 @@ type AppVaultPayload struct {
 	Sync                         *SyncSettings        `json:"sync,omitempty"`
 	SyncActivity                 SyncActivity         `json:"sync_activity,omitempty"`
 	ImportDestByProfile          map[string]string    `json:"import_dest_by_profile,omitempty"`
+	HostSort                     string               `json:"host_sort,omitempty"`
 	RemoteDestinations           []RemoteDestination  `json:"remote_destinations,omitempty"`
 	AppSettingsDestinationID     string               `json:"app_settings_destination_id,omitempty"`
 	RemoteDestinationsMigrated   bool                 `json:"remote_destinations_migrated,omitempty"`

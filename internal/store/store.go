@@ -32,6 +32,7 @@ type Store struct {
 	sync                *models.SyncSettings
 	syncActivity        models.SyncActivity
 	importDestByProfile map[string]string
+	hostSort            string
 	remoteDestinations  []models.RemoteDestination
 	appSettingsDestinationID string
 	remoteDestinationsMigrated bool
@@ -278,6 +279,28 @@ func (s *Store) SetImportDestForProfile(sourceProfileID, destProfileID string) e
 		s.importDestByProfile = map[string]string{}
 	}
 	s.importDestByProfile[sourceProfileID] = destProfileID
+	s.bumpRevisionLocked()
+	return s.persistVaultLocked()
+}
+
+// HostSort returns the saved hosts list sort order.
+func (s *Store) HostSort() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ""
+	}
+	return s.hostSort
+}
+
+// SetHostSort persists the hosts list sort order.
+func (s *Store) SetHostSort(sort string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.unlocked {
+		return ErrVaultLocked
+	}
+	s.hostSort = sort
 	s.bumpRevisionLocked()
 	return s.persistVaultLocked()
 }

@@ -191,6 +191,7 @@ func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) bool {
 	} else {
 		s.importDestByProfile = map[string]string{}
 	}
+	s.hostSort = payload.HostSort
 	return migrated
 }
 
@@ -228,6 +229,7 @@ func (s *Store) currentPayloadLocked() models.AppVaultPayload {
 		Sync:                       s.sync.Clone(),
 		SyncActivity:               s.syncActivity,
 		ImportDestByProfile:        cloneStringMap(s.importDestByProfile),
+		HostSort:                   s.hostSort,
 		RemoteDestinations:         cloneRemoteDestinations(s.remoteDestinations),
 		AppSettingsDestinationID:   s.appSettingsDestinationID,
 		RemoteDestinationsMigrated: s.remoteDestinationsMigrated,

@@ -457,7 +457,9 @@ func dialogOKLabel(kind DialogKind, custom string) string {
 		return custom
 	}
 	switch kind {
-	case DialogConfirm, DialogDeepVerifyConfirm:
+	case DialogConfirm:
+		return "Confirm"
+	case DialogDeepVerifyConfirm:
 		return "Start deep verify"
 	case DialogPassword:
 		return "Continue"

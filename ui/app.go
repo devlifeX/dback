@@ -47,6 +47,8 @@ type UI struct {
 	searchEditor  widget.Editor
 	search        string
 	selectedGroup string
+	hostSortSelect  widget.Enum
+	hostSortDropdown DropdownState
 
 	editingProfile models.Profile
 	profileName    widget.Editor

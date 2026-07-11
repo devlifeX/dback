@@ -139,6 +139,9 @@ func (u *UI) completeUnlock() {
 	u.loginError = ""
 	u.loginPassword.SetText("")
 	u.loginConfirmPassword.SetText("")
+	if sort := u.core.HostSort(); sort != "" {
+		u.hostSortSelect.Value = sort
+	}
 	u.invalidateBackupCache()
 	u.invalidate()
 }

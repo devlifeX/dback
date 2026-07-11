@@ -39,6 +39,11 @@ func (u *UI) layoutHosts(gtx layout.Context, th *material.Theme) layout.Dimensio
 
 func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppTheme) layout.Dimensions {
 	u.search = editorText(&u.searchEditor)
+	u.hostSortSelect.Update(gtx)
+	if u.hostSortSelect.Value == "" {
+		u.hostSortSelect.Value = hostSortModifiedDesc
+	}
+	sortValues, sortLabels := hostSortOptions()
 	profiles := u.filteredProfiles()
 	allProfiles := u.core.Profiles()
 
@@ -53,6 +58,14 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 		layout.Rigid(vgap(theme)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return searchField(gtx, th, theme, &u.searchEditor, "Search hosts...")
+		}),
+		layout.Rigid(vgap(theme)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return labeledEnumDropdownField(gtx, th, theme, &u.hostSortSelect, "Sort", sortValues, sortLabels, &u.hostSortDropdown, u.invalidate, func(sort string) {
+				if err := u.core.SetHostSort(sort); err != nil {
+					u.showError(err)
+				}
+			})
 		}),
 		layout.Rigid(vgap(theme)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -73,6 +86,8 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return u.layoutProfileCards(gtx, th, theme, profiles)
 					}),
+					// Extra scroll room so the last card's ⋮ menu (Edit/Duplicate/Delete) stays on-screen.
+					layout.Rigid(spacer(theme, unit.Dp(140))),
 				)
 			})
 		}),
@@ -80,7 +95,12 @@ func (u *UI) layoutHostsList(gtx layout.Context, th *material.Theme, theme *AppT
 }
 
 func (u *UI) filteredProfiles() []models.Profile {
-	return filterProfiles(u.core.Profiles(), editorText(&u.searchEditor), u.selectedGroup)
+	sortKey := u.hostSortSelect.Value
+	if sortKey == "" {
+		sortKey = hostSortModifiedDesc
+	}
+	profiles := filterProfiles(u.core.Profiles(), editorText(&u.searchEditor), u.selectedGroup)
+	return sortProfiles(profiles, sortKey)
 }
 
 func (u *UI) layoutGroupCards(gtx layout.Context, th *material.Theme, theme *AppTheme, profiles []models.Profile) layout.Dimensions {

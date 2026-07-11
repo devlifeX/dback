@@ -9,6 +9,67 @@ import (
 
 const groupFilterAll = ""
 
+const (
+	hostSortModifiedDesc = "modified_desc"
+	hostSortModifiedAsc  = "modified_asc"
+	hostSortNameDesc     = "name_desc"
+	hostSortNameAsc      = "name_asc"
+)
+
+func hostSortOptions() (values, labels []string) {
+	return []string{
+			hostSortModifiedDesc,
+			hostSortModifiedAsc,
+			hostSortNameDesc,
+			hostSortNameAsc,
+		},
+		[]string{
+			"Time modified DESC",
+			"Time modified ASC",
+			"Name DESC",
+			"Name ASC",
+		}
+}
+
+func sortProfiles(profiles []models.Profile, sortKey string) []models.Profile {
+	out := append([]models.Profile(nil), profiles...)
+	switch sortKey {
+	case hostSortModifiedAsc:
+		sort.Slice(out, func(i, j int) bool {
+			ti, tj := out[i].ModifiedAt(), out[j].ModifiedAt()
+			if ti.Equal(tj) {
+				return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+			}
+			return ti.Before(tj)
+		})
+	case hostSortNameDesc:
+		sort.Slice(out, func(i, j int) bool {
+			ni, nj := strings.ToLower(out[i].Name), strings.ToLower(out[j].Name)
+			if ni == nj {
+				return out[i].ModifiedAt().After(out[j].ModifiedAt())
+			}
+			return ni > nj
+		})
+	case hostSortNameAsc:
+		sort.Slice(out, func(i, j int) bool {
+			ni, nj := strings.ToLower(out[i].Name), strings.ToLower(out[j].Name)
+			if ni == nj {
+				return out[i].ModifiedAt().After(out[j].ModifiedAt())
+			}
+			return ni < nj
+		})
+	default:
+		sort.Slice(out, func(i, j int) bool {
+			ti, tj := out[i].ModifiedAt(), out[j].ModifiedAt()
+			if ti.Equal(tj) {
+				return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+			}
+			return ti.After(tj)
+		})
+	}
+	return out
+}
+
 func normalizeGroup(group string) string {
 	group = strings.TrimSpace(group)
 	if group == "" {
