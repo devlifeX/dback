@@ -97,6 +97,69 @@ func TestDispatcherOverlapSkip(t *testing.T) {
 	cancel1()
 }
 
+func TestSubmitAsyncOutlivesRequestContext(t *testing.T) {
+	reg := controlplane.NewRegistry()
+	done := make(chan struct{})
+	reg.Register(operation.KindBackupDB, func(ctx context.Context, spec operation.Spec, publishProgress func(string, int64, int64)) (*operation.Result, error) {
+		select {
+		case <-time.After(50 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		close(done)
+		return &operation.Result{
+			OperationID: spec.ID,
+			Kind:        spec.Kind,
+			Status:      operation.StatusSucceeded,
+		}, nil
+	})
+	engine := controlplane.NewEngine(nil, event.NewMemoryBus(8), reg, controlplane.NewLockTable())
+	records := controlplane.NewRecordStore(10)
+	d := controlplane.NewDispatcher(engine, records, 8, 2)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = d.Shutdown(ctx)
+	}()
+
+	_, cancelReq := context.WithCancel(context.Background())
+	opCtx, cancelOps := context.WithCancel(context.Background())
+	defer cancelOps()
+	spec := operation.Spec{
+		Kind:       operation.KindBackupDB,
+		ProfileID:  "p1",
+		TriggerRef: "api",
+		Params:     operation.BackupDBParams{},
+	}
+	rec, err := d.SubmitAsync(opCtx, spec)
+	if err != nil {
+		t.Fatalf("SubmitAsync: %v", err)
+	}
+	cancelReq() // HTTP request finished; operation context must stay alive.
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("operation did not finish")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := d.Get(rec.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status == operation.StatusSucceeded {
+			return
+		}
+		if got.Status == operation.StatusCanceled || got.Status == operation.StatusFailed {
+			t.Fatalf("status = %q, want succeeded", got.Status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for succeeded, last status may still be running")
+}
+
 func TestChainContextUploadRecordIDs(t *testing.T) {
 	var chain controlplane.ChainContext
 	chain = chain.WithResult(operation.Result{

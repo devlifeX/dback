@@ -270,7 +270,10 @@ export const NOTIFY_EVENTS = [
   'operation.failed',
   'operation.canceled',
   'task.skipped',
-]
+] as const
+
+/** Recommended defaults — includes success (completed) which is easy to miss. */
+export const DEFAULT_NOTIFY_EVENTS: string[] = [...NOTIFY_EVENTS]
 
 export function emptyProfile(): Profile {
   return {

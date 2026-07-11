@@ -80,6 +80,22 @@ require_cmd() {
 	fi
 }
 
+# Stop a previous dback serve still bound to LISTEN (common after rebuild while old PID keeps running).
+stop_existing_server() {
+	local port="${LISTEN##*:}"
+	if command -v fuser >/dev/null 2>&1; then
+		if fuser "${port}/tcp" >/dev/null 2>&1; then
+			echo "==> Stopping existing listener on port ${port}..."
+			fuser -k "${port}/tcp" 2>/dev/null || true
+			sleep 0.4
+		fi
+	fi
+	if pgrep -f "${SERVER_BIN} serve" >/dev/null 2>&1; then
+		pkill -f "${SERVER_BIN} serve" 2>/dev/null || true
+		sleep 0.3
+	fi
+}
+
 cleanup() {
 	local code="${1:-0}"
 	if [[ -n "$CHILD_PID" ]] && kill -0 "$CHILD_PID" 2>/dev/null; then
@@ -105,6 +121,8 @@ if [[ "$SKIP_GO_BUILD" != true ]] || [[ ! -x "$SERVER_BIN" ]]; then
 	echo "==> Building headless server (dist/dback-server)..."
 	go build -o "$SERVER_BIN" ./cmd/dback
 fi
+
+stop_existing_server
 
 if [[ "$SKIP_NPM_INSTALL" != true ]]; then
 	echo "==> Installing web dependencies..."

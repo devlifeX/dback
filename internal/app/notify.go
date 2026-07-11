@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"dback/internal/notify"
 	"dback/internal/store"
@@ -115,10 +116,43 @@ func (a *App) NotifyChannelStore() notify.ChannelStore {
 	return notifyChannelStore{app: a}
 }
 
+func (a *App) NotifyDeps() (notify.ChannelStore, notify.HostNamer) {
+	s := notifyChannelStore{app: a}
+	return s, s
+}
+
 func (s notifyChannelStore) ListNotifyChannels() ([]models.NotifyChannel, error) {
 	return s.app.ListNotifyChannelsFull()
 }
 
 func (s notifyChannelStore) GetNotifyChannel(id string) (models.NotifyChannel, error) {
 	return s.app.GetNotifyChannelFull(id)
+}
+
+func (s notifyChannelStore) HostName(profileID string) string {
+	if profileID == "" {
+		return ""
+	}
+	for _, p := range s.app.Profiles() {
+		if p.ID == profileID {
+			if name := strings.TrimSpace(p.Name); name != "" {
+				return name
+			}
+			break
+		}
+	}
+	return profileID
+}
+
+func (s notifyChannelStore) TaskName(taskID string) string {
+	if taskID == "" {
+		return ""
+	}
+	task, err := s.app.GetTask(taskID)
+	if err == nil {
+		if name := strings.TrimSpace(task.Name); name != "" {
+			return name
+		}
+	}
+	return taskID
 }

@@ -6,7 +6,7 @@ import { FormField } from '@/components/forms/FormField'
 import { FormSection } from '@/components/forms/FormSection'
 import { SecretField } from '@/components/forms/SecretField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { NOTIFY_EVENTS, type BaleConfig, type NotifyChannel, type NotifyProvider, type SlackConfig, type TelegramConfig, type WebhookConfig } from '@/api/types'
+import { DEFAULT_NOTIFY_EVENTS, NOTIFY_EVENTS, type BaleConfig, type NotifyChannel, type NotifyProvider, type SlackConfig, type TelegramConfig, type WebhookConfig } from '@/api/types'
 
 const PROVIDERS: { value: NotifyProvider; label: string }[] = [
   { value: 'telegram', label: 'Telegram' },
@@ -34,7 +34,7 @@ export function NotificationForm({
       name: '',
       provider: 'telegram',
       enabled: true,
-      events: [],
+      events: [...DEFAULT_NOTIFY_EVENTS],
       config: { token: '', chat_id: '' } as TelegramConfig,
     },
   })
@@ -77,7 +77,10 @@ export function NotificationForm({
       </FormSection>
 
       <div>
-        <p className="mb-2 text-sm font-medium">Events (empty = all)</p>
+        <p className="mb-2 text-sm font-medium">Events</p>
+        <p className="mb-2 text-xs text-[hsl(var(--muted-foreground))]">
+          Successful backups send <code className="text-xs">operation.completed</code>. Leave all checked unless you want to filter.
+        </p>
         <div className="grid gap-2 sm:grid-cols-2">
           {NOTIFY_EVENTS.map((ev) => (
             <label key={ev} className="flex items-center gap-2 text-sm">

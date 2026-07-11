@@ -53,7 +53,8 @@ func TestOperationEventToNotifyPipeline(t *testing.T) {
 	_ = controlplane.NewService(a, 16, 2)
 	reg := notify.NewRegistry()
 	reg.Register(models.NotifyProviderWebhook, stubSender{hits: &hits})
-	router := notify.NewRouter(bus, a.NotifyChannelStore(), reg)
+	notifyStore, notifyNamer := a.NotifyDeps()
+	router := notify.NewRouter(bus, notifyStore, reg, notifyNamer)
 	router.Start()
 	defer router.Stop()
 

@@ -93,6 +93,7 @@ func (s *Server) Run(ctx context.Context) error {
 		if s.metrics != nil {
 			s.metrics()
 		}
+		s.cp.StopOperations()
 		_ = s.cp.Dispatcher.Shutdown(shutdownCtx)
 		if s.unlock != nil {
 			s.unlock()
@@ -117,6 +118,7 @@ func (s *Server) Run(ctx context.Context) error {
 		if s.metrics != nil {
 			s.metrics()
 		}
+		s.cp.StopOperations()
 		_ = s.cp.Dispatcher.Shutdown(shutdownCtx)
 		if s.unlock != nil {
 			s.unlock()

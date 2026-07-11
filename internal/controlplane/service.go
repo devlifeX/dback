@@ -1,6 +1,8 @@
 package controlplane
 
 import (
+	"context"
+
 	"dback/internal/app"
 	"dback/internal/event"
 )
@@ -13,9 +15,12 @@ type Service struct {
 	Records    *RecordStore
 	Engine     *Engine
 	Dispatcher *Dispatcher
+	opCtx      context.Context
+	opCancel   context.CancelFunc
 }
 
 func NewService(application *app.App, queueCapacity, workers int) *Service {
+	opCtx, opCancel := context.WithCancel(context.Background())
 	bus := event.NewMemoryBus(64)
 	registry := NewRegistry()
 	locks := NewLockTable()
@@ -31,5 +36,18 @@ func NewService(application *app.App, queueCapacity, workers int) *Service {
 		Records:    records,
 		Engine:     engine,
 		Dispatcher: dispatcher,
+		opCtx:      opCtx,
+		opCancel:   opCancel,
+	}
+}
+
+// OperationContext outlives individual HTTP requests for async queue work.
+func (s *Service) OperationContext() context.Context {
+	return s.opCtx
+}
+
+func (s *Service) StopOperations() {
+	if s.opCancel != nil {
+		s.opCancel()
 	}
 }

@@ -80,18 +80,22 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
 }
 
 export async function apiRequestWithMeta<T>(path: string, opts: RequestOptions = {}): Promise<ApiResponse<T>> {
+  const method = opts.method ?? (opts.body !== undefined ? 'POST' : 'GET')
+  const isWrite = method === 'POST' || method === 'PUT' || method === 'PATCH'
   const headers = authHeaders()
-  if (opts.body !== undefined) {
+  if (isWrite) {
     headers['Content-Type'] = 'application/json'
   }
   if (opts.etag) {
     headers['If-Match'] = opts.etag
   }
 
+  const body = opts.body !== undefined ? JSON.stringify(opts.body) : isWrite ? '{}' : undefined
+
   const res = await fetch(path, {
-    method: opts.method ?? (opts.body !== undefined ? 'POST' : 'GET'),
+    method,
     headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    body,
     signal: opts.signal,
   })
 

@@ -42,7 +42,8 @@ func jsonOnlyMiddleware(next http.Handler) http.Handler {
 			ct := strings.ToLower(r.Header.Get("Content-Type"))
 			isJSON := strings.HasPrefix(ct, "application/json")
 			isMultipart := strings.HasPrefix(ct, "multipart/form-data")
-			if !isJSON && !isMultipart {
+			bodyless := ct == "" && r.ContentLength == 0
+			if !isJSON && !isMultipart && !bodyless {
 				writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json")
 				return
 			}

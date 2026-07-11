@@ -72,7 +72,7 @@ func (h *Handler) createOperation(w http.ResponseWriter, r *http.Request) {
 	if spec.TriggerRef == "" {
 		spec.TriggerRef = "api"
 	}
-	rec, err := h.CP.Dispatcher.SubmitAsync(r.Context(), spec)
+	rec, err := h.CP.Dispatcher.SubmitAsync(h.CP.OperationContext(), spec)
 	if err != nil {
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 		return
@@ -121,7 +121,7 @@ func (h *Handler) retryOperation(w http.ResponseWriter, r *http.Request) {
 		TriggerRef: "retry:" + id,
 		Params:     params,
 	}
-	rec, err := h.CP.Dispatcher.SubmitAsync(r.Context(), spec)
+	rec, err := h.CP.Dispatcher.SubmitAsync(h.CP.OperationContext(), spec)
 	if err != nil {
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 		return

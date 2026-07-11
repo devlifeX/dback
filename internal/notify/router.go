@@ -20,19 +20,21 @@ type ChannelStore interface {
 type Router struct {
 	bus      event.Bus
 	store    ChannelStore
+	namer    HostNamer
 	registry *Registry
 	metrics  *metrics.Collector
 	timeout  time.Duration
 	unsubs   []func()
 }
 
-func NewRouter(bus event.Bus, store ChannelStore, registry *Registry) *Router {
+func NewRouter(bus event.Bus, store ChannelStore, registry *Registry, namer HostNamer) *Router {
 	if registry == nil {
 		registry = NewRegistry()
 	}
 	return &Router{
 		bus:      bus,
 		store:    store,
+		namer:    namer,
 		registry: registry,
 		timeout:  30 * time.Second,
 	}
@@ -44,6 +46,7 @@ func (r *Router) SetMetrics(c *metrics.Collector) {
 
 func (r *Router) Start() {
 	types := []event.Type{
+		event.TypeOperationStarted,
 		event.TypeOperationCompleted,
 		event.TypeOperationFailed,
 		event.TypeOperationCanceled,
@@ -83,8 +86,8 @@ func (r *Router) Test(ctx context.Context, channelID string) error {
 	}, DefaultRetryDelays())
 }
 
-func (r *Router) handle(ctx context.Context, ev event.Event) {
-	msg, ok := MessageFromEvent(ev)
+func (r *Router) handle(_ context.Context, ev event.Event) {
+	msg, ok := MessageFromEvent(ev, r.namer)
 	if !ok {
 		return
 	}
@@ -102,7 +105,7 @@ func (r *Router) handle(ctx context.Context, ev event.Event) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r.deliver(ctx, channel, msg)
+			r.deliver(context.Background(), channel, msg)
 		}()
 	}
 	wg.Wait()

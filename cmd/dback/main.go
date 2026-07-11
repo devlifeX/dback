@@ -90,7 +90,8 @@ func runServe(args []string) int {
 	auditWriter := audit.NewWriter(cfg.AuditCap)
 	auditWriter.Start(cp.Bus)
 
-	notifyRouter := notify.NewRouter(cp.Bus, application.NotifyChannelStore(), notify.NewRegistry())
+	notifyStore, notifyNamer := application.NotifyDeps()
+	notifyRouter := notify.NewRouter(cp.Bus, notifyStore, notify.NewRegistry(), notifyNamer)
 	if metricsCollector != nil {
 		notifyRouter.SetMetrics(metricsCollector)
 	}
@@ -397,7 +398,8 @@ func runNotify(args []string) int {
 	defer unlock()
 
 	bus := event.NewMemoryBus(8)
-	router := notify.NewRouter(bus, application.NotifyChannelStore(), notify.NewRegistry())
+	notifyStore, notifyNamer := application.NotifyDeps()
+	router := notify.NewRouter(bus, notifyStore, notify.NewRegistry(), notifyNamer)
 	if err := router.Test(context.Background(), *channelID); err != nil {
 		fmt.Fprintf(os.Stderr, "notify test failed: %v\n", err)
 		return 1

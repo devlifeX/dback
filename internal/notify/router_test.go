@@ -57,7 +57,7 @@ func TestRouterDeliversOnOperationFailed(t *testing.T) {
 	bus := event.NewMemoryBus(4)
 	reg := NewRegistry()
 	reg.Register(models.NotifyProviderWebhook, stubSender{hits: &hits})
-	router := NewRouter(bus, store, reg)
+	router := NewRouter(bus, store, reg, nil)
 	router.Start()
 	defer router.Stop()
 
@@ -95,7 +95,7 @@ func TestRouterFiltersByEvent(t *testing.T) {
 	bus := event.NewMemoryBus(4)
 	reg := NewRegistry()
 	reg.Register(models.NotifyProviderWebhook, stubSender{hits: &hits})
-	router := NewRouter(bus, store, reg)
+	router := NewRouter(bus, store, reg, nil)
 	router.Start()
 	defer router.Stop()
 
@@ -124,4 +124,44 @@ func TestSendWithRetry(t *testing.T) {
 	if attempts != 3 {
 		t.Fatalf("expected 3 attempts, got %d", attempts)
 	}
+}
+
+func TestRouterDeliversOnOperationCompleted(t *testing.T) {
+	var hits int32
+	store := &memChannelStore{channels: []models.NotifyChannel{{
+		ID:       "ch1",
+		Provider: models.NotifyProviderWebhook,
+		Enabled:  true,
+		Events:   []string{string(event.TypeOperationCompleted)},
+		Config:   json.RawMessage(`{}`),
+	}}}
+
+	bus := event.NewMemoryBus(4)
+	reg := NewRegistry()
+	reg.Register(models.NotifyProviderWebhook, stubSender{hits: &hits})
+	router := NewRouter(bus, store, reg, nil)
+	router.Start()
+	defer router.Stop()
+
+	publishCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = bus.Publish(publishCtx, event.OperationCompleted{
+		Envelope: event.Envelope{
+			Type:        event.TypeOperationCompleted,
+			OperationID: "op1",
+			Kind:        operation.KindBackupDB,
+			ProfileID:   "p1",
+			Timestamp:   time.Now(),
+		},
+		Result: operation.Result{Status: operation.StatusSucceeded},
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt32(&hits) >= 1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected delivery despite canceled publish context, hits=%d", hits)
 }

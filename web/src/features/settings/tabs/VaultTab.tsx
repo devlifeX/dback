@@ -12,10 +12,7 @@ import { ApiClientError } from '@/api/client'
 function importErrorMessage(error: Error) {
   if (!(error instanceof ApiClientError)) return error.message
   if (error.message.includes('encrypted bundle requires')) {
-    return 'This export is encrypted. Enable "Include secrets" and enter the export passphrase (master key).'
-  }
-  if (error.code === 'import_preview_failed' || error.code === 'import_failed') {
-    return error.message
+    return 'This file is encrypted. Enter the same export password you used in the desktop app (Settings → Export JSON).'
   }
   return error.message
 }
@@ -24,7 +21,6 @@ export function VaultTab() {
   const [exportPass, setExportPass] = useState('')
   const [exportSecrets, setExportSecrets] = useState(false)
   const [importPass, setImportPass] = useState('')
-  const [importSecrets, setImportSecrets] = useState(true)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -44,10 +40,13 @@ export function VaultTab() {
 
   const importVault = useMutationWithRevision({
     mutationFn: async (file: File, etag) => {
-      if (!importPass.trim()) {
-        throw new Error('Enter the export passphrase (master key).')
+      const passphrase = importPass.trim()
+      // Same rule as the desktop app: encrypted bundles need the export password.
+      const includeSecrets = passphrase !== ''
+      if (!includeSecrets) {
+        throw new Error('Enter the export password from the desktop app (Settings → Export JSON).')
       }
-      const opts = { file, passphrase: importPass, includeSecrets: importSecrets }
+      const opts = { file, passphrase, includeSecrets }
       try {
         const preview = await vaultApi.importFilePreview(opts)
         const profileConflicts = preview.profile_conflicts ?? []
@@ -73,10 +72,12 @@ export function VaultTab() {
       <div>
         <h3 className="mb-3 text-sm font-medium">Export</h3>
         <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
-          <FormField label="Passphrase (optional)"><Input type="password" value={exportPass} onChange={(e) => setExportPass(e.target.value)} /></FormField>
+          <FormField label="Export password (optional)">
+            <Input type="password" value={exportPass} onChange={(e) => setExportPass(e.target.value)} autoComplete="off" />
+          </FormField>
           <label className="flex items-center gap-2 text-sm pt-6">
             <Checkbox checked={exportSecrets} onCheckedChange={setExportSecrets} />
-            Include secrets
+            Encrypt export (passwords &amp; keys)
           </label>
         </div>
         <Button size="sm" variant="outline" className="mt-3" disabled={exportVault.isPending} onClick={() => exportVault.mutate()}>Export app data</Button>
@@ -85,16 +86,13 @@ export function VaultTab() {
       <div>
         <h3 className="mb-3 text-sm font-medium">Import</h3>
         <p className="mb-3 max-w-2xl text-sm text-[hsl(var(--muted-foreground))]">
-          Encrypted exports from the desktop app need <strong>Include secrets</strong> enabled and the same export passphrase (master key) used when the file was created.
+          Desktop exports are always encrypted. Use the same <strong>export password</strong> you entered in the desktop app under
+          {' '}Settings → Export JSON → Export App Data.
         </p>
         <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
-          <FormField label="Export passphrase (master key)">
-            <Input type="password" value={importPass} onChange={(e) => setImportPass(e.target.value)} autoComplete="off" />
+          <FormField label="Export password">
+            <Input type="password" value={importPass} onChange={(e) => setImportPass(e.target.value)} autoComplete="off" placeholder="Same password as desktop export" />
           </FormField>
-          <label className="flex items-center gap-2 text-sm pt-6">
-            <Checkbox checked={importSecrets} onCheckedChange={setImportSecrets} />
-            Include secrets
-          </label>
         </div>
         <input
           ref={fileRef}
@@ -111,7 +109,7 @@ export function VaultTab() {
           {selectedFile ? <span className="text-sm text-[hsl(var(--muted-foreground))]">{selectedFile.name}</span> : null}
           <Button
             size="sm"
-            disabled={importVault.isPending || !selectedFile}
+            disabled={importVault.isPending || !selectedFile || !importPass.trim()}
             onClick={() => selectedFile && importVault.mutate(selectedFile)}
           >
             Import app data
