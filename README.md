@@ -2,9 +2,9 @@
 
 # DBack — DB Sync Manager
 
-**Desktop GUI for MySQL/MariaDB backup and restore over SSH, Jump Host, Docker, or WordPress.**
+**Desktop GUI for MySQL/MariaDB backup and restore over SSH, Jump Host, Docker, or WordPress.** DBack also ships a **headless Control Plane** (`dback serve`) with HTTP API and a **React Web UI** for server-side management.
 
-DBack connects to remote Linux servers or WordPress sites, streams database dumps to local files with compression, and restores backups to any saved host. Hosts, templates, history, and logs live in an encrypted local vault. Built with Go and [Gio](https://gioui.org).
+DBack connects to remote Linux servers or WordPress sites, streams database dumps to local files with compression, and restores backups to any saved host. Hosts, templates, history, and logs live in an encrypted local vault. The classic desktop app is built with Go and [Gio](https://gioui.org); the server stack uses Go + chi + React 19.
 
 **Repository:** [github.com/devlifeX/dback](https://github.com/devlifeX/dback/)
 
@@ -48,6 +48,7 @@ Maintainers: PPA upload and packaging — [`ppa.md`](ppa.md).
 
 ## Highlights
 
+- **Control Plane + Web UI** — `dback serve` exposes `/api/v1` (REST + SSE), Prometheus `/metrics`, and an optional React SPA; one command dev stack: `./run-web.sh`
 - **Streaming backups** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
 - **File backup (v1)** — tar archives of remote/local paths (SSH, Jump Host, Localhost); shared history with DB backups; SHA256 + archive integrity check
 - **Smart fallback** — retries with a remote tmp-file when SSH streams fail; supports resume and checksum validation
@@ -184,7 +185,38 @@ Settings has two tabs: **Export** and **Sync**.
 
 ## Quick Start
 
-### Run from source
+### Web UI + API (Control Plane)
+
+Requirements: **Go 1.24+**, **Node.js 20+**, **npm**.
+
+```bash
+./run-web.sh
+```
+
+This builds the headless server, installs web deps, starts `dback serve` on `127.0.0.1:14127`, and Vite on `http://127.0.0.1:5173`. When prompted in the browser, use API token **`dev-token`** (override with `DBACK_API_TOKEN`).
+
+| Mode | Command | URL |
+|------|---------|-----|
+| Dev (default) | `./run-web.sh` | UI: `:5173` — API proxied via Vite |
+| Production-style | `./run-web.sh --prod` | Single server serves `web/dist` + API |
+| Debug API logs | `./run-web.sh --debug` | Same as dev with `DBACK_DEBUG=1` |
+
+Dev data defaults to `.dev/data` (gitignored). Credentials are written to `.dev/credentials.env`.
+
+Manual two-terminal setup and production deploy: [`web/README.md`](web/README.md), [`docs/deploy.md`](docs/deploy.md), [`docs/reverse-proxy.md`](docs/reverse-proxy.md).
+
+CLI examples:
+
+```bash
+export DBACK_PASSPHRASE=your-vault-pass
+export DBACK_API_TOKEN=your-token
+dback serve                    # API only
+dback task list
+dback run operation backup_db --profile <host-id>
+dback notify test --channel <id>
+```
+
+### Desktop GUI — run from source
 
 ```bash
 ./run.sh
@@ -384,3 +416,9 @@ DBack embeds the **DBack DB Tools** plugin, injects your host API token into the
 
 ### Where is the WordPress plugin source?
 [`wordpress/dback-db-tools/`](wordpress/dback-db-tools/). Developer docs: [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Go app architecture: [`agent.md`](agent.md).
+
+### How do I run the Web UI locally?
+Use [`./run-web.sh`](run-web.sh) — it builds the server, installs npm deps, and starts API + Vite. See [Web UI + API](#web-ui--api-control-plane) above.
+
+### What is `dback serve`?
+Headless Control Plane: encrypted vault, scheduled tasks, notifications, HTTP API v1, optional SPA from `DBACK_WEB_ROOT`. See [`docs/deploy.md`](docs/deploy.md).

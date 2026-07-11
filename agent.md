@@ -1,18 +1,31 @@
-# DBack — Go Desktop App Agent Guide
+# DBack — Agent Guide (Desktop + Control Plane)
 
-This document is the **AI roadmap** for the DBack Go desktop application (`dback` module). Use it before exploring the whole repository. For the WordPress plugin REST agent, see [`wordpress/dback-db-tools/wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md).
+This document is the **AI roadmap** for the DBack Go codebase (`dback` module). Use it before exploring the whole repository.
 
-**Agent rule — version on every change:** After **any** code or build change to the Go app, you **must** bump the app version in [`main.go`](main.go) and [`build.sh`](build.sh), update **Current app version** in [Versioning](#versioning) below, and tell the user which **git tag** to push for release (see [Build and embed](#build-and-embed)). Never finish a change set without syncing version + tag instructions.
+| Mode | Entry | UI |
+|------|-------|-----|
+| **Desktop (legacy primary)** | [`main.go`](main.go) → Gio | [`ui/`](ui/) |
+| **Control Plane (server)** | [`cmd/dback/main.go`](cmd/dback/main.go) → `dback serve` | [`web/`](web/) React SPA |
+
+For the WordPress plugin REST agent, see [`wordpress/dback-db-tools/wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md).  
+Server roadmap: [`features/2-server_schedule_web_notify_c1b1a236.plan.md`](features/2-server_schedule_web_notify_c1b1a236.plan.md).
+
+**Agent rule — version on desktop changes:** After **any** code or build change to the **Gio desktop app** (`main.go`, `ui/`, desktop packaging), bump the app version in [`main.go`](main.go) and [`build.sh`](build.sh), update **Current app version** in [Versioning](#versioning) below, and tell the user which **git tag** to push. Control-plane-only changes (`cmd/dback`, `internal/api`, `web/`) do **not** require a desktop version bump unless they also touch the desktop binary.
 
 ---
 
 ## Purpose
 
-DBack is a **Gio desktop app** (not a web server) for MySQL/MariaDB **backup, restore, and SQL queries** against remote hosts, plus **file path backups** over SSH/Localhost. Data (profiles, templates, history, logs, sync settings) lives in a **local encrypted vault**. Backup files (`.sql.gz`, `.tar.zst`, `.tar.gz`) are stored on disk under each host’s destination folder.
+DBack is a **MySQL/MariaDB backup, restore, and SQL query** tool with two faces:
 
-**Stack:** Go 1.22 · [Gio](https://gioui.org) UI · SSH/shell transport · WordPress REST plugin transport · MinIO S3 sync · Argon2id + AES-GCM vault.
+1. **Gio desktop app** — local GUI for manual operations (not a web server).
+2. **Control Plane** — headless `dback serve`: Operation dispatcher, Task/trigger scheduler, EventBus, notifications, HTTP API v1, optional Web SPA.
 
-**Supported desktop targets:** **Linux** and **Windows** (primary release platforms). All new and changed Go/UI code **must** work correctly on both — not Linux-only.
+Both reuse the same **backup engine** in `internal/app`. Data (profiles, templates, history, logs, sync settings, tasks, notify channels) lives in a **local encrypted vault**. Backup files (`.sql.gz`, `.tar.zst`, `.tar.gz`) are stored on disk under each host’s destination folder.
+
+**Stack:** Go 1.24 · Gio (desktop) · chi HTTP API · React 19 Web UI · SSH/shell transport · WordPress REST · MinIO S3 sync · Argon2id + AES-GCM vault.
+
+**Supported desktop targets:** **Linux** and **Windows** (primary release platforms). Server mode v1 targets **Linux/systemd** (`packaging/dback.service`).
 
 ---
 
@@ -20,42 +33,134 @@ DBack is a **Gio desktop app** (not a web server) for MySQL/MariaDB **backup, re
 
 ```
 dback/
-├── main.go                         # Entry: embed logo, ui.New().Run()
-├── agent.md                        # This file (Go app roadmap)
-├── models/models.go                # Domain types: Profile, bundles, vault payload
-├── ui/                             # Gio UI (screens, widgets, theme, state)
+├── main.go                         # Desktop entry: embed logo, ui.New().Run()
+├── cmd/dback/main.go               # Headless CLI: serve, task, run operation, notify test
+├── run-web.sh                      # One-shot dev/prod launcher for API + Web UI
+├── agent.md                        # This file
+├── web/                            # React 19 SPA (Control Plane UI)
+├── docs/                           # deploy.md, reverse-proxy.md, api-versioning.md
+├── packaging/dback.service         # systemd unit for server mode
+├── models/                         # Domain types: Profile, Task, NotifyChannel, vault payload
+├── ui/                             # Gio UI (desktop only)
 ├── internal/
-│   ├── app/                        # Business orchestration (Backup, Restore, sync, vault API)
+│   ├── app/                        # Business orchestration (backup, restore, sync, vault API)
+│   ├── controlplane/               # Dispatcher, Engine, TaskRunner, operation queue
+│   ├── event/                      # Typed EventBus (in-memory)
+│   ├── trigger/                    # Cron/interval/on_boot task registry
+│   ├── notify/                     # Telegram/Slack/Bale/Webhook providers + Router
+│   ├── api/v1/                     # HTTP REST + SSE + OpenAPI embed
+│   ├── daemon/                     # serve lifecycle, graceful shutdown
+│   ├── config/                     # DBACK_* env config
+│   ├── metrics/                    # Prometheus subscriber
+│   ├── audit/                      # In-memory audit ring buffer
 │   ├── store/                      # Persistence, vault, import/export bundles
 │   ├── connector/                  # SSH/Local/Jump transport (file backup)
 │   ├── capability/                 # FilesystemProvider (PlanArchive)
 │   ├── sync/s3.go                  # S3-compatible push/pull
 │   └── secrets/                    # Argon2id + AES-GCM
-├── backend/
-│   ├── ssh/                        # SSH, JumpHost, Localhost executor
-│   ├── db/                         # Shell command builders, validation, query parsing
-│   ├── transfer/                   # Backup/restore strategies
-│   ├── verify/                     # SHA256 quick check, fingerprint capture, deep-verify report
-│   ├── preflight/                  # Remote preflight (SSH + file backup tools)
-│   ├── shell/                      # ExecutionPlan, Command (file backup pipelines)
-│   ├── builder/                    # tar archive plan builder
-│   ├── archiver/                   # zstd/gzip + archive integrity validation
-│   └── wordpress/                  # REST client, plugin zip generation
+├── sdk/go/dback/                   # Go API client (partial)
+├── backend/                        # SSH, transfer, verify, wordpress, …
 └── wordpress/dback-db-tools/       # Embedded PHP plugin (see wordpress_agent.md)
 ```
 
-**Runtime data directory:** `~/.config/dback` (via `ui.DesktopPlatform.AppDataDir()`).
+**Runtime data directory:** `~/.config/dback` (desktop via `ui.DesktopPlatform.AppDataDir()`; server via `DBACK_DATA_DIR` or same default).
 
 | File | Role |
 |------|------|
-| `app_data.vault.json` | Encrypted vault (profiles, templates, history, logs, sync) |
+| `app_data.vault.json` | Encrypted vault (profiles, templates, history, logs, sync, tasks, notify channels) |
 | `ssh_known_hosts` | SSH host key store |
+| `dback.pid.lock` | Process lock for `dback serve` |
 | `{Destination}/{HostName}/*.sql.gz` | Database backup files (not in vault) |
 | `{Destination}/{HostName}/files/*` | File backup archives (not in vault) |
 
+### Quick run — Web + API
+
+```bash
+./run-web.sh          # dev: API :14127 + Vite :5173, data in .dev/data
+./run-web.sh --prod   # build web/dist, serve SPA + API from one process
+```
+
+Default dev token: `dev-token`. See [`README.md`](README.md) and [`web/README.md`](web/README.md).
+
 ---
 
-## Architecture
+---
+
+## Control Plane architecture (server mode)
+
+```mermaid
+flowchart TB
+    subgraph clients [Clients]
+        Web[web/ React SPA]
+        CLI[dback CLI]
+        SDK[sdk/go/dback]
+    end
+
+    subgraph api [internal/api/v1]
+        REST[REST /api/v1]
+        SSE[SSE operations stream]
+    end
+
+    subgraph cp [internal/controlplane]
+        Disp[Dispatcher + bounded queue]
+        Eng[ExecutionEngine]
+        TR[TaskRunner]
+    end
+
+    subgraph bus [internal/event]
+        EB[EventBus]
+    end
+
+    subgraph subs [Subscribers]
+        NR[notify.Router]
+        AU[audit.Writer]
+        MC[metrics.Collector]
+    end
+
+    subgraph engine [internal/app]
+        Backup[Backup / Restore / Upload]
+    end
+
+    Web --> REST
+    Web --> SSE
+    CLI --> Disp
+    REST --> cp
+    TR --> Disp
+    Disp --> Eng --> Backup
+    Eng --> EB
+    EB --> NR
+    EB --> AU
+    EB --> MC
+```
+
+**Layering rule (server):** HTTP handlers call `controlplane.Service` and `app.App` — never `backend/*` directly. Same as desktop: UI/API must not embed transfer logic.
+
+**Entry:** `dback serve` in [`cmd/dback/main.go`](cmd/dback/main.go) wires config, vault unlock, dispatcher, triggers, notify router, audit, metrics, chi router.
+
+**Auth:** Bearer token (`DBACK_API_TOKEN` / `_FILE`). SSE uses `?access_token=` query param (EventSource limitation).
+
+**Key env vars:** `DBACK_DATA_DIR`, `DBACK_LISTEN` (default `127.0.0.1:14127`), `DBACK_PASSPHRASE`, `DBACK_WEB_ROOT` (path to `web/dist`), `DBACK_RATE_LIMIT_RPS`, `DBACK_METRICS`, `DBACK_AUDIT_CAP`.
+
+**Vault versions:** v4 tasks, v5 notify channels — see `internal/store/`.
+
+**Web UI:** Feature-based SPA under `web/src/features/`. Dev proxy in `web/vite.config.ts` forwards `/api` and `/health` to `:14127`. MVP is read-only; CRUD forms deferred — see plan phase 4 gaps.
+
+**Do (Control Plane):**
+
+- Add API resources in `internal/api/v1/` + OpenAPI embed when contract-stable.
+- Publish lifecycle events from dispatcher/engine — subscribers stay decoupled.
+- Redact secrets in API DTOs; validate notify configs via provider `Validate`.
+- Keep `dback serve` bind loopback by default; document TLS at reverse proxy.
+
+**Don't (Control Plane):**
+
+- Don't bypass Dispatcher for operations that need queue/cancel/persistence.
+- Don't expose `/metrics` publicly without ACL (document proxy rules only).
+- Don't store API tokens in web localStorage long-term — memory-only bootstrap (current pattern).
+
+---
+
+## Architecture (desktop)
 
 ```mermaid
 flowchart TB
@@ -872,20 +977,27 @@ PPA: [`ppa.yml`](.github/workflows/ppa.yml) uploads **two** source packages per 
 
 ```bash
 go test ./...
-# CI uses Go 1.22 with GOTOOLCHAIN=local — match locally when debugging CI failures:
-GOTOOLCHAIN=go1.22.12 go test ./...
+# Desktop CI historically used Go 1.22; module declares go 1.24 for Control Plane deps.
 ```
 
 Key test locations:
 
 | Area | Path |
 |------|------|
+| Control plane / dispatcher | `internal/controlplane/*_test.go` |
+| Triggers / schedule | `internal/trigger/*_test.go` |
+| Notify / SSRF | `internal/notify/*_test.go` |
+| HTTP API / rate limit | `internal/api/v1/*_test.go` |
+| Event → notify pipeline | `internal/integration/pipeline_test.go` |
+| Metrics / audit | `internal/metrics/`, `internal/audit/` |
 | WordPress client | `backend/wordpress/client_test.go` |
 | App updater | `internal/update/*_test.go` |
 | Transfer / validate | `backend/transfer/*_test.go` |
 | Dry-Run Verify | `backend/verify/*_test.go` |
 | Store / vault | `internal/store/store_test.go` |
 | UI helpers | `ui/helpers_test.go`, `ui/filters_test.go` |
+
+Web: `cd web && npm run build && npm run lint`
 
 ---
 
@@ -894,7 +1006,12 @@ Key test locations:
 | Document | Scope |
 |----------|-------|
 | [`wordpress/dback-db-tools/wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md) | PHP plugin REST API, export/import/query, auth, constraints |
-| [`README.md`](README.md) | User-facing features and setup |
+| [`README.md`](README.md) | User-facing features, install, `./run-web.sh` |
+| [`web/README.md`](web/README.md) | Web UI dev/prod layout |
+| [`docs/deploy.md`](docs/deploy.md) | Server env vars, systemd |
+| [`docs/reverse-proxy.md`](docs/reverse-proxy.md) | TLS termination (Caddy/nginx) |
+| [`docs/api-versioning.md`](docs/api-versioning.md) | API v1 stability policy |
+| [`features/2-server_schedule_web_notify_c1b1a236.plan.md`](features/2-server_schedule_web_notify_c1b1a236.plan.md) | Control Plane roadmap (phases 0–5) |
 
 ---
 
@@ -904,9 +1021,9 @@ Key test locations:
 
 The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DBACK_DB_TOOLS_VERSION`) — see [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Do not confuse the two.
 
-### Required on every DBack app change (mandatory)
+### Required on every **desktop** app change (mandatory)
 
-When you modify Go app code, UI, build/CI, updater, or user-visible behavior:
+When you modify **Gio desktop** code (`main.go`, `ui/`, desktop packaging, updater, or user-visible desktop behavior):
 
 1. **Bump the app version** (patch by default: `3.8.0` → `3.8.1`; minor: `3.7.x` → `3.8.0`):
    - [`main.go`](main.go) — `var appVersion = "…"` (local/`go run` default)
@@ -947,4 +1064,4 @@ CI reads the tag (`v3.8.5` → `APP_VERSION=3.8.5`); tag and `main.go`/`build.sh
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.8.5 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, Dry-Run Verify (SHA256 + fingerprint + deep verify), and mandatory app version bumps on changes.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with desktop **v3.8.5** and Control Plane phases 0–5 (headless serve, API v1, Web MVP, metrics/audit/hardening).

@@ -2,7 +2,17 @@
 
 Primary management interface for the DBack Control Plane (React 19 + Vite + TypeScript).
 
-## Development
+## Quick start (recommended)
+
+From the repo root:
+
+```bash
+./run-web.sh
+```
+
+Open http://127.0.0.1:5173 and enter API token **`dev-token`** when prompted.
+
+## Development (manual)
 
 ```bash
 # Terminal 1 — API server
@@ -19,6 +29,8 @@ Open http://localhost:5173 and enter the API token when prompted.
 ## Production
 
 ```bash
+./run-web.sh --prod
+# or manually:
 cd web && npm run build
 export DBACK_WEB_ROOT=/path/to/dback/web/dist
 export DBACK_API_TOKEN=...

@@ -11,6 +11,7 @@ debian/*.substvars
 debian/*.debhelper.log
 debian/go/
 dist/
+.dev/
 *.zip
 *.tar.gz
 *.sql

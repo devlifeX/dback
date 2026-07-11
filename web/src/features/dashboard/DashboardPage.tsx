@@ -36,6 +36,7 @@ export function DashboardPage() {
   const running = operations.filter((o) => o.status === 'running')
   const failed = operations.filter((o) => o.status === 'failed').slice(0, 5)
   const recent = operations.slice(0, 8)
+  const enabledTasks = (tasks.data?.items ?? []).filter((t) => t.enabled).length
 
   return (
     <div>
@@ -64,7 +65,7 @@ export function DashboardPage() {
           <p className="text-3xl font-semibold">{running.length}</p>
         </Widget>
         <Widget title="Scheduled tasks" loading={tasks.isLoading} error={tasks.isError}>
-          <p className="text-3xl font-semibold">{tasks.data?.items.filter((t) => t.enabled).length ?? 0}</p>
+          <p className="text-3xl font-semibold">{enabledTasks}</p>
         </Widget>
         <Widget title="Notification channels" loading={channels.isLoading} error={channels.isError}>
           <p className="text-3xl font-semibold">{channels.data?.meta.total ?? 0}</p>

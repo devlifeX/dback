@@ -16,7 +16,7 @@ func (s *Store) ListNotifyChannels() ([]models.NotifyChannel, error) {
 	if err := s.requireUnlocked(); err != nil {
 		return nil, err
 	}
-	return append([]models.NotifyChannel(nil), s.notifyChannels...), nil
+	return append([]models.NotifyChannel{}, s.notifyChannels...), nil
 }
 
 func (s *Store) GetNotifyChannel(id string) (models.NotifyChannel, error) {

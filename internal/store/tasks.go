@@ -21,7 +21,7 @@ func (s *Store) ListTasks() ([]models.Task, error) {
 	if err := s.requireUnlocked(); err != nil {
 		return nil, err
 	}
-	return append([]models.Task(nil), s.tasks...), nil
+	return append([]models.Task{}, s.tasks...), nil
 }
 
 func (s *Store) GetTask(id string) (models.Task, error) {
