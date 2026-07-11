@@ -8,6 +8,7 @@ import (
 )
 
 const maxBodyBytes = 1 << 20
+const maxImportBodyBytes = 64 << 20
 
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,11 +40,17 @@ func jsonOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
 			ct := strings.ToLower(r.Header.Get("Content-Type"))
-			if !strings.HasPrefix(ct, "application/json") {
+			isJSON := strings.HasPrefix(ct, "application/json")
+			isMultipart := strings.HasPrefix(ct, "multipart/form-data")
+			if !isJSON && !isMultipart {
 				writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json")
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+			limit := int64(maxBodyBytes)
+			if isMultipart || strings.HasPrefix(r.URL.Path, "/api/v1/import") {
+				limit = maxImportBodyBytes
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})

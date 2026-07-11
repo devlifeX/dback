@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -92,7 +93,7 @@ func (h *Handler) importApply(w http.ResponseWriter, r *http.Request) {
 func readImportBundle(r *http.Request) (raw []byte, passphrase string, includeSecrets bool, err error) {
 	ct := strings.ToLower(r.Header.Get("Content-Type"))
 	if strings.HasPrefix(ct, "multipart/form-data") {
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if err := r.ParseMultipartForm(64 << 20); err != nil {
 			return nil, "", false, err
 		}
 		passphrase = strings.TrimSpace(r.FormValue("passphrase"))
@@ -112,7 +113,11 @@ func readImportBundle(r *http.Request) (raw []byte, passphrase string, includeSe
 	passphrase = req.Passphrase
 	includeSecrets = req.IncludeSecrets
 	if req.ContentBase64 != "" {
-		return []byte(req.ContentBase64), passphrase, includeSecrets, nil
+		decoded, err := base64.StdEncoding.DecodeString(req.ContentBase64)
+		if err != nil {
+			return nil, "", false, err
+		}
+		return decoded, passphrase, includeSecrets, nil
 	}
 	return []byte(req.EncryptedBundle), passphrase, includeSecrets, nil
 }

@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Bell,
   Database,
@@ -12,6 +12,7 @@ import {
   Sun,
   Workflow,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet } from '@/components/ui/sheet'
 import { useUIStore } from '@/store/ui-store'
@@ -19,8 +20,16 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { clearApiToken } from '@/api/client'
 import { useNavigate } from 'react-router-dom'
+import { SETTINGS_TABS, settingsPath } from '@/features/settings/settings-nav'
 
-const nav = [
+type NavItem = {
+  to: string
+  label: string
+  icon: LucideIcon
+  children?: { to: string; label: string }[]
+}
+
+const nav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/hosts', label: 'Hosts', icon: Server },
   { to: '/backups', label: 'Backups', icon: HardDrive },
@@ -28,27 +37,61 @@ const nav = [
   { to: '/tasks', label: 'Tasks', icon: Workflow },
   { to: '/notifications', label: 'Notifications', icon: Bell },
   { to: '/templates', label: 'Templates', icon: Database },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  {
+    to: settingsPath('general'),
+    label: 'Settings',
+    icon: Settings,
+    children: SETTINGS_TABS.map(({ segment, label }) => ({ to: settingsPath(segment), label })),
+  },
 ]
 
 function NavItems({ onNavigate }: { onNavigate?: () => void }) {
+  const { pathname } = useLocation()
+  const inSettings = pathname.startsWith('/settings')
+
   return (
     <nav className="flex flex-col gap-1 p-2">
-      {nav.map(({ to, label, icon: Icon }) => (
-        <NavLink
-          key={to}
-          to={to}
-          onClick={onNavigate}
-          className={({ isActive }) =>
-            cn(
-              'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-              isActive ? 'bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))]' : 'hover:bg-[hsl(var(--muted))]',
-            )
-          }
-        >
-          <Icon className="h-4 w-4" />
-          {label}
-        </NavLink>
+      {nav.map(({ to, label, icon: Icon, children }) => (
+        <div key={to}>
+          <NavLink
+            to={to}
+            end={!children}
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+                (children ? inSettings : isActive)
+                  ? 'bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))]'
+                  : 'hover:bg-[hsl(var(--muted))]',
+              )
+            }
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {label}
+          </NavLink>
+          {children ? (
+            <div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-[hsl(var(--border))] pl-2">
+              {children.map((child) => (
+                <NavLink
+                  key={child.to}
+                  to={child.to}
+                  end
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    cn(
+                      'rounded-md px-3 py-1.5 text-sm transition-colors',
+                      isActive
+                        ? 'bg-[hsl(var(--primary)/0.15)] font-medium text-[hsl(var(--primary))]'
+                        : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]',
+                    )
+                  }
+                >
+                  {child.label}
+                </NavLink>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ))}
     </nav>
   )

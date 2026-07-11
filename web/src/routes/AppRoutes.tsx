@@ -8,7 +8,14 @@ import { OperationDetailPage, OperationsPage } from '@/features/operations/Opera
 import { TaskDetailPage, TasksPage } from '@/features/tasks/TasksPage'
 import { NotificationDetailPage, NotificationsPage } from '@/features/notifications/NotificationsPage'
 import { TemplatesPage } from '@/features/templates/TemplatesPage'
-import { AboutPage, SettingsPage } from '@/features/settings/SettingsPage'
+import { AboutPage } from '@/features/settings/SettingsPage'
+import { SettingsLayout } from '@/features/settings/SettingsLayout'
+import { GeneralTab } from '@/features/settings/tabs/GeneralTab'
+import { DestinationsTab } from '@/features/settings/tabs/DestinationsTab'
+import { SyncTab } from '@/features/settings/tabs/SyncTab'
+import { VaultTab } from '@/features/settings/tabs/VaultTab'
+import { AuditTab } from '@/features/settings/tabs/AuditTab'
+import { LogsTab } from '@/features/settings/tabs/LogsTab'
 
 function HostRoute() {
   const { id = '' } = useParams()
@@ -56,7 +63,15 @@ export function AppRoutes() {
         <Route path="notifications" element={withBoundary(<NotificationsPage />)} />
         <Route path="notifications/:id" element={withBoundary(<NotificationRoute />, 'Notification error')} />
         <Route path="templates" element={withBoundary(<TemplatesPage />)} />
-        <Route path="settings" element={withBoundary(<SettingsPage />)} />
+        <Route path="settings" element={withBoundary(<SettingsLayout />)}>
+          <Route index element={<Navigate to="general" replace />} />
+          <Route path="general" element={<GeneralTab />} />
+          <Route path="destinations" element={<DestinationsTab />} />
+          <Route path="sync" element={<SyncTab />} />
+          <Route path="vault" element={<VaultTab />} />
+          <Route path="audit" element={<AuditTab />} />
+          <Route path="logs" element={<LogsTab />} />
+        </Route>
         <Route path="about" element={withBoundary(<AboutPage />)} />
         <Route path="*" element={<p className="text-sm">Page not found</p>} />
       </Route>

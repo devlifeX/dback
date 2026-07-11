@@ -569,6 +569,9 @@ func DetectTemplateConflicts(existing, imported []models.SQLTemplate) []Template
 			}
 		}
 	}
+	if conflicts == nil {
+		return []TemplateConflict{}
+	}
 	return conflicts
 }
 
@@ -670,10 +673,12 @@ func DetectProfileConflicts(existing, imported []models.Profile) []ProfileConfli
 			}
 		}
 	}
+	if conflicts == nil {
+		return []ProfileConflict{}
+	}
 	return conflicts
 }
 
-// MergeProfiles merges imported profiles into existing by ID, then by name.
 func MergeProfiles(existing, imported []models.Profile) []models.Profile {
 	byID := map[string]int{}
 	byName := map[string]int{}
