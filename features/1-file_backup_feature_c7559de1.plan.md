@@ -4,36 +4,38 @@ overview: DBack به‌عنوان Control Plane — UI → Orchestration → Cap
 todos:
   - id: models
     content: ExportType, VerificationMethod, FileBackupPath (ID=identity, Name mutable, CanonicalKey=grouping), ExportRecord snapshots + FileBackupPathID
-    status: in_progress
+    status: completed
   - id: execution-plan
     content: backend/shell — Command + ExecutionPlan (Steps, Mode); per-step execution; no full pipeline shell string
-    status: pending
+    status: completed
   - id: connector-layer
     content: Connector interface + SSH/Local/Jump connectors; Run returns waitable StreamResult; factory is ONLY profile switch point
-    status: pending
+    status: completed
   - id: archiver-builder
     content: builder/tar + archiver return ExecutionPlan steps; SafeLabel from Name snapshot
-    status: pending
+    status: completed
   - id: capability-layer
     content: FilesystemProvider returns ExecutionPlan only — zero connection/profile logic; DB migration deferred from v1
-    status: pending
+    status: completed
   - id: app-orchestrator
     content: Control-plane orchestration wires capability plan + connector run + history; partial failure policy
-    status: pending
+    status: completed
   - id: settings-ui
     content: Database/File Backup sections; Name+Path; duplicate CanonicalKey at save (grouping)
-    status: pending
+    status: completed
   - id: hosts-ui
-    content: Backup Files button + two-level progress
-    status: pending
+    content: Backup Files button + two-level progress (host card + Jobs tab)
+    status: completed
   - id: backups-jobs-ui
-    content: ExportType filter; SourceLabel; VerificationMethod; job SubItems
-    status: pending
+    content: ExportType filter; SourceLabel; VerificationMethod; job SubItems; OperationID in Jobs
+    status: completed
   - id: tests
-    content: connector factory isolation, ExecutionPlan step runner, ID vs CanonicalKey, injection tests
-    status: pending
+    content: connector pipe/Wait, ExecutionPlan steps, orchestrator policy, filebackup model tests
+    status: completed
 isProject: false
 ---
+
+**Implementation status (2026-07):** v1 shipped. Out-of-scope unchanged — restore, WordPress file backup, DB→ExecutionPlan migration, incremental backup.
 
 # بکاپ فایل برای DBack — Control Plane Architecture
 

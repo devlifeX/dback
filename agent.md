@@ -8,7 +8,7 @@ This document is the **AI roadmap** for the DBack Go desktop application (`dback
 
 ## Purpose
 
-DBack is a **Gio desktop app** (not a web server) for MySQL/MariaDB **backup, restore, and SQL queries** against remote hosts. Data (profiles, templates, history, logs, sync settings) lives in a **local encrypted vault**. Backup files (`.sql.gz`) are stored on disk under each host’s destination folder.
+DBack is a **Gio desktop app** (not a web server) for MySQL/MariaDB **backup, restore, and SQL queries** against remote hosts, plus **file path backups** over SSH/Localhost. Data (profiles, templates, history, logs, sync settings) lives in a **local encrypted vault**. Backup files (`.sql.gz`, `.tar.zst`, `.tar.gz`) are stored on disk under each host’s destination folder.
 
 **Stack:** Go 1.22 · [Gio](https://gioui.org) UI · SSH/shell transport · WordPress REST plugin transport · MinIO S3 sync · Argon2id + AES-GCM vault.
 
@@ -27,6 +27,8 @@ dback/
 ├── internal/
 │   ├── app/                        # Business orchestration (Backup, Restore, sync, vault API)
 │   ├── store/                      # Persistence, vault, import/export bundles
+│   ├── connector/                  # SSH/Local/Jump transport (file backup)
+│   ├── capability/                 # FilesystemProvider (PlanArchive)
 │   ├── sync/s3.go                  # S3-compatible push/pull
 │   └── secrets/                    # Argon2id + AES-GCM
 ├── backend/
@@ -34,7 +36,10 @@ dback/
 │   ├── db/                         # Shell command builders, validation, query parsing
 │   ├── transfer/                   # Backup/restore strategies
 │   ├── verify/                     # SHA256 quick check, fingerprint capture, deep-verify report
-│   ├── preflight/                  # Remote preflight (SSH path)
+│   ├── preflight/                  # Remote preflight (SSH + file backup tools)
+│   ├── shell/                      # ExecutionPlan, Command (file backup pipelines)
+│   ├── builder/                    # tar archive plan builder
+│   ├── archiver/                   # zstd/gzip + archive integrity validation
 │   └── wordpress/                  # REST client, plugin zip generation
 └── wordpress/dback-db-tools/       # Embedded PHP plugin (see wordpress_agent.md)
 ```
@@ -45,7 +50,8 @@ dback/
 |------|------|
 | `app_data.vault.json` | Encrypted vault (profiles, templates, history, logs, sync) |
 | `ssh_known_hosts` | SSH host key store |
-| `{Destination}/{HostName}/*.sql.gz` | Backup files (not in vault) |
+| `{Destination}/{HostName}/*.sql.gz` | Database backup files (not in vault) |
+| `{Destination}/{HostName}/files/*` | File backup archives (not in vault) |
 
 ---
 
@@ -215,6 +221,32 @@ App.Backup → transfer.BackupWordPress
 ```
 
 No tmp-file fallback. Plugin details: [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md).
+
+### File backup path (v1)
+
+SSH, Jump Host, and Localhost only — **not** WordPress.
+
+```
+UI.runFileBackup (ui/hosts.go)
+  → App.BackupFiles (internal/app/file_backup.go)
+    → preflight.RunFileBackup / CheckLocalFileBackupTools
+    → connector.NewConnector(profile)  ← only profile→transport switch
+    → capability.DefaultFilesystemProvider().PlanArchive
+    → connector.Run(ExecutionPlan) → stream to {Destination}/{Host}/files/*.tar.zst|.tar.gz
+    → archiver.ValidateIntegrity + SHA256
+    → ExportRecord (ExportType: files) → vault history
+```
+
+| Layer | Package | Role |
+|-------|---------|------|
+| Capability | `internal/capability/filesystem.go` | WHAT — tar+compress plan, no profile imports |
+| Connector | `internal/connector/` | WHERE — per-step pipe runner |
+| Builder | `backend/builder/tar.go` | tar args + excludes |
+| Archiver | `backend/archiver/` | zstd/gzip step + post-backup integrity check |
+| Preflight | `backend/preflight/filebackup.go` | remote/local tar + compression tool checks |
+| Models | `models/filebackup.go` | FileBackupPath identity, validation, snapshots |
+
+**UI:** host settings (`ui/file_backup_form.go`) — enabled, destination, compression, global excludes, named paths. Hosts card shows **Backup Files** progress; Jobs tab shows SubItems + **OperationID**. Backups list filters by ExportType; file records show SourceLabel. Restore/import for file archives is **not** supported in v1.
 
 ### Validation
 
@@ -741,26 +773,26 @@ If you cannot run Windows locally, document assumptions and add unit tests for s
 
 **Go toolchain:** [`go.mod`](go.mod) declares **`go 1.22`**. CI and Launchpad use `GOTOOLCHAIN=local` (no auto-download). PPA builds vendor deps at package time (`vendor/` is gitignored). Launchpad jammy may install `golang-1.22-go` without `/usr/bin/go`, so [`debian/rules`](debian/rules) must export `/usr/lib/go-1.22/bin` in `PATH`; [`debian/prepare-go.sh`](debian/prepare-go.sh) verifies and logs the actual `go` binary. Do not run `go mod tidy` with a newer local Go without verifying CI/PPA still pass.
 
-**Current app version in repo:** `3.8.4` → About screen and local `./build.sh` use this until you bump again.
+**Current app version in repo:** `3.8.5` → About screen and local `./build.sh` use this until you bump again.
 
 ### Local build
 
 ```bash
 ./build.sh linux
 # or explicitly:
-APP_VERSION=3.8.4 ./build.sh linux
+APP_VERSION=3.8.5 ./build.sh linux
 ```
 
-Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.8.4_amd64.deb`.  
+Outputs: `dist/dback-linux`, `dist/dback`, `dist/dback_3.8.5_amd64.deb`.  
 `build.sh` prints the **release git tag** to push when the build succeeds.
 
 ### GitHub Release (after merging to `master`)
 
-Tag **must** match `main.go` / `build.sh` version (`3.8.4` → tag `v3.8.4`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
+Tag **must** match `main.go` / `build.sh` version (`3.8.5` → tag `v3.8.5`). CI strips the `v` and embeds the version in binaries and the `.deb` name.
 
 ```bash
-git tag v3.8.4
-git push origin v3.8.4
+git tag v3.8.5
+git push origin v3.8.5
 ```
 
 GitHub Actions then publishes:
@@ -769,7 +801,7 @@ GitHub Actions then publishes:
 |-------|------|
 | Linux binary | `dback-linux` |
 | Windows binary | `dback-windows.exe` |
-| Debian package | `dback_3.8.4_amd64.deb` |
+| Debian package | `dback_3.8.5_amd64.deb` |
 
 PPA: [`ppa.yml`](.github/workflows/ppa.yml) uploads **two** source packages per tag — `PPA_DIST=noble` and `PPA_DIST=jammy` — via [`packaging/sync-debian-changelog.sh`](packaging/sync-debian-changelog.sh). See [`ppa.md`](ppa.md).
 
@@ -868,7 +900,7 @@ Key test locations:
 
 ## Versioning
 
-**Current app version:** `3.8.4`
+**Current app version:** `3.8.5`
 
 The WordPress plugin has its **own** version in `wordpress/dback-db-tools/` (`DBACK_DB_TOOLS_VERSION`) — see [`wordpress_agent.md`](wordpress/dback-db-tools/wordpress_agent.md). Do not confuse the two.
 
@@ -881,14 +913,14 @@ When you modify Go app code, UI, build/CI, updater, or user-visible behavior:
    - [`build.sh`](build.sh) — `APP_VERSION="${APP_VERSION:-…}"`
 2. Update examples in [`README.md`](README.md) if they show a pinned version.
 3. Update **Current app version** here and in [Build and embed](#build-and-embed).
-4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.8.4`** for app version `3.8.4`).
+4. Tell the user the **release git tag** to push: `v{same version}` (e.g. **`v3.8.5`** for app version `3.8.5`).
 
 ```bash
-git tag v3.8.4
-git push origin v3.8.4
+git tag v3.8.5
+git push origin v3.8.5
 ```
 
-CI reads the tag (`v3.8.4` → `APP_VERSION=3.8.4`); tag and `main.go`/`build.sh` must always match. PPA changelog per Ubuntu series is synced in CI — do not commit jammy/noble-specific changelog entries unless doing a manual PPA upload.
+CI reads the tag (`v3.8.5` → `APP_VERSION=3.8.5`); tag and `main.go`/`build.sh` must always match. PPA changelog per Ubuntu series is synced in CI — do not commit jammy/noble-specific changelog entries unless doing a manual PPA upload.
 
 ### Agent checklist before finishing
 
@@ -915,4 +947,4 @@ CI reads the tag (`v3.8.4` → `APP_VERSION=3.8.4`); tag and `main.go`/`build.sh
 
 ## Version note
 
-When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.8.4 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, Dry-Run Verify (SHA256 + fingerprint + deep verify), and mandatory app version bumps on changes.
+When this doc and code diverge, **trust the code** and update this file. Last aligned with v3.8.5 — Go 1.22 toolchain, jammy/noble PPA matrix, offline vendor builds, in-app updater, Dry-Run Verify (SHA256 + fingerprint + deep verify), and mandatory app version bumps on changes.

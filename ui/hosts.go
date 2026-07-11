@@ -230,6 +230,9 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 								if !p.FileBackupReady() {
 									return layout.Dimensions{}
 								}
+								if u.isHostFileBackupRunning(p.ID) {
+									return fixedWidthDisabledButton(gtx, th, theme, "Backing up...", unit.Dp(120))
+								}
 								return fixedWidthSuccessButton(gtx, th, theme, cards.backupFiles, "Backup Files", unit.Dp(120), func() {
 									u.runFileBackup(p)
 								})
@@ -248,6 +251,33 @@ func (u *UI) layoutProfileCards(gtx layout.Context, th *material.Theme, theme *A
 								})
 							}),
 						)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						fileState := u.hostFileBackupState(p.ID)
+						if fileState.Running {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(vgap(theme)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return progressBar(gtx, theme, fileState.Progress)
+								}),
+								layout.Rigid(vgap(theme)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if fileState.Status == "" {
+										return layout.Dimensions{}
+									}
+									return mutedLabel(gtx, th, theme, fileState.Status)
+								}),
+							)
+						}
+						if fileState.Result != "" {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(vgap(theme)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return uploadResultLabel(gtx, th, theme, fileState.Result, fileState.IsError)
+								}),
+							)
+						}
+						return layout.Dimensions{}
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						uploadState := u.hostUploadState(p.ID)
@@ -449,7 +479,12 @@ func (u *UI) runFileBackup(p models.Profile) {
 		u.showInfo("Backup Files", "Enable file backup and add at least one path in host settings.")
 		return
 	}
+	if u.isHostFileBackupRunning(p.ID) {
+		u.showInfo("Backup Files", "A file backup is already running for this host.")
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	u.setHostFileBackupRunning(p.ID, len(p.FileBackupPaths))
 	job := u.addFileBackupJob(p, cancel)
 	u.backupTab = 1
 	u.openBackups()
@@ -457,10 +492,30 @@ func (u *UI) runFileBackup(p models.Profile) {
 		defer cancel()
 		result, err := u.core.BackupFiles(ctx, p, func(prog coreapp.FileBackupProgress) {
 			u.setFileBackupJobProgress(job.ID, prog)
+			progress := float64(0)
+			if prog.PathTotal > 0 {
+				base := float64(prog.PathIndex-1) / float64(prog.PathTotal)
+				step := 1.0 / float64(prog.PathTotal)
+				if prog.BytesTotal > 0 {
+					progress = base + step*float64(prog.BytesDone)/float64(prog.BytesTotal)
+				} else {
+					progress = base + step*0.5
+				}
+			}
+			status := fmt.Sprintf("%d / %d · %s", prog.PathIndex, prog.PathTotal, prog.PathName)
+			if prog.BytesDone > 0 {
+				status += fmt.Sprintf(" · %s", formatBytes(prog.BytesDone))
+				if prog.SpeedBps > 0 {
+					status += fmt.Sprintf(" · %s/s", formatBytes(prog.SpeedBps))
+				}
+			}
+			u.updateHostFileBackupProgress(p.ID, progress, status, prog.PathIndex, prog.PathTotal)
+			u.invalidate()
 		})
 		u.invalidateBackupCache()
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
+				u.finishHostFileBackup(p.ID, "Backup Files canceled", false)
 				u.finishFileBackupJob(job.ID, "Backup Files canceled", nil)
 				return
 			}
@@ -468,13 +523,26 @@ func (u *UI) runFileBackup(p models.Profile) {
 			if result.PartialFail {
 				status = "Backup Files partial failure"
 			}
+			u.finishHostFileBackup(p.ID, status+": "+sanitizeError(err), true)
 			u.finishFileBackupJob(job.ID, status, err)
 			return
+		}
+		if result.OperationID != "" {
+			u.jobsMu.Lock()
+			for _, j := range u.jobs {
+				if j.ID == job.ID {
+					j.OperationID = result.OperationID
+					break
+				}
+			}
+			u.jobsMu.Unlock()
 		}
 		if len(result.Records) > 0 {
 			u.setFileBackupJobRecord(job.ID, result.Records[len(result.Records)-1].ID)
 		}
-		u.finishFileBackupJob(job.ID, fmt.Sprintf("Backup Files complete (%d archives)", len(result.Records)), nil)
+		msg := fmt.Sprintf("Backup Files complete (%d archives)", len(result.Records))
+		u.finishHostFileBackup(p.ID, msg, false)
+		u.finishFileBackupJob(job.ID, msg, nil)
 		u.maybeAutoRemoteUpload(p, result.Records)
 	}()
 }

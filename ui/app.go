@@ -184,6 +184,9 @@ type UI struct {
 	hostUploadMu     sync.Mutex
 	hostUploadStates map[string]hostUploadUIState
 
+	hostFileBackupMu     sync.Mutex
+	hostFileBackupStates map[string]hostFileBackupUIState
+
 	pendingRemoteUpload *pendingRemoteUploadChoice
 
 	invalidate func()

@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"dback/backend/archiver"
 	"dback/backend/builder"
+	"dback/backend/preflight"
 	"dback/backend/shell"
+	"dback/backend/ssh"
 	"dback/backend/verify"
 	"dback/internal/capability"
 	"dback/internal/connector"
@@ -21,13 +24,14 @@ import (
 
 // FileBackupProgress reports multi-path file backup status.
 type FileBackupProgress struct {
-	PathIndex  int
-	PathTotal  int
-	PathName   string
-	BytesDone  int64
-	BytesTotal int64
-	SpeedBps   int64
-	Phase      string
+	OperationID string
+	PathIndex   int
+	PathTotal   int
+	PathName    string
+	BytesDone   int64
+	BytesTotal  int64
+	SpeedBps    int64
+	Phase       string
 }
 
 // FileBackupProgressFunc receives structured progress updates.
@@ -83,6 +87,11 @@ func (a *App) BackupFiles(ctx context.Context, profile models.Profile, progress 
 		return FileBackupResult{}, err
 	}
 
+	if err := runFileBackupPreflight(profile, compression); err != nil {
+		a.logPhase(operationID, &profile, "FileExport", "failure", "", 0, "Preflight failed", "Error", "Failed", err.Error())
+		return FileBackupResult{}, err
+	}
+
 	hostDir := filepath.Join(dest, safeName(profile.Name), "files")
 	if err := os.MkdirAll(hostDir, 0755); err != nil {
 		return FileBackupResult{}, err
@@ -99,10 +108,11 @@ func (a *App) BackupFiles(ctx context.Context, profile models.Profile, progress 
 
 		seq := i + 1
 		reportProgress(progress, FileBackupProgress{
-			PathIndex: seq,
-			PathTotal: total,
-			PathName:  pathCfg.Name,
-			Phase:     "archiving",
+			OperationID: operationID,
+			PathIndex:   seq,
+			PathTotal:   total,
+			PathName:    pathCfg.Name,
+			Phase:       "archiving",
 		})
 
 		plan, err := planner.PlanArchive(capability.ArchiveOptions{
@@ -123,12 +133,13 @@ func (a *App) BackupFiles(ctx context.Context, profile models.Profile, progress 
 
 		size, copyErr := a.copyArchive(ctx, conn, plan, partialPath, func(bytesDone int64, speed int64) {
 			reportProgress(progress, FileBackupProgress{
-				PathIndex: seq,
-				PathTotal: total,
-				PathName:  pathCfg.Name,
-				BytesDone: bytesDone,
-				SpeedBps:  speed,
-				Phase:     "transferring",
+				OperationID: operationID,
+				PathIndex:   seq,
+				PathTotal:   total,
+				PathName:    pathCfg.Name,
+				BytesDone:   bytesDone,
+				SpeedBps:    speed,
+				Phase:       "transferring",
 			})
 		})
 		if copyErr != nil {
@@ -151,6 +162,12 @@ func (a *App) BackupFiles(ctx context.Context, profile models.Profile, progress 
 		sha256, err := verify.ChecksumFile(finalPath)
 		if err != nil {
 			lastErr = err
+			break
+		}
+		if err := archiver.ValidateIntegrity(finalPath, compression); err != nil {
+			_ = os.Remove(finalPath)
+			lastErr = err
+			a.logPhase(operationID, &profile, "FileExport", "failure", "", seq, fmt.Sprintf("Archive validation failed for %q: %v", pathCfg.Name, err), "Error", "Failed", err.Error())
 			break
 		}
 
@@ -274,6 +291,18 @@ func reportProgress(fn FileBackupProgressFunc, p FileBackupProgress) {
 	if fn != nil {
 		fn(p)
 	}
+}
+
+func runFileBackupPreflight(profile models.Profile, compression models.ArchiveCompression) error {
+	if profile.IsLocalhost() {
+		return preflight.CheckLocalFileBackupTools(compression)
+	}
+	client, err := ssh.NewExecutor(profile)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return preflight.RunFileBackup(client, compression)
 }
 
 func normalizeProfileFileBackup(p *models.Profile) error {

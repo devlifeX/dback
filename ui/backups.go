@@ -224,6 +224,14 @@ func (u *UI) layoutJobsTable(gtx layout.Context, th *material.Theme, theme *AppT
 						return progressBar(gtx, theme, job.Progress)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if j.OperationID == "" {
+							return layout.Dimensions{}
+						}
+						return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return mutedLabel(gtx, th, theme, "Operation: "+j.OperationID)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if len(j.SubItems) == 0 {
 							return layout.Dimensions{}
 						}

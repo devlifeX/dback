@@ -64,6 +64,9 @@ func (u *UI) setFileBackupJobProgress(id string, prog coreapp.FileBackupProgress
 				cur.Progress = float64(prog.BytesDone) / float64(prog.BytesTotal)
 			}
 		}
+		if prog.OperationID != "" {
+			job.OperationID = prog.OperationID
+		}
 		status := fmt.Sprintf("%d / %d · %s", prog.PathIndex, prog.PathTotal, prog.PathName)
 		if prog.BytesDone > 0 {
 			status += fmt.Sprintf(" · %s", formatBytes(prog.BytesDone))

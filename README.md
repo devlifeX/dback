@@ -49,6 +49,7 @@ Maintainers: PPA upload and packaging — [`ppa.md`](ppa.md).
 ## Highlights
 
 - **Streaming backups** — large dumps (5GB+) with on-the-fly `zstd`/`gzip` compression
+- **File backup (v1)** — tar archives of remote/local paths (SSH, Jump Host, Localhost); shared history with DB backups; SHA256 + archive integrity check
 - **Smart fallback** — retries with a remote tmp-file when SSH streams fail; supports resume and checksum validation
 - **Dry-Run Verify** — SHA256 checksum + table fingerprint at backup time; optional deep verify restores to a temp database and compares row counts (SSH and WordPress)
 - **Unified hosts** — one connection, backup folder, and import queries per host
@@ -86,7 +87,9 @@ Configure pre-import SQL, append templates, and test queries before restore.
 - **Connection test** — guided SSH + database check, or WordPress ping + preflight + `SELECT 1`
 
 ### Backup & Restore
-- **Preflight checks** — SSH: OS, dump/client tools, disk space, Docker status; WordPress: PHP, zlib, DB, uploads via plugin `/preflight`
+- **Database backup** — streaming `mysqldump` with zstd/gzip compression (SSH, Jump Host, Docker, WordPress)
+- **File backup** — configurable paths per host; tar+zstd/gzip archives under `{destination}/{host}/files/`; sequential multi-path jobs with partial-failure handling
+- **Preflight checks** — SSH: OS, dump/client tools, disk space, Docker status; file backup: tar + compression tools; WordPress: PHP, zlib, DB, uploads via plugin `/preflight`
 - **Restore flow** — select a backup, pick a destination host, run pre-import SQL, import, then optional post-import SQL
 - **Pre/post import queries** — run before restore starts; failures abort the import and show an error in the app
 - **Job center** — progress and cancel controls on the Backups screen
