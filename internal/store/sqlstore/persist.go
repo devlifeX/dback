@@ -199,7 +199,7 @@ func (s *Store) replaceTemplatesTx(tx *sql.Tx) error {
 }
 
 func (s *Store) loadHistoryLocked() ([]models.ExportRecord, error) {
-	rows, err := s.db.Query(`SELECT data_json FROM export_records ORDER BY export_date`)
+	rows, err := s.db.Query(`SELECT data_json FROM export_records ORDER BY export_date DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (s *Store) replaceHistoryTx(tx *sql.Tx) error {
 }
 
 func (s *Store) loadLogsLocked() ([]models.LogEntry, error) {
-	rows, err := s.db.Query(`SELECT data_json FROM log_entries ORDER BY timestamp`)
+	rows, err := s.db.Query(`SELECT data_json FROM log_entries ORDER BY timestamp DESC`)
 	if err != nil {
 		return nil, err
 	}

@@ -78,7 +78,7 @@ export function OperationsPage() {
           action={<Button onClick={() => setCreateOpen(true)}>Create operation</Button>}
         />
       ) : (
-        <DataTable columns={columns} data={items} />
+        <DataTable columns={columns} data={items} defaultSortDesc="started_at" />
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

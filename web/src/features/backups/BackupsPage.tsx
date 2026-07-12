@@ -130,11 +130,7 @@ export function BackupsPage() {
       ) : filtered.length === 0 ? (
         <EmptyState title="No matching backups" description="Try adjusting your filters." />
       ) : (
-        <DataTable
-          columns={columns}
-          data={filtered}
-          initialState={{ sorting: [{ id: 'export_date', desc: true }] }}
-        />
+        <DataTable columns={columns} data={filtered} defaultSortDesc="export_date" />
       )}
     </div>
   )

@@ -163,13 +163,17 @@ func (a *App) Templates() []models.SQLTemplate {
 func (a *App) History() []models.ExportRecord {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return append([]models.ExportRecord(nil), a.history...)
+	out := append([]models.ExportRecord(nil), a.history...)
+	sortHistoryNewestFirst(out)
+	return out
 }
 
 func (a *App) Logs() []models.LogEntry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return append([]models.LogEntry(nil), a.logs...)
+	out := append([]models.LogEntry(nil), a.logs...)
+	sortLogsNewestFirst(out)
+	return out
 }
 
 func (a *App) SaveProfile(profile models.Profile) error {

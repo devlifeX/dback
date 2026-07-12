@@ -15,10 +15,14 @@ type DataTableProps<T> = {
   emptyMessage?: string
   className?: string
   initialState?: { sorting?: SortingState }
+  /** Shorthand: sort this column descending by default (newest first). */
+  defaultSortDesc?: string
 }
 
-export function DataTable<T>({ columns, data, emptyMessage = 'No rows', className, initialState }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>(initialState?.sorting ?? [])
+export function DataTable<T>({ columns, data, emptyMessage = 'No rows', className, initialState, defaultSortDesc }: DataTableProps<T>) {
+  const [sorting, setSorting] = useState<SortingState>(
+    initialState?.sorting ?? (defaultSortDesc ? [{ id: defaultSortDesc, desc: true }] : []),
+  )
   const table = useReactTable({
     data,
     columns,

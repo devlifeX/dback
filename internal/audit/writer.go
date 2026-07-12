@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -97,6 +98,9 @@ func (w *Writer) List(limit int) []Entry {
 	}
 	out := make([]Entry, len(w.entries[start:]))
 	copy(out, w.entries[start:])
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Timestamp.After(out[j].Timestamp)
+	})
 	return out
 }
 

@@ -3,6 +3,7 @@ package v1
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"dback/models"
 
@@ -33,7 +34,10 @@ func (h *Handler) listHosts(w http.ResponseWriter, r *http.Request) {
 	if !requireVaultUnlocked(w, h.App) {
 		return
 	}
-	profiles := h.App.Profiles()
+	profiles := append([]models.Profile(nil), h.App.Profiles()...)
+	sort.Slice(profiles, func(i, j int) bool {
+		return profiles[i].ModifiedAt().After(profiles[j].ModifiedAt())
+	})
 	items := make([]HostDTO, 0, len(profiles))
 	for _, p := range profiles {
 		items = append(items, hostFromModel(p))

@@ -34,6 +34,7 @@ func (a *App) ListUsers() ([]models.User, error) {
 	for i, u := range users {
 		out[i] = redactUser(u)
 	}
+	sortUsersNewestFirst(out)
 	return out, nil
 }
 

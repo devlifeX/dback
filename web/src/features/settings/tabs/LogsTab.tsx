@@ -28,5 +28,5 @@ export function LogsTab() {
   if (isLoading) return <Skeleton className="h-40 w-full" />
   if (isError) return <ErrorAlert message="Could not load logs" onRetry={() => void refetch()} />
 
-  return <DataTable columns={columns} data={items} emptyMessage="No log entries" />
+  return <DataTable columns={columns} data={items} emptyMessage="No log entries" defaultSortDesc="timestamp" />
 }
