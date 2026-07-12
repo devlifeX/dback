@@ -1,5 +1,5 @@
 import { apiDownload, apiRequest } from './client'
-import type { Host, Paginated, Profile } from './types'
+import type { Host, Paginated, Profile, URLCheckHourlyBucket } from './types'
 
 export const hostsApi = {
   list: () => apiRequest<Paginated<Host>>('/api/v1/hosts'),
@@ -38,4 +38,12 @@ export const hostsApi = {
   generateWPKey: (id: string, etag?: string) =>
     apiRequest<{ wp_key: string }>(`/api/v1/hosts/${id}/generate-wp-key`, { method: 'POST', etag }),
   downloadPlugin: (id: string) => apiDownload(`/api/v1/hosts/${id}/wordpress-plugin`),
+  urlChecks: (id: string, params?: { url?: string; from?: string; to?: string }) => {
+    const q = new URLSearchParams()
+    if (params?.url) q.set('url', params.url)
+    if (params?.from) q.set('from', params.from)
+    if (params?.to) q.set('to', params.to)
+    const suffix = q.toString() ? `?${q}` : ''
+    return apiRequest<Paginated<URLCheckHourlyBucket>>(`/api/v1/hosts/${id}/url-checks${suffix}`)
+  },
 }

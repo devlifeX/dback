@@ -49,7 +49,107 @@ components:
           type: string
         provider:
           type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        phone:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+    AuthSettings:
+      type: object
+      properties:
+        two_factor_enabled:
+          type: boolean
+        sms_provider:
+          type: string
 paths:
+  /auth/login:
+    post:
+      summary: Login with phone and password
+      security: []
+      responses:
+        "200":
+          description: Session token or OTP challenge
+  /auth/verify-otp:
+    post:
+      summary: Verify OTP after login
+      security: []
+      responses:
+        "200":
+          description: Session token
+  /auth/logout:
+    post:
+      summary: Invalidate session
+      responses:
+        "204":
+          description: Logged out
+  /auth/me:
+    get:
+      summary: Current user
+      responses:
+        "200":
+          description: User profile
+  /users:
+    get:
+      summary: List users
+      responses:
+        "200":
+          description: User list
+    post:
+      summary: Create user
+      responses:
+        "201":
+          description: Created
+  /users/settings:
+    get:
+      summary: Auth and SMS settings
+      responses:
+        "200":
+          description: Settings
+    put:
+      summary: Update auth settings
+      responses:
+        "200":
+          description: Updated
+  /users/{id}:
+    get:
+      summary: Get user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User
+    put:
+      summary: Update user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated
+    delete:
+      summary: Delete user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
   /version:
     get:
       summary: API version
@@ -170,3 +270,9 @@ paths:
       responses:
         "200":
           description: Revision
+  /system/server-info:
+    get:
+      summary: Host machine stats (CPU, RAM, disk, internet)
+      responses:
+        "200":
+          description: Server info

@@ -78,6 +78,10 @@ func mergeNotifyConfig(existing, incoming json.RawMessage, provider models.Notif
 		return mergeSecretField(existing, incoming, "token")
 	case models.NotifyProviderWebhook:
 		return incoming
+	case models.NotifyProviderKavenegar:
+		return mergeSecretField(existing, incoming, "api_key")
+	case models.NotifyProviderMeliPayamak:
+		return mergeSecretField(existing, incoming, "password")
 	default:
 		return incoming
 	}

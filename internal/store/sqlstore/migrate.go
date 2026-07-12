@@ -14,35 +14,49 @@ import (
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
+var migrationFiles = []struct {
+	version int
+	file    string
+}{
+	{1, "migrations/001_initial.sql"},
+	{2, "migrations/002_users.sql"},
+	{3, "migrations/003_url_check_samples.sql"},
+}
+
 func runMigrations(db *sql.DB, driver string) error {
-	applied, err := migrationApplied(db, driver, 1)
-	if err != nil {
-		return err
-	}
-	if applied {
-		return nil
-	}
-	body, err := migrationFS.ReadFile("migrations/001_initial.sql")
-	if err != nil {
-		return err
-	}
-	sqlText := string(body)
-	if driver == "mysql" {
-		sqlText = strings.ReplaceAll(sqlText, "IF NOT EXISTS ", "")
-	}
-	for _, stmt := range splitSQL(sqlText) {
-		if stmt == "" {
+	for _, m := range migrationFiles {
+		applied, err := migrationApplied(db, driver, m.version)
+		if err != nil {
+			return err
+		}
+		if applied {
 			continue
 		}
-		if _, err := db.Exec(stmt); err != nil {
-			if driver == "mysql" && (strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "already exists")) {
+		body, err := migrationFS.ReadFile(m.file)
+		if err != nil {
+			return err
+		}
+		sqlText := string(body)
+		if driver == "mysql" {
+			sqlText = strings.ReplaceAll(sqlText, "IF NOT EXISTS ", "")
+		}
+		for _, stmt := range splitSQL(sqlText) {
+			if stmt == "" {
 				continue
 			}
-			return fmt.Errorf("migration: %w\nstmt: %s", err, stmt)
+			if _, err := db.Exec(stmt); err != nil {
+				if driver == "mysql" && (strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "already exists")) {
+					continue
+				}
+				return fmt.Errorf("migration v%d: %w\nstmt: %s", m.version, err, stmt)
+			}
+		}
+		_, err = db.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`, m.version, time.Now().UTC().Format(time.RFC3339Nano))
+		if err != nil {
+			return err
 		}
 	}
-	_, err = db.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?)`, time.Now().UTC().Format(time.RFC3339Nano))
-	return err
+	return nil
 }
 
 func migrationApplied(db *sql.DB, driver string, version int) (bool, error) {

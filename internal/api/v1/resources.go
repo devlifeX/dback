@@ -449,6 +449,7 @@ func (h *Handler) mountSystem(r chi.Router) {
 	r.Get("/revision", h.systemRevision)
 	r.Get("/audit", h.listAudit)
 	r.Get("/storage", h.systemStorage)
+	r.Get("/server-info", h.systemServerInfo)
 }
 
 func (h *Handler) systemVersion(w http.ResponseWriter, _ *http.Request) {

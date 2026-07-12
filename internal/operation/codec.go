@@ -17,6 +17,8 @@ func DefaultParams(kind Kind) (Params, error) {
 		return RestoreParams{}, nil
 	case KindDeepVerify:
 		return DeepVerifyParams{}, nil
+	case KindUrlChecker:
+		return UrlCheckerParams{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported operation kind %q", kind)
 	}
@@ -56,6 +58,12 @@ func DecodeParams(kind Kind, raw json.RawMessage) (Params, error) {
 		return p, nil
 	case KindDeepVerify:
 		var p DeepVerifyParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		return p, nil
+	case KindUrlChecker:
+		var p UrlCheckerParams
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, err
 		}

@@ -14,10 +14,11 @@ type DataTableProps<T> = {
   data: T[]
   emptyMessage?: string
   className?: string
+  initialState?: { sorting?: SortingState }
 }
 
-export function DataTable<T>({ columns, data, emptyMessage = 'No rows', className }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>([])
+export function DataTable<T>({ columns, data, emptyMessage = 'No rows', className, initialState }: DataTableProps<T>) {
+  const [sorting, setSorting] = useState<SortingState>(initialState?.sorting ?? [])
   const table = useReactTable({
     data,
     columns,

@@ -116,7 +116,7 @@ func encryptNotifyConfig(raw json.RawMessage, enc *secrets.FieldEncryptor) (json
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return raw, nil
 	}
-	for _, key := range []string{"token", "webhook_url", "url"} {
+	for _, key := range []string{"token", "webhook_url", "url", "api_key", "password"} {
 		v, ok := m[key]
 		if !ok {
 			continue
@@ -144,7 +144,7 @@ func decryptNotifyConfig(raw json.RawMessage, enc *secrets.FieldEncryptor) (json
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return raw, nil
 	}
-	for _, key := range []string{"token", "webhook_url", "url"} {
+	for _, key := range []string{"token", "webhook_url", "url", "api_key", "password"} {
 		v, ok := m[key]
 		if !ok {
 			continue

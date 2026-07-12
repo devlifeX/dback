@@ -2,7 +2,7 @@ package storemodel
 
 import "errors"
 
-const CurrentVersion = 5
+const CurrentVersion = 6
 
 var (
 	ErrVaultLocked                = errors.New("vault is locked")
@@ -18,4 +18,9 @@ var (
 	ErrAppSettingsDestRequired    = errors.New("app settings destination is required")
 	ErrTaskNotFound               = errors.New("task not found")
 	ErrNotifyChannelNotFound      = errors.New("notify channel not found")
+	ErrUserNotFound               = errors.New("user not found")
+	ErrUserExists                 = errors.New("user already exists")
+	ErrInvalidCredentials         = errors.New("invalid credentials")
+	ErrOTPInvalid                 = errors.New("invalid or expired otp")
+	ErrSessionInvalid             = errors.New("invalid or expired session")
 )

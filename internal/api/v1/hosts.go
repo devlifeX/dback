@@ -25,6 +25,7 @@ func (h *Handler) mountHosts(r chi.Router) {
 		r.Post("/query", h.runHostQuery)
 		r.Get("/wordpress-plugin", h.downloadWordPressPlugin)
 		r.Post("/generate-wp-key", h.generateWPKey)
+		r.Get("/url-checks", h.listHostURLChecks)
 	})
 }
 

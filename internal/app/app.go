@@ -27,11 +27,12 @@ type ProgressFunc = transfer.ProgressFunc
 type App struct {
 	store store.Repository
 
-	mu        sync.Mutex
-	profiles  []models.Profile
-	templates []models.SQLTemplate
-	history   []models.ExportRecord
-	logs      []models.LogEntry
+	mu         sync.Mutex
+	profiles   []models.Profile
+	templates  []models.SQLTemplate
+	history    []models.ExportRecord
+	logs       []models.LogEntry
+	squidProxy string
 }
 
 func New(baseDir string) (*App, error) {
@@ -51,6 +52,10 @@ func NewWithOptions(opts store.Options) (*App, error) {
 		return nil, err
 	}
 	return &App{store: repo}, nil
+}
+
+func (a *App) SetSquidProxy(proxy string) {
+	a.squidProxy = strings.TrimSpace(proxy)
 }
 
 func (a *App) HasVault() bool {
@@ -185,6 +190,12 @@ func (a *App) SaveProfile(profile models.Profile) error {
 		}
 	}
 	if err := normalizeProfileFileBackup(&profile); err != nil {
+		return err
+	}
+	if err := models.ValidateURLCheck(profile.URLCheck); err != nil {
+		return err
+	}
+	if err := models.ValidateBackupPolicy(profile.BackupPolicy); err != nil {
 		return err
 	}
 	profile.ExportSettings = nil
@@ -452,6 +463,7 @@ func (a *App) BackupWithOperationID(ctx context.Context, operationID string, pro
 	if progress != nil {
 		progress("Backup completed", size, size)
 	}
+	_ = a.ApplyRetention(profile.ID)
 	return record, nil
 }
 

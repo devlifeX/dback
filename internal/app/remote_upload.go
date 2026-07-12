@@ -616,6 +616,7 @@ func (a *App) UploadProfileBackups(ctx context.Context, profileID string, record
 		return result, fmt.Errorf("remote upload completed with %d failure(s): %w", len(failures), errors.Join(failures...))
 	}
 	remoteUploadLog("Upload", "done", fmt.Sprintf("uploaded=%d failed=%d skipped=%d", result.UploadedRecords, result.FailedRecords, result.SkippedRecords), profile.Name, "")
+	_ = a.ApplyRetention(profileID)
 	return result, nil
 }
 

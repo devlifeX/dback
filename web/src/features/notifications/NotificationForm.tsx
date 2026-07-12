@@ -6,13 +6,15 @@ import { FormField } from '@/components/forms/FormField'
 import { FormSection } from '@/components/forms/FormSection'
 import { SecretField } from '@/components/forms/SecretField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DEFAULT_NOTIFY_EVENTS, NOTIFY_EVENTS, type BaleConfig, type NotifyChannel, type NotifyProvider, type SlackConfig, type TelegramConfig, type WebhookConfig } from '@/api/types'
+import { DEFAULT_NOTIFY_EVENTS, NOTIFY_EVENTS, type BaleConfig, type KavenegarConfig, type MeliPayamakConfig, type NotifyChannel, type NotifyProvider, type SlackConfig, type TelegramConfig, type WebhookConfig } from '@/api/types'
 
 const PROVIDERS: { value: NotifyProvider; label: string }[] = [
   { value: 'telegram', label: 'Telegram' },
   { value: 'slack', label: 'Slack' },
   { value: 'bale', label: 'Bale' },
   { value: 'webhook', label: 'Webhook' },
+  { value: 'kavenegar', label: 'Kavenegar' },
+  { value: 'melipayamak', label: 'MeliPayamak' },
 ]
 
 type FormValues = NotifyChannel
@@ -59,6 +61,8 @@ export function NotificationForm({
                 if (v === 'slack') setValue('config', { webhook_url: '' })
                 if (v === 'bale') setValue('config', { token: '', chat_id: '' })
                 if (v === 'webhook') setValue('config', { url: '' })
+                if (v === 'kavenegar') setValue('config', { api_key: '', line: '', receptor: '' })
+                if (v === 'melipayamak') setValue('config', { username: '', password: '', from: '', to: '' })
               }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -126,6 +130,31 @@ export function NotificationForm({
             </FormField>
             <FormField label="Method" htmlFor="wh-method">
               <Input id="wh-method" placeholder="POST" value={(watch('config') as WebhookConfig)?.method ?? ''} onChange={(e) => setValue('config', { ...(watch('config') as WebhookConfig), method: e.target.value })} />
+            </FormField>
+          </>
+        ) : null}
+        {provider === 'kavenegar' ? (
+          <>
+            <SecretField label="API key" value={(watch('config') as KavenegarConfig)?.api_key ?? ''} onChange={(v) => setValue('config', { ...(watch('config') as KavenegarConfig), api_key: v })} />
+            <FormField label="Line (sender)" htmlFor="kg-line">
+              <Input id="kg-line" value={(watch('config') as KavenegarConfig)?.line ?? ''} onChange={(e) => setValue('config', { ...(watch('config') as KavenegarConfig), line: e.target.value })} />
+            </FormField>
+            <FormField label="Recipient phone" htmlFor="kg-receptor">
+              <Input id="kg-receptor" value={(watch('config') as KavenegarConfig)?.receptor ?? ''} onChange={(e) => setValue('config', { ...(watch('config') as KavenegarConfig), receptor: e.target.value })} />
+            </FormField>
+          </>
+        ) : null}
+        {provider === 'melipayamak' ? (
+          <>
+            <FormField label="Username" htmlFor="mp-user">
+              <Input id="mp-user" value={(watch('config') as MeliPayamakConfig)?.username ?? ''} onChange={(e) => setValue('config', { ...(watch('config') as MeliPayamakConfig), username: e.target.value })} />
+            </FormField>
+            <SecretField label="Password" value={(watch('config') as MeliPayamakConfig)?.password ?? ''} onChange={(v) => setValue('config', { ...(watch('config') as MeliPayamakConfig), password: v })} />
+            <FormField label="From (sender)" htmlFor="mp-from">
+              <Input id="mp-from" value={(watch('config') as MeliPayamakConfig)?.from ?? ''} onChange={(e) => setValue('config', { ...(watch('config') as MeliPayamakConfig), from: e.target.value })} />
+            </FormField>
+            <FormField label="Recipient phone" htmlFor="mp-to">
+              <Input id="mp-to" value={(watch('config') as MeliPayamakConfig)?.to ?? ''} onChange={(e) => setValue('config', { ...(watch('config') as MeliPayamakConfig), to: e.target.value })} />
             </FormField>
           </>
         ) : null}

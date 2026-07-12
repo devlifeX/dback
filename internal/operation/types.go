@@ -14,6 +14,7 @@ const (
 	KindUpload      Kind = "upload"
 	KindRestore     Kind = "restore"
 	KindDeepVerify  Kind = "deep_verify"
+	KindUrlChecker  Kind = "url_checker"
 )
 
 type Status string
@@ -107,6 +108,24 @@ func (p DeepVerifyParams) Validate() error {
 	}
 	if strings.TrimSpace(p.DestinationProfileID) == "" {
 		return fmt.Errorf("destination_profile_id is required")
+	}
+	return nil
+}
+
+type UrlCheckerParams struct {
+	URLIndex *int `json:"url_index"`
+	UseProxy bool `json:"use_proxy"`
+	Timeout  int  `json:"timeout_seconds"`
+}
+
+func (UrlCheckerParams) Kind() Kind { return KindUrlChecker }
+
+func (p UrlCheckerParams) Validate() error {
+	if p.Timeout < 0 {
+		return fmt.Errorf("timeout_seconds must be >= 0")
+	}
+	if p.URLIndex != nil && *p.URLIndex < -1 {
+		return fmt.Errorf("url_index must be >= -1")
 	}
 	return nil
 }

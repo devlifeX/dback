@@ -5,10 +5,12 @@ import "encoding/json"
 type NotifyProvider string
 
 const (
-	NotifyProviderTelegram NotifyProvider = "telegram"
-	NotifyProviderSlack    NotifyProvider = "slack"
-	NotifyProviderBale     NotifyProvider = "bale"
-	NotifyProviderWebhook  NotifyProvider = "webhook"
+	NotifyProviderTelegram    NotifyProvider = "telegram"
+	NotifyProviderSlack       NotifyProvider = "slack"
+	NotifyProviderBale        NotifyProvider = "bale"
+	NotifyProviderWebhook     NotifyProvider = "webhook"
+	NotifyProviderKavenegar   NotifyProvider = "kavenegar"
+	NotifyProviderMeliPayamak NotifyProvider = "melipayamak"
 )
 
 type NotifyChannel struct {

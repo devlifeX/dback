@@ -33,6 +33,8 @@ func (s *Store) loadAllLocked() error {
 	s.tasks, _ = s.loadTasksLocked()
 	s.taskRuns, _ = s.loadTaskRunsLocked()
 	s.notifyChannels, _ = s.loadNotifyChannelsLocked(enc)
+	s.users, _ = s.loadUsersLocked(enc)
+	s.authSettings, _ = s.loadAuthSettingsLocked(enc)
 	s.importDestByProfile, _ = s.loadImportPrefsLocked()
 	s.sync, _ = s.loadSyncSettingsLocked(enc)
 	s.syncLegacyFromAppSettingsLocked()
@@ -75,6 +77,12 @@ func (s *Store) persistAllLocked() error {
 		return err
 	}
 	if err := s.replaceNotifyChannelsTx(tx, enc); err != nil {
+		return err
+	}
+	if err := s.replaceUsersTx(tx, enc); err != nil {
+		return err
+	}
+	if err := s.replaceAuthSettingsTx(tx, enc); err != nil {
 		return err
 	}
 	if err := s.replaceImportPrefsTx(tx); err != nil {

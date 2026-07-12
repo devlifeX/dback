@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"dback/internal/sms"
 )
 
 const defaultHTTPTimeout = 10 * time.Second
@@ -371,4 +373,54 @@ func decodeWebhook(raw json.RawMessage) (WebhookConfig, error) {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+type KavenegarNotifySender struct {
+	Client HTTPDoer
+	Provider sms.Provider
+}
+
+func (KavenegarNotifySender) Validate(raw json.RawMessage) error {
+	return sms.ValidateKavenegarNotify(raw)
+}
+
+func (KavenegarNotifySender) Redact(raw json.RawMessage) json.RawMessage {
+	return sms.RedactKavenegarNotify(raw)
+}
+
+func (s KavenegarNotifySender) Send(ctx context.Context, raw json.RawMessage, msg Message) error {
+	cfg, err := sms.DecodeKavenegarNotify(raw)
+	if err != nil {
+		return err
+	}
+	p := s.Provider
+	if p == nil {
+		p = sms.Kavenegar{Client: s.Client}
+	}
+	return p.Send(ctx, raw, cfg.Receptor, FormatPlain(msg))
+}
+
+type MeliPayamakNotifySender struct {
+	Client HTTPDoer
+	Provider sms.Provider
+}
+
+func (MeliPayamakNotifySender) Validate(raw json.RawMessage) error {
+	return sms.ValidateMeliPayamakNotify(raw)
+}
+
+func (MeliPayamakNotifySender) Redact(raw json.RawMessage) json.RawMessage {
+	return sms.RedactMeliPayamakNotify(raw)
+}
+
+func (s MeliPayamakNotifySender) Send(ctx context.Context, raw json.RawMessage, msg Message) error {
+	cfg, err := sms.DecodeMeliPayamakNotify(raw)
+	if err != nil {
+		return err
+	}
+	p := s.Provider
+	if p == nil {
+		p = sms.MeliPayamak{Client: s.Client}
+	}
+	return p.Send(ctx, raw, cfg.To, FormatPlain(msg))
 }

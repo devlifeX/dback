@@ -2,7 +2,6 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { queryClient } from '@/app/query-client'
-import { TokenGate } from '@/app/TokenGate'
 import { AppRoutes } from '@/routes/AppRoutes'
 import { useUIStore } from '@/store/ui-store'
 import { useEffect } from 'react'
@@ -20,9 +19,7 @@ export function AppProviders() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ThemeSync />
-        <TokenGate>
-          <AppRoutes />
-        </TokenGate>
+        <AppRoutes />
         <Toaster richColors closeButton position="top-right" />
       </BrowserRouter>
     </QueryClientProvider>

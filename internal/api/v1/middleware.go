@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -20,11 +21,19 @@ func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 		if token == "" {
 			token = strings.TrimSpace(r.URL.Query().Get("access_token"))
 		}
-		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(h.Cfg.APIToken)) != 1 {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or missing bearer token")
+		if token != "" && subtle.ConstantTimeCompare([]byte(token), []byte(h.Cfg.APIToken)) == 1 {
+			next.ServeHTTP(w, r)
 			return
 		}
-		next.ServeHTTP(w, r)
+		if token != "" && h.App != nil {
+			userID, err := h.App.ValidateSession(token)
+			if err == nil && userID != "" {
+				ctx := context.WithValue(r.Context(), ctxUserIDKey, userID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or missing bearer token")
 	})
 }
 

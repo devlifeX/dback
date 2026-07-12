@@ -86,7 +86,7 @@ func (a *App) ValidateTask(task models.Task) error {
 	for _, action := range task.Actions {
 		kind := operation.Kind(action.Operation)
 		switch kind {
-		case operation.KindBackupDB, operation.KindBackupFiles, operation.KindUpload:
+		case operation.KindBackupDB, operation.KindBackupFiles, operation.KindUpload, operation.KindUrlChecker:
 		default:
 			return fmt.Errorf("%w: unsupported action %q", ErrInvalidTask, action.Operation)
 		}

@@ -13,10 +13,12 @@ import (
 type ProviderID = models.NotifyProvider
 
 const (
-	ProviderTelegram = models.NotifyProviderTelegram
-	ProviderSlack    = models.NotifyProviderSlack
-	ProviderBale     = models.NotifyProviderBale
-	ProviderWebhook  = models.NotifyProviderWebhook
+	ProviderTelegram    = models.NotifyProviderTelegram
+	ProviderSlack       = models.NotifyProviderSlack
+	ProviderBale        = models.NotifyProviderBale
+	ProviderWebhook     = models.NotifyProviderWebhook
+	ProviderKavenegar   = models.NotifyProviderKavenegar
+	ProviderMeliPayamak = models.NotifyProviderMeliPayamak
 )
 
 type Message struct {
@@ -43,6 +45,8 @@ func NewRegistry() *Registry {
 	r.Register(ProviderSlack, SlackSender{})
 	r.Register(ProviderBale, BaleSender{})
 	r.Register(ProviderWebhook, WebhookSender{})
+	r.Register(ProviderKavenegar, KavenegarNotifySender{})
+	r.Register(ProviderMeliPayamak, MeliPayamakNotifySender{})
 	return r
 }
 
@@ -60,7 +64,7 @@ func ValidateChannel(ch models.NotifyChannel) error {
 		return fmt.Errorf("channel name is required")
 	}
 	switch ch.Provider {
-	case ProviderTelegram, ProviderSlack, ProviderBale, ProviderWebhook:
+	case ProviderTelegram, ProviderSlack, ProviderBale, ProviderWebhook, ProviderKavenegar, ProviderMeliPayamak:
 	default:
 		return fmt.Errorf("unsupported provider %q", ch.Provider)
 	}

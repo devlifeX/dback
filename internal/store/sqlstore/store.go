@@ -48,6 +48,8 @@ type Store struct {
 	tasks                      []models.Task
 	taskRuns                   []models.TaskRunRecord
 	notifyChannels             []models.NotifyChannel
+	users                      []models.User
+	authSettings               models.AuthSettings
 }
 
 func Open(baseDir string, dbCfg config.DBConfig) (*Store, error) {
@@ -344,6 +346,8 @@ func (s *Store) Lock() {
 	s.tasks = nil
 	s.taskRuns = nil
 	s.notifyChannels = nil
+	s.users = nil
+	s.authSettings = models.DefaultAuthSettings()
 	s.importDestByProfile = nil
 }
 
@@ -477,4 +481,10 @@ func (s *Store) applyPayloadLocked(payload models.AppVaultPayload) {
 	s.tasks = append([]models.Task(nil), payload.Tasks...)
 	s.taskRuns = append([]models.TaskRunRecord(nil), payload.TaskRuns...)
 	s.notifyChannels = append([]models.NotifyChannel(nil), payload.NotifyChannels...)
+	s.users = append([]models.User(nil), payload.Users...)
+	if payload.AuthSettings != nil {
+		s.authSettings = *payload.AuthSettings
+	} else {
+		s.authSettings = models.DefaultAuthSettings()
+	}
 }

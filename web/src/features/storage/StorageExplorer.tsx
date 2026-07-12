@@ -16,6 +16,12 @@ type StorageExplorerProps = {
   onDownload?: (entry: StorageEntry) => void
   downloadingPath?: string
   breadcrumbLabel?: (segment: string, index: number, parts: string[]) => string
+  profileNames?: Record<string, string>
+}
+
+function hostLabelForEntry(name: string, profileNames?: Record<string, string>) {
+  if (!profileNames || !/^\d+$/.test(name)) return undefined
+  return profileNames[name]
 }
 
 function defaultBreadcrumb(parts: string[]) {
@@ -34,6 +40,7 @@ export function StorageExplorer({
   onDownload,
   downloadingPath,
   breadcrumbLabel,
+  profileNames,
 }: StorageExplorerProps) {
   const parts = path ? path.replace(/\\/g, '/').split('/').filter(Boolean) : []
 
@@ -96,6 +103,7 @@ export function StorageExplorer({
                   onOpen={onOpen}
                   onDownload={onDownload}
                   downloading={downloadingPath === entry.path}
+                  hostLabel={entry.is_dir ? hostLabelForEntry(entry.name, profileNames) : undefined}
                 />
               ))
             )}
@@ -111,11 +119,13 @@ function StorageRow({
   onOpen,
   onDownload,
   downloading,
+  hostLabel,
 }: {
   entry: StorageEntry
   onOpen: (entry: StorageEntry) => void
   onDownload?: (entry: StorageEntry) => void
   downloading?: boolean
+  hostLabel?: string
 }) {
   const Icon = entry.is_dir ? Folder : File
   return (
@@ -123,11 +133,18 @@ function StorageRow({
       <td className="px-3 py-2">
         <button
           type="button"
-          className={cn('flex items-center gap-2 text-left', entry.is_dir && 'font-medium hover:underline')}
+          className={cn('flex flex-col items-start gap-0.5 text-left', entry.is_dir && 'font-medium hover:underline')}
           onClick={() => onOpen(entry)}
         >
-          <Icon className="h-4 w-4 shrink-0 text-[hsl(var(--muted-foreground))]" />
-          {entry.name}
+          <span className="flex items-center gap-2">
+            <Icon className="h-4 w-4 shrink-0 text-[hsl(var(--muted-foreground))]" />
+            {entry.name}
+          </span>
+          {hostLabel ? (
+            <span className="ml-6 inline-flex rounded bg-[hsl(var(--muted))] px-2 py-0.5 text-xs text-[hsl(var(--muted-foreground))]">
+              {hostLabel}
+            </span>
+          ) : null}
         </button>
       </td>
       <td className="px-3 py-2 text-[hsl(var(--muted-foreground))]">

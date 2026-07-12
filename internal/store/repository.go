@@ -5,6 +5,7 @@ import (
 	"dback/internal/store/sqlstore"
 	"dback/internal/storemodel"
 	"dback/models"
+	"time"
 )
 
 // Re-export shared symbols for backward compatibility.
@@ -24,6 +25,11 @@ var (
 	ErrAppSettingsDestRequired    = storemodel.ErrAppSettingsDestRequired
 	ErrTaskNotFound               = storemodel.ErrTaskNotFound
 	ErrNotifyChannelNotFound      = storemodel.ErrNotifyChannelNotFound
+	ErrUserNotFound               = storemodel.ErrUserNotFound
+	ErrUserExists                 = storemodel.ErrUserExists
+	ErrInvalidCredentials         = storemodel.ErrInvalidCredentials
+	ErrOTPInvalid                 = storemodel.ErrOTPInvalid
+	ErrSessionInvalid             = storemodel.ErrSessionInvalid
 )
 
 type DestinationUsage = storemodel.DestinationUsage
@@ -96,6 +102,28 @@ type Repository interface {
 	GetNotifyChannel(id string) (models.NotifyChannel, error)
 	SaveNotifyChannel(ch models.NotifyChannel) error
 	DeleteNotifyChannel(id string) error
+
+	ListUsers() ([]models.User, error)
+	GetUser(id string) (models.User, error)
+	GetUserByPhone(phone string) (models.User, error)
+	SaveUser(user models.User) error
+	DeleteUser(id string) error
+
+	LoadAuthSettings() (models.AuthSettings, error)
+	SaveAuthSettings(settings models.AuthSettings) error
+
+	CreateSession(userID string, tokenHash string, expiresAt time.Time) error
+	GetSessionByTokenHash(tokenHash string) (models.Session, error)
+	DeleteSession(tokenHash string) error
+	DeleteSessionsForUser(userID string) error
+
+	CreateOTPChallenge(ch models.OTPChallenge) error
+	GetOTPChallenge(id string) (models.OTPChallenge, error)
+	UpdateOTPChallenge(ch models.OTPChallenge) error
+	DeleteOTPChallengesForUser(userID string) error
+
+	AppendURLCheckSample(sample models.URLCheckSample) error
+	ListURLCheckHourly(profileID, url string, from, to time.Time) ([]models.URLCheckHourlyBucket, error)
 
 	ImportProfilesBundle(path string, includeSecrets bool, passphrase string) ([]models.Profile, error)
 	ExportProfiles(path string, profiles []models.Profile, includeSecrets bool, passphrase string) error

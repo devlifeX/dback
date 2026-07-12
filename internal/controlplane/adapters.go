@@ -15,6 +15,7 @@ func RegisterAppHandlers(registry *Registry, application *app.App) {
 	registry.Register(operation.KindUpload, uploadHandler(application))
 	registry.Register(operation.KindRestore, restoreHandler(application))
 	registry.Register(operation.KindDeepVerify, deepVerifyHandler(application))
+	registry.Register(operation.KindUrlChecker, urlCheckerHandler(application))
 }
 
 func backupDBHandler(application *app.App) Handler {
@@ -243,4 +244,33 @@ func historyRecordByID(application *app.App, recordID string) (models.ExportReco
 		}
 	}
 	return models.ExportRecord{}, fmt.Errorf("backup record %q not found", recordID)
+}
+
+func urlCheckerHandler(application *app.App) Handler {
+	return func(ctx context.Context, spec operation.Spec, publishProgress func(message string, current, total int64)) (*operation.Result, error) {
+		params, ok := spec.Params.(operation.UrlCheckerParams)
+		if !ok {
+			return nil, fmt.Errorf("invalid params for url_checker")
+		}
+		if publishProgress != nil {
+			publishProgress("Checking URLs", 0, 1)
+		}
+		err := application.CheckURLs(ctx, spec.ProfileID, params)
+		if err != nil {
+			return &operation.Result{
+				OperationID: spec.ID,
+				Kind:        operation.KindUrlChecker,
+				Status:      operation.StatusFailed,
+				Error:       err.Error(),
+			}, err
+		}
+		if publishProgress != nil {
+			publishProgress("URL checks passed", 1, 1)
+		}
+		return &operation.Result{
+			OperationID: spec.ID,
+			Kind:        operation.KindUrlChecker,
+			Status:      operation.StatusSucceeded,
+		}, nil
+	}
 }

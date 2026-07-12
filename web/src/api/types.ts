@@ -74,8 +74,38 @@ export type Profile = {
   remote_auto_upload_db?: boolean
   remote_auto_upload_files?: boolean
 
+  url_check?: URLCheck
+  backup_policy?: BackupPolicy
+
   created_at?: string
   updated_at?: string
+}
+
+export type URLTarget = { url: string }
+
+export type URLCheck = {
+  primary?: URLTarget
+  secondary?: URLTarget[]
+}
+
+export type BackupPolicy = {
+  enabled?: boolean
+  db_local_keep?: number
+  db_remote_keep?: number
+  files_local_keep?: number
+  files_remote_keep?: number
+}
+
+export type URLCheckHourlyBucket = {
+  hour: string
+  url: string
+  avg_ttfb_ms: number
+  min_ttfb_ms: number
+  max_ttfb_ms: number
+  samples: number
+  ok_count: number
+  fail_count: number
+  last_status_code: number
 }
 
 /** Host is the API alias for Profile (secrets redacted on read). */
@@ -117,7 +147,7 @@ export type ExportRecord = {
   remote_uploads?: RemoteUploadState[]
 }
 
-export type OperationKind = 'backup_db' | 'backup_files' | 'upload' | 'restore' | 'deep_verify'
+export type OperationKind = 'backup_db' | 'backup_files' | 'upload' | 'restore' | 'deep_verify' | 'url_checker'
 
 export type Operation = {
   id: string
@@ -174,7 +204,7 @@ export type TaskRunRecord = {
   action_results?: { operation_id: string; kind: string; status: string; error?: string }[]
 }
 
-export type NotifyProvider = 'telegram' | 'slack' | 'bale' | 'webhook'
+export type NotifyProvider = 'telegram' | 'slack' | 'bale' | 'webhook' | 'kavenegar' | 'melipayamak'
 
 export type TelegramConfig = { token: string; chat_id: string; thread_id?: number; parse_mode?: string }
 export type SlackConfig = { webhook_url: string; channel?: string; username?: string; icon_emoji?: string }
@@ -186,6 +216,8 @@ export type WebhookConfig = {
   timeout_sec?: number
   retry_count?: number
 }
+export type KavenegarConfig = { api_key: string; line: string; receptor: string }
+export type MeliPayamakConfig = { username: string; password: string; from: string; to: string }
 
 export type NotifyChannel = {
   id: string
@@ -193,7 +225,42 @@ export type NotifyChannel = {
   provider: NotifyProvider
   enabled: boolean
   events?: string[]
-  config?: TelegramConfig | SlackConfig | BaleConfig | WebhookConfig
+  config?: TelegramConfig | SlackConfig | BaleConfig | WebhookConfig | KavenegarConfig | MeliPayamakConfig
+}
+
+export type SMSProvider = 'kavenegar' | 'melipayamak'
+
+export type AuthSMSConfig = {
+  api_key?: string
+  line?: string
+  username?: string
+  password?: string
+  from?: string
+}
+
+export type AuthSettings = {
+  two_factor_enabled: boolean
+  sms_provider?: SMSProvider
+  sms_config?: AuthSMSConfig
+  otp_ttl_seconds?: number
+  otp_length?: number
+}
+
+export type User = {
+  id: string
+  phone: string
+  name: string
+  enabled: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export type LoginResponse = {
+  token?: string
+  otp_required?: boolean
+  challenge_id?: string
+  expires_in_sec?: number
+  user?: User
 }
 
 export type SQLTemplate = {
@@ -258,6 +325,18 @@ export type StorageInfo = {
   hosts: number
 }
 
+export type ServerInfo = {
+  cpu_count: number
+  ram_total_bytes: number
+  ram_free_bytes: number
+  disk_free_bytes: number
+  data_dir: string
+  internet_ok: boolean
+  internet_error?: string
+  internet_host: string
+  checked_at: string
+}
+
 export type AuditEntry = {
   timestamp: string
   method: string
@@ -272,6 +351,7 @@ export const OPERATION_KINDS: { value: OperationKind; label: string }[] = [
   { value: 'upload', label: 'Remote upload' },
   { value: 'restore', label: 'Restore' },
   { value: 'deep_verify', label: 'Deep verify' },
+  { value: 'url_checker', label: 'URL checker' },
 ]
 
 export const NOTIFY_EVENTS = [
@@ -306,5 +386,7 @@ export function emptyProfile(): Profile {
     file_backup_paths: [],
     file_backup_exclude: [],
     remote_upload_destination_ids: [],
+    url_check: { primary: { url: '' }, secondary: [] },
+    backup_policy: { enabled: false, db_local_keep: 0, db_remote_keep: 0, files_local_keep: 0, files_remote_keep: 0 },
   }
 }

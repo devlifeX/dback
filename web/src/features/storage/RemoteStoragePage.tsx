@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { destinationsApi } from '@/api/settings'
+import { hostsApi } from '@/api/hosts'
 import { storageApi } from '@/api/storage'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -15,6 +16,15 @@ export function RemoteStoragePage() {
   const [downloadingPath, setDownloadingPath] = useState('')
 
   const destinations = useQuery({ queryKey: ['destinations'], queryFn: destinationsApi.list })
+  const hosts = useQuery({ queryKey: ['hosts'], queryFn: hostsApi.list })
+
+  const profileNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const host of hosts.data?.items ?? []) {
+      map[host.id] = host.name
+    }
+    return map
+  }, [hosts.data?.items])
 
   useEffect(() => {
     const items = destinations.data?.items ?? []
@@ -93,6 +103,7 @@ export function RemoteStoragePage() {
         onDownload={(entry) => download.mutate(entry.path)}
         downloadingPath={downloadingPath}
         breadcrumbLabel={(segment) => segment}
+        profileNames={profileNames}
       />
     </div>
   )

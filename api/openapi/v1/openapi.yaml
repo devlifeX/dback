@@ -170,3 +170,9 @@ paths:
       responses:
         "200":
           description: Revision
+  /system/server-info:
+    get:
+      summary: Host machine stats (CPU, RAM, disk, internet)
+      responses:
+        "200":
+          description: Server info

@@ -19,7 +19,10 @@ DEV_DIR="${ROOT}/.dev"
 DATA_DIR="${DBACK_DATA_DIR:-${DEV_DIR}/data}"
 LISTEN="${DBACK_LISTEN:-127.0.0.1:14127}"
 PASSPHRASE="${DBACK_PASSPHRASE:-dev-passphrase}"
-API_TOKEN="${DBACK_API_TOKEN:-dev-token}"
+API_TOKEN="${DBACK_API_TOKEN:-1420}"
+ADMIN_PHONE="${DBACK_DEFAULT_ADMIN_PHONE:-09359922324}"
+ADMIN_PASSWORD="${DBACK_DEFAULT_ADMIN_PASSWORD:-09359922324}"
+ADMIN_NAME="${DBACK_DEFAULT_ADMIN_NAME:-Admin}"
 DB_DRIVER="${DBACK_DB_DRIVER:-sqlite}"
 if [[ -n "${DBACK_DB_DSN:-}" ]]; then
 	DB_DSN="$DBACK_DB_DSN"
@@ -54,11 +57,13 @@ Options:
 Environment (optional overrides):
   DBACK_DATA_DIR       Vault/data directory (default: .dev/data)
   DBACK_PASSPHRASE     Vault passphrase (default: dev-passphrase)
-  DBACK_API_TOKEN      Bearer token for /api/v1 (default: dev-token)
+  DBACK_API_TOKEN      Bearer token for /api/v1 (default: 1420)
   DBACK_LISTEN         API bind address (default: 127.0.0.1:14127)
   DBACK_VITE_PORT      Vite dev port (default: 5173)
+  DBACK_DEFAULT_ADMIN_PHONE     Bootstrap admin phone when no users exist (default: 09359922324)
+  DBACK_DEFAULT_ADMIN_PASSWORD  Bootstrap admin password (default: 09359922324)
 
-Dev:  open http://127.0.0.1:5173 and paste the API token when prompted.
+Dev:  open http://127.0.0.1:5173/login — first admin is auto-created on serve if the DB has no users.
 Prod: open http://127.0.0.1:14127 (or DBACK_LISTEN host/port).
 EOF
 }
@@ -147,6 +152,9 @@ export DBACK_API_TOKEN="$API_TOKEN"
 export DBACK_LISTEN="$LISTEN"
 export DBACK_DB_DRIVER="$DB_DRIVER"
 export DBACK_DB_DSN="$DB_DSN"
+export DBACK_DEFAULT_ADMIN_PHONE="$ADMIN_PHONE"
+export DBACK_DEFAULT_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+export DBACK_DEFAULT_ADMIN_NAME="$ADMIN_NAME"
 if [[ "$DEBUG" == true ]]; then
 	export DBACK_DEBUG=1
 fi
@@ -159,6 +167,7 @@ if [[ "$MODE" == prod ]]; then
 	echo "DBack Control Plane (prod)"
 	echo "  URL:    http://${LISTEN/127.0.0.1/localhost}"
 	echo "  Token:  $API_TOKEN"
+	echo "  Login:  $ADMIN_PHONE / $ADMIN_PASSWORD"
 	echo "  Data:   $DATA_DIR"
 	echo ""
 	exec "$SERVER_BIN" serve
@@ -202,6 +211,9 @@ DBACK_API_TOKEN=$API_TOKEN
 DBACK_LISTEN=$LISTEN
 DBACK_DB_DRIVER=$DB_DRIVER
 DBACK_DB_DSN=$DB_DSN
+DBACK_DEFAULT_ADMIN_PHONE=$ADMIN_PHONE
+DBACK_DEFAULT_ADMIN_PASSWORD=$ADMIN_PASSWORD
+DBACK_DEFAULT_ADMIN_NAME=$ADMIN_NAME
 EOF
 
 echo ""
@@ -209,6 +221,7 @@ echo "DBack Web (dev)"
 echo "  UI:     http://127.0.0.1:${VITE_PORT}"
 echo "  API:    http://${LISTEN}"
 echo "  Token:  $API_TOKEN"
+echo "  Login:  $ADMIN_PHONE / $ADMIN_PASSWORD"
 echo "  Data:   $DATA_DIR"
 echo "  DB:     ${DB_DRIVER} (${DB_DSN})"
 echo "  Creds:  ${DEV_DIR}/credentials.env"

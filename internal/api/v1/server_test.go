@@ -119,3 +119,33 @@ func TestPreconditionFailed(t *testing.T) {
 		t.Fatalf("expected 412, got %d", resp.StatusCode)
 	}
 }
+
+func TestSystemServerInfo(t *testing.T) {
+	h := testHandler(t, "secret-token")
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/system/server-info", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if cpu, ok := body["cpu_count"].(float64); !ok || cpu < 1 {
+		t.Fatalf("cpu_count = %v", body["cpu_count"])
+	}
+	if _, ok := body["disk_free_bytes"]; !ok {
+		t.Fatal("missing disk_free_bytes")
+	}
+	if host, ok := body["internet_host"].(string); !ok || host != "google.com" {
+		t.Fatalf("internet_host = %v", body["internet_host"])
+	}
+}

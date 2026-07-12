@@ -29,6 +29,7 @@ type Provider interface {
 	TestConnection(ctx context.Context) error
 	PutObject(ctx context.Context, key string, r io.Reader, size int64, contentType string) (etag string, err error)
 	ObjectExists(ctx context.Context, key string) (bool, error)
+	DeleteObject(ctx context.Context, key string) error
 	ListObjects(ctx context.Context, prefix string) ([]ObjectEntry, error)
 	GetObject(ctx context.Context, key string) (io.ReadCloser, ObjectMeta, error)
 }

@@ -1,9 +1,10 @@
 import { apiRequest } from './client'
-import type { AuditEntry, LogEntry, Paginated, StorageInfo } from './types'
+import type { AuditEntry, LogEntry, Paginated, ServerInfo, StorageInfo } from './types'
 
 export const systemApi = {
   version: () => apiRequest<{ version: string; api: string }>('/api/v1/version'),
   revision: () => apiRequest<{ revision: number }>('/api/v1/system/revision'),
+  serverInfo: () => apiRequest<ServerInfo>('/api/v1/system/server-info'),
   logs: (params?: { limit?: number; offset?: number }) => {
     const q = new URLSearchParams()
     if (params?.limit) q.set('limit', String(params.limit))

@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppLayout } from '@/layouts/AppLayout'
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
+import { LoginPage } from '@/features/auth/LoginPage'
+import { TokenGate } from '@/app/TokenGate'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { HostDetailPage, HostsPage } from '@/features/hosts/HostsPage'
 import { BackupDetailPage, BackupsPage } from '@/features/backups/BackupsPage'
@@ -19,6 +21,9 @@ import { SyncTab } from '@/features/settings/tabs/SyncTab'
 import { VaultTab } from '@/features/settings/tabs/VaultTab'
 import { AuditTab } from '@/features/settings/tabs/AuditTab'
 import { LogsTab } from '@/features/settings/tabs/LogsTab'
+import { UsersLayout } from '@/features/users/UsersLayout'
+import { UsersCreatePage, UsersListPage } from '@/features/users/UsersPage'
+import { UserSettingsPage } from '@/features/users/UserSettingsPage'
 
 function HostRoute() {
   const { id = '' } = useParams()
@@ -52,7 +57,8 @@ function withBoundary(element: React.ReactNode, title?: string) {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route element={<AppLayout />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<TokenGate><AppLayout /></TokenGate>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={withBoundary(<DashboardPage />)} />
         <Route path="hosts" element={withBoundary(<HostsPage />)} />
@@ -71,6 +77,12 @@ export function AppRoutes() {
         <Route path="notifications" element={withBoundary(<NotificationsPage />)} />
         <Route path="notifications/:id" element={withBoundary(<NotificationRoute />, 'Notification error')} />
         <Route path="templates" element={withBoundary(<TemplatesPage />)} />
+        <Route path="users" element={withBoundary(<UsersLayout />)}>
+          <Route index element={<Navigate to="list" replace />} />
+          <Route path="new" element={<UsersCreatePage />} />
+          <Route path="list" element={<UsersListPage />} />
+          <Route path="settings" element={<UserSettingsPage />} />
+        </Route>
         <Route path="settings" element={withBoundary(<SettingsLayout />)}>
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<GeneralTab />} />

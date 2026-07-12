@@ -35,6 +35,8 @@ func main() {
 		os.Exit(runServe(os.Args[2:]))
 	case "unlock-status":
 		os.Exit(runUnlockStatus(os.Args[2:]))
+	case "user":
+		os.Exit(runUser(os.Args[2:]))
 	case "run":
 		os.Exit(runCommand(os.Args[2:]))
 	case "task":
@@ -54,6 +56,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage:
   dback serve
   dback unlock-status
+  dback user create --phone <mobile> --password <pass> [--name <name>]
   dback run operation <kind> --profile <id>
   dback task list
   dback task run <id> [--profile <id>]
@@ -61,7 +64,7 @@ func printUsage() {
   dback task disable <id>
   dback notify test --channel <id>
 
-Operation kinds: backup_db, backup_files, upload
+Operation kinds: backup_db, backup_files, upload, url_checker
 `)
 }
 
@@ -79,6 +82,12 @@ func runServe(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vault: %v\n", err)
 		return 1
+	}
+	if user, created, err := application.EnsureDefaultAdmin(cfg.DefaultAdminPhone, cfg.DefaultAdminPassword, cfg.DefaultAdminName); err != nil {
+		fmt.Fprintf(os.Stderr, "default admin: %v\n", err)
+		return 1
+	} else if created {
+		fmt.Printf("default admin created phone=%s name=%s\n", user.Phone, user.Name)
 	}
 	cp := controlplane.NewService(application, cfg.QueueCapacity, cfg.MaxConcurrent)
 
@@ -362,11 +371,14 @@ func specForKind(kind operation.Kind) (operation.Spec, error) {
 			Kind:   kind,
 			Params: operation.UploadParams{StalePolicy: operation.UploadStaleNewOnly},
 		}, nil
+	case operation.KindUrlChecker:
+		return operation.Spec{Kind: kind, Params: operation.UrlCheckerParams{}}, nil
 	default:
 		return operation.Spec{}, fmt.Errorf("unsupported operation kind %q (supported: %s)", kind, strings.Join([]string{
 			string(operation.KindBackupDB),
 			string(operation.KindBackupFiles),
 			string(operation.KindUpload),
+			string(operation.KindUrlChecker),
 		}, ", "))
 	}
 }
@@ -409,11 +421,58 @@ func runNotify(args []string) int {
 	return 0
 }
 
+func runUser(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: dback user create --phone <mobile> --password <pass>")
+		return 2
+	}
+	switch args[0] {
+	case "create":
+		return userCreate(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown user subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func userCreate(args []string) int {
+	fs := flag.NewFlagSet("user create", flag.ContinueOnError)
+	phone := fs.String("phone", "", "user mobile phone (09XXXXXXXXX)")
+	password := fs.String("password", "", "user password")
+	name := fs.String("name", "Admin", "display name")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *phone == "" || *password == "" {
+		fmt.Fprintln(os.Stderr, "--phone and --password are required")
+		return 2
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		return 1
+	}
+	application, unlock, err := openApp(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vault: %v\n", err)
+		return 1
+	}
+	defer unlock()
+	user, err := application.CreateUser(*phone, *password, *name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create user: %v\n", err)
+		return 1
+	}
+	fmt.Printf("user created id=%s phone=%s name=%s\n", user.ID, user.Phone, user.Name)
+	return 0
+}
+
 func openApp(cfg config.Config) (*app.App, func(), error) {
 	application, err := app.NewWithOptions(store.Options{BaseDir: cfg.DataDir, DB: cfg.DB})
 	if err != nil {
 		return nil, nil, err
 	}
+	application.SetSquidProxy(cfg.SquidProxy)
 	unlock := func() {
 		application.Lock()
 	}

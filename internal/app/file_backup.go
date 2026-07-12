@@ -224,6 +224,7 @@ func (a *App) BackupFilesWithOperationID(ctx context.Context, operationID string
 
 	a.logPhaseWithFile(operationID, profile, "FileExport", "complete", "", 0, fmt.Sprintf("File backup completed in %s (%d paths)", time.Since(started).Round(time.Millisecond), len(records)), "Info", "Succeeded", "", "", 0)
 	_ = logger
+	_ = a.ApplyRetention(profile.ID)
 	return result, nil
 }
 

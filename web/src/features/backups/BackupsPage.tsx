@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -6,24 +6,53 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { backupsApi } from '@/api/backups'
 import { hostsApi } from '@/api/hosts'
 import { operationsApi } from '@/api/operations'
-import type { ExportRecord, Host } from '@/api/types'
+import type { ExportRecord, ExportType, Host } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DataTable } from '@/components/shared/data-table'
 import { EmptyState, ErrorAlert, PageHeader } from '@/components/shared/page'
 import { Skeleton } from '@/components/ui/badge'
 import { formatDate, formatBytes } from '@/lib/utils'
 
+type VerifyFilter = 'all' | 'passed' | 'failed' | 'unverified'
+
 export function BackupsPage() {
   const [hostFilter, setHostFilter] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'all' | ExportType>('all')
+  const [verifyFilter, setVerifyFilter] = useState<VerifyFilter>('all')
+
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['backups'], queryFn: () => backupsApi.list({ limit: 200 }) })
   const hosts = useQuery({ queryKey: ['hosts'], queryFn: hostsApi.list })
 
   const items = data?.items ?? []
   const hostItems = hosts.data?.items ?? []
-  const filtered = hostFilter === 'all' ? items : items.filter((b) => b.profile_id === hostFilter)
+
+  const filtered = useMemo(() => {
+    return items.filter((b) => {
+      if (hostFilter !== 'all' && b.profile_id !== hostFilter) return false
+      if (typeFilter !== 'all' && (b.export_type ?? 'database') !== typeFilter) return false
+      if (verifyFilter !== 'all') {
+        const q = b.quick_verified
+        if (verifyFilter === 'unverified' && q) return false
+        if (verifyFilter === 'passed' && (!q || !q.passed)) return false
+        if (verifyFilter === 'failed' && (!q || q.passed)) return false
+      }
+      if (dateFrom) {
+        const from = new Date(`${dateFrom}T00:00:00`)
+        if (new Date(b.export_date) < from) return false
+      }
+      if (dateTo) {
+        const to = new Date(`${dateTo}T23:59:59.999`)
+        if (new Date(b.export_date) > to) return false
+      }
+      return true
+    })
+  }, [items, hostFilter, typeFilter, verifyFilter, dateFrom, dateTo])
 
   const columns: ColumnDef<ExportRecord>[] = [
     {
@@ -62,21 +91,48 @@ export function BackupsPage() {
     <div>
       <PageHeader
         title="Backups"
-        description={`${items.length} backup records`}
+        description={`${filtered.length} of ${items.length} backup records`}
         actions={
-          <Select value={hostFilter} onValueChange={setHostFilter}>
-            <SelectTrigger className="w-48"><SelectValue placeholder="Filter by host" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All hosts</SelectItem>
-              {hostItems.map((h) => <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-36" aria-label="From date" />
+            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-36" aria-label="To date" />
+            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | ExportType)}>
+              <SelectTrigger className="w-32"><SelectValue placeholder="Type" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="database">Database</SelectItem>
+                <SelectItem value="files">Files</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={verifyFilter} onValueChange={(v) => setVerifyFilter(v as VerifyFilter)}>
+              <SelectTrigger className="w-36"><SelectValue placeholder="Verify status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All verify</SelectItem>
+                <SelectItem value="passed">Verified OK</SelectItem>
+                <SelectItem value="failed">Verify failed</SelectItem>
+                <SelectItem value="unverified">Not verified</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={hostFilter} onValueChange={setHostFilter}>
+              <SelectTrigger className="w-48"><SelectValue placeholder="Filter by host" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All hosts</SelectItem>
+                {hostItems.map((h) => <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         }
       />
       {items.length === 0 ? (
         <EmptyState title="No backups" description="Run a backup from Hosts to create records." action={<Button asChild><Link to="/hosts">Go to hosts</Link></Button>} />
+      ) : filtered.length === 0 ? (
+        <EmptyState title="No matching backups" description="Try adjusting your filters." />
       ) : (
-        <DataTable columns={columns} data={filtered} />
+        <DataTable
+          columns={columns}
+          data={filtered}
+          initialState={{ sorting: [{ id: 'export_date', desc: true }] }}
+        />
       )}
     </div>
   )

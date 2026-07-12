@@ -11,6 +11,7 @@ import {
   Server,
   Settings,
   Sun,
+  Users,
   Workflow,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -19,10 +20,12 @@ import { Sheet } from '@/components/ui/sheet'
 import { useUIStore } from '@/store/ui-store'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { clearApiToken } from '@/api/client'
+import { clearSessionToken } from '@/api/client'
+import { authApi } from '@/api/auth'
 import { useNavigate } from 'react-router-dom'
 import { SETTINGS_TABS, settingsPath } from '@/features/settings/settings-nav'
 import { STORAGE_TABS, storagePath } from '@/features/storage/storage-nav'
+import { USERS_TABS, usersPath } from '@/features/users/users-nav'
 
 type NavItem = {
   to: string
@@ -44,6 +47,12 @@ const nav: NavItem[] = [
   { to: '/operations', label: 'Operations', icon: PlayCircle },
   { to: '/tasks', label: 'Tasks', icon: Workflow },
   { to: '/notifications', label: 'Notifications', icon: Bell },
+  {
+    to: usersPath('list'),
+    label: 'User Management',
+    icon: Users,
+    children: USERS_TABS.map(({ segment, label }) => ({ to: usersPath(segment), label })),
+  },
   { to: '/templates', label: 'Templates', icon: Database },
   {
     to: settingsPath('general'),
@@ -57,6 +66,7 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname } = useLocation()
   const inSettings = pathname.startsWith('/settings')
   const inStorage = pathname.startsWith('/storage')
+  const inUsers = pathname.startsWith('/users')
 
   return (
     <nav className="flex flex-col gap-1 p-2">
@@ -69,7 +79,7 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
             className={({ isActive }) =>
               cn(
                 'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                (children ? (to.startsWith('/settings') ? inSettings : inStorage) : isActive)
+                (children ? (to.startsWith('/settings') ? inSettings : to.startsWith('/users') ? inUsers : inStorage) : isActive)
                   ? 'bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))]'
                   : 'hover:bg-[hsl(var(--muted))]',
               )
@@ -111,9 +121,14 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate = useNavigate()
 
-  function logout() {
-    clearApiToken()
-    navigate(0)
+  async function logout() {
+    try {
+      await authApi.logout()
+    } catch {
+      /* session may already be invalid */
+    }
+    clearSessionToken()
+    navigate('/login', { replace: true })
   }
 
   return (

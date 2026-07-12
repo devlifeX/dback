@@ -9,8 +9,11 @@ import { FormSection } from '@/components/forms/FormSection'
 import { SecretField } from '@/components/forms/SecretField'
 import type { Profile } from '@/api/types'
 import { emptyProfile } from '@/api/types'
+import { UrlChecksChart } from './UrlChecksChart'
 import { useQuery } from '@tanstack/react-query'
 import { destinationsApi } from '@/api/settings'
+
+const MAX_SECONDARY_URLS = 5
 
 export function HostForm({
   profile,
@@ -36,7 +39,10 @@ export function HostForm({
   const jumpAuthType = watch('jump_auth_type')
 
   const paths = useFieldArray({ control, name: 'file_backup_paths' })
+  const secondaryUrls = useFieldArray({ control, name: 'url_check.secondary' })
   const excludeValues = watch('file_backup_exclude') ?? []
+  const primaryUrl = watch('url_check.primary.url') ?? ''
+  const backupPolicyEnabled = watch('backup_policy.enabled')
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -56,6 +62,8 @@ export function HostForm({
           <TabsTrigger value="filebackup">File backup</TabsTrigger>
           <TabsTrigger value="upload">Remote upload</TabsTrigger>
           <TabsTrigger value="queries">Queries</TabsTrigger>
+          <TabsTrigger value="urls">URLs</TabsTrigger>
+          <TabsTrigger value="backuppolicy">Backup policy</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
@@ -349,6 +357,72 @@ export function HostForm({
               )} />
               <span className="text-sm">Run after import</span>
             </div>
+          </FormSection>
+        </TabsContent>
+
+        <TabsContent value="urls">
+          <FormSection title="URL monitoring" description="Primary URL is checked by default when running url_checker">
+            <FormField label="Primary URL" htmlFor="primary-url" className="sm:col-span-2">
+              <Input id="primary-url" {...register('url_check.primary.url')} placeholder="https://example.com" />
+            </FormField>
+            <div className="sm:col-span-2 space-y-2">
+              <p className="text-sm font-medium">Secondary URLs (up to {MAX_SECONDARY_URLS})</p>
+              {secondaryUrls.fields.map((f, i) => (
+                <div key={f.id} className="flex gap-2">
+                  <Input placeholder={`https://example.com/${i + 1}`} {...register(`url_check.secondary.${i}.url`)} />
+                  <Button type="button" variant="outline" size="sm" onClick={() => secondaryUrls.remove(i)}>Remove</Button>
+                </div>
+              ))}
+              {secondaryUrls.fields.length < MAX_SECONDARY_URLS ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => secondaryUrls.append({ url: '' })}
+                >
+                  Add secondary URL
+                </Button>
+              ) : null}
+            </div>
+            {profile?.id ? (
+              <div className="sm:col-span-2 space-y-2 border-t border-[hsl(var(--border))] pt-4">
+                <p className="text-sm font-medium">TTFB history (last 7 days)</p>
+                <UrlChecksChart hostId={profile.id} url={primaryUrl || undefined} />
+              </div>
+            ) : (
+              <p className="sm:col-span-2 text-xs text-[hsl(var(--muted-foreground))]">Save the host to view URL check charts.</p>
+            )}
+          </FormSection>
+        </TabsContent>
+
+        <TabsContent value="backuppolicy">
+          <FormSection title="Backup retention" description="Keep the newest N backups per type; 0 means unlimited">
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <Controller
+                control={control}
+                name="backup_policy.enabled"
+                render={({ field }) => (
+                  <Checkbox checked={!!field.value} onCheckedChange={field.onChange} />
+                )}
+              />
+              <span className="text-sm">Enable retention policy for this host</span>
+            </div>
+            {backupPolicyEnabled ? (
+              <>
+                <FormField label="DB local keep" htmlFor="db-local-keep">
+                  <Input id="db-local-keep" type="number" min={0} {...register('backup_policy.db_local_keep', { valueAsNumber: true })} />
+                </FormField>
+                <FormField label="DB remote keep" htmlFor="db-remote-keep">
+                  <Input id="db-remote-keep" type="number" min={0} {...register('backup_policy.db_remote_keep', { valueAsNumber: true })} />
+                </FormField>
+                <FormField label="Files local keep" htmlFor="files-local-keep">
+                  <Input id="files-local-keep" type="number" min={0} {...register('backup_policy.files_local_keep', { valueAsNumber: true })} />
+                </FormField>
+                <FormField label="Files remote keep" htmlFor="files-remote-keep">
+                  <Input id="files-remote-keep" type="number" min={0} {...register('backup_policy.files_remote_keep', { valueAsNumber: true })} />
+                </FormField>
+              </>
+            ) : null}
           </FormSection>
         </TabsContent>
 

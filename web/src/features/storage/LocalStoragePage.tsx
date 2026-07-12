@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { hostsApi } from '@/api/hosts'
 import { storageApi } from '@/api/storage'
 import { ErrorAlert } from '@/components/shared/page'
 import { downloadBlob, StorageExplorer, StorageHint } from './StorageExplorer'
@@ -8,6 +9,16 @@ import { downloadBlob, StorageExplorer, StorageHint } from './StorageExplorer'
 export function LocalStoragePage() {
   const [path, setPath] = useState('')
   const [downloadingPath, setDownloadingPath] = useState('')
+
+  const hosts = useQuery({ queryKey: ['hosts'], queryFn: hostsApi.list })
+
+  const profileNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const host of hosts.data?.items ?? []) {
+      map[host.id] = host.name
+    }
+    return map
+  }, [hosts.data?.items])
 
   const listing = useQuery({
     queryKey: ['storage', 'local', path],
@@ -59,6 +70,7 @@ export function LocalStoragePage() {
           }
           return segment
         }}
+        profileNames={profileNames}
       />
     </div>
   )

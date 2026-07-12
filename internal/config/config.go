@@ -35,6 +35,10 @@ type Config struct {
 	RateLimitBurst  int
 	MetricsEnabled  bool
 	AuditCap        int
+	SquidProxy      string
+	DefaultAdminPhone    string
+	DefaultAdminPassword string
+	DefaultAdminName     string
 }
 
 func Load() (Config, error) {
@@ -52,6 +56,10 @@ func Load() (Config, error) {
 		RateLimitBurst:  envIntOr("DBACK_RATE_LIMIT_BURST", defaultRateLimitBurst),
 		MetricsEnabled:  envBoolOr("DBACK_METRICS", true),
 		AuditCap:        envIntOr("DBACK_AUDIT_CAP", defaultAuditCap),
+		SquidProxy:      strings.TrimSpace(os.Getenv("DBACK_SQUID_PROXY")),
+		DefaultAdminPhone:    envOr("DBACK_DEFAULT_ADMIN_PHONE", "09359922324"),
+		DefaultAdminPassword: envOr("DBACK_DEFAULT_ADMIN_PASSWORD", "09359922324"),
+		DefaultAdminName:     envOr("DBACK_DEFAULT_ADMIN_NAME", "Admin"),
 	}
 
 	dataDir := strings.TrimSpace(os.Getenv("DBACK_DATA_DIR"))

@@ -1,21 +1,49 @@
 import type { ApiError } from './types'
 
+const SESSION_KEY = 'dback_session_token'
+
 let bearerToken: string | null = null
 
-export function setApiToken(token: string) {
+export function initAuth() {
+  bearerToken = sessionStorage.getItem(SESSION_KEY)
+}
+
+export function setSessionToken(token: string) {
   bearerToken = token.trim()
+  sessionStorage.setItem(SESSION_KEY, bearerToken)
 }
 
-export function clearApiToken() {
+export function clearSessionToken() {
   bearerToken = null
+  sessionStorage.removeItem(SESSION_KEY)
 }
 
+export function getSessionToken() {
+  return bearerToken ?? sessionStorage.getItem(SESSION_KEY)
+}
+
+export function hasSession() {
+  return Boolean(getSessionToken())
+}
+
+/** @deprecated use setSessionToken */
+export function setApiToken(token: string) {
+  setSessionToken(token)
+}
+
+/** @deprecated use clearSessionToken */
+export function clearApiToken() {
+  clearSessionToken()
+}
+
+/** @deprecated use hasSession */
 export function hasApiToken() {
-  return Boolean(bearerToken)
+  return hasSession()
 }
 
+/** @deprecated use session token */
 export function getApiToken() {
-  return bearerToken
+  return bearerToken ?? sessionStorage.getItem(SESSION_KEY)
 }
 
 export class ApiClientError extends Error {
@@ -34,6 +62,7 @@ type RequestOptions = {
   body?: unknown
   etag?: string
   signal?: AbortSignal
+  skipAuthRedirect?: boolean
 }
 
 export type ApiResponse<T> = {
@@ -56,10 +85,21 @@ export function etagForRevision(revision: number): string {
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { Accept: 'application/json', ...extra }
-  if (bearerToken) {
-    headers.Authorization = `Bearer ${bearerToken}`
+  const token = bearerToken ?? sessionStorage.getItem(SESSION_KEY)
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
   }
   return headers
+}
+
+function handleUnauthorized(path: string, skipAuthRedirect?: boolean) {
+  if (skipAuthRedirect || path.includes('/auth/login') || path.includes('/auth/verify-otp')) {
+    return
+  }
+  clearSessionToken()
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    window.location.assign('/login')
+  }
 }
 
 export async function fetchRevision(): Promise<{ revision: number; etag: string }> {
@@ -67,6 +107,9 @@ export async function fetchRevision(): Promise<{ revision: number; etag: string 
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
   if (!res.ok) {
+    if (res.status === 401) {
+      handleUnauthorized('/api/v1/system/revision')
+    }
     throw new ApiClientError(res.status, data ?? { code: 'unknown', message: res.statusText })
   }
   const revision = Number(data?.revision ?? 0)
@@ -107,6 +150,9 @@ export async function apiRequestWithMeta<T>(path: string, opts: RequestOptions =
   const data = text ? JSON.parse(text) : null
 
   if (!res.ok) {
+    if (res.status === 401) {
+      handleUnauthorized(path, opts.skipAuthRedirect)
+    }
     throw new ApiClientError(res.status, data ?? { code: 'unknown', message: res.statusText })
   }
   return { data: data as T, etag: responseEtag(res) }
@@ -115,6 +161,9 @@ export async function apiRequestWithMeta<T>(path: string, opts: RequestOptions =
 export async function apiDownload(path: string): Promise<Blob> {
   const res = await fetch(path, { headers: authHeaders() })
   if (!res.ok) {
+    if (res.status === 401) {
+      handleUnauthorized(path)
+    }
     const text = await res.text()
     let data: ApiError = { code: 'unknown', message: res.statusText }
     try {

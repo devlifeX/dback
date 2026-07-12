@@ -156,6 +156,18 @@ func (p *S3Provider) ObjectExists(ctx context.Context, key string) (bool, error)
 	return false, fmt.Errorf("stat object: %w", err)
 }
 
+func (p *S3Provider) DeleteObject(ctx context.Context, key string) error {
+	debug.Log("DEBUG", "S3.DeleteObject", "start", fmt.Sprintf("endpoint=%s bucket=%q key=%q", NormalizeEndpoint(p.cfg.Endpoint), p.bucket(), key), "", "", "")
+	start := time.Now()
+	err := p.client.RemoveObject(ctx, p.bucket(), key, minio.RemoveObjectOptions{})
+	if err != nil {
+		debug.Log("DEBUG", "S3.DeleteObject", "failed", fmt.Sprintf("key=%q elapsed=%s", key, time.Since(start).Round(time.Millisecond)), "", "", err.Error())
+		return fmt.Errorf("delete object: %w", err)
+	}
+	debug.Log("DEBUG", "S3.DeleteObject", "ok", fmt.Sprintf("key=%q elapsed=%s", key, time.Since(start).Round(time.Millisecond)), "", "", "")
+	return nil
+}
+
 func (p *S3Provider) ListObjects(ctx context.Context, prefix string) ([]ObjectEntry, error) {
 	prefix = strings.TrimPrefix(prefix, "/")
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {

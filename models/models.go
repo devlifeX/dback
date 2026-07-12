@@ -86,6 +86,9 @@ type Profile struct {
 	RemoteAutoUploadDB         bool     `json:"remote_auto_upload_db,omitempty"`
 	RemoteAutoUploadFiles      bool     `json:"remote_auto_upload_files,omitempty"`
 
+	URLCheck     URLCheck     `json:"url_check,omitempty"`
+	BackupPolicy BackupPolicy `json:"backup_policy,omitempty"`
+
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 
@@ -307,6 +310,8 @@ type AppVaultPayload struct {
 	Tasks                        []Task               `json:"tasks,omitempty"`
 	TaskRuns                     []TaskRunRecord      `json:"task_runs,omitempty"`
 	NotifyChannels               []NotifyChannel      `json:"notify_channels,omitempty"`
+	Users                        []User               `json:"users,omitempty"`
+	AuthSettings                 *AuthSettings        `json:"auth_settings,omitempty"`
 }
 
 // AppBundle exports hosts, templates, backup history metadata, and activity logs.

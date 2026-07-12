@@ -43,9 +43,17 @@ func (h *Handler) Router() http.Handler {
 	r.Route("/api/v1", func(api chi.Router) {
 		api.Get("/openapi.json", h.serveOpenAPI)
 		api.Get("/version", h.systemVersion)
+		api.Group(func(public chi.Router) {
+			public.Use(authRateLimitMiddleware(5, 10))
+			public.Post("/auth/login", h.authLogin)
+			public.Post("/auth/verify-otp", h.authVerifyOTP)
+		})
 		api.Group(func(secured chi.Router) {
 			secured.Use(rateLimitMiddleware(h.Cfg.RateLimitRPS, h.Cfg.RateLimitBurst))
 			secured.Use(h.authMiddleware)
+			secured.Post("/auth/logout", h.authLogout)
+			secured.Get("/auth/me", h.authMe)
+			secured.Route("/users", func(r chi.Router) { h.mountUsers(r) })
 			secured.Route("/system", func(r chi.Router) { h.mountSystem(r) })
 			secured.Route("/operations", func(r chi.Router) { h.mountOperations(r) })
 			secured.Route("/tasks", func(r chi.Router) { h.mountTasks(r) })
