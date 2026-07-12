@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -484,5 +485,78 @@ func TestDeleteRemoteDestinationForceReloadsProfileRefs(t *testing.T) {
 	}
 	if _, err := a.appSettingsDestination(); err != store.ErrSyncNotConfigured {
 		t.Fatalf("expected app settings sync to require destination after delete, got %v", err)
+	}
+}
+
+func TestMaybeAutoUploadAfterBackupSkipsWhenDisabled(t *testing.T) {
+	dir := t.TempDir()
+	a, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateVault("master-key-12345678"); err != nil {
+		t.Fatal(err)
+	}
+	profile := models.Profile{ID: "p1", Name: "Host", Group: "Default"}
+	if err := a.SaveProfile(profile); err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.MaybeAutoUploadAfterBackup(t.Context(), "op-1", profile, []models.ExportRecord{{ID: "r1", ExportType: models.ExportTypeDatabase}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.UploadedRecords != 0 || result.FailedRecords != 0 {
+		t.Fatalf("expected no upload, got %#v", result)
+	}
+}
+
+func TestMaybeAutoUploadAfterBackupSelectsDBRecords(t *testing.T) {
+	dir := t.TempDir()
+	a, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateVault("master-key-12345678"); err != nil {
+		t.Fatal(err)
+	}
+	dest := models.RemoteDestination{
+		ID:   "d1",
+		Name: "One",
+		Type: models.RemoteProviderS3,
+		S3:   &models.S3DestinationConfig{Endpoint: "s3.local", Bucket: "b1", AccessKeyID: "k", SecretKey: "s"},
+	}
+	if err := a.SaveRemoteDestination(dest); err != nil {
+		t.Fatal(err)
+	}
+	profile := models.Profile{
+		ID:                         "p1",
+		Name:                       "Host",
+		Group:                      "Default",
+		RemoteUploadDestinationIDs: []string{"d1"},
+		RemoteAutoUploadDB:         true,
+	}
+	if err := a.SaveProfile(profile); err != nil {
+		t.Fatal(err)
+	}
+
+	backupPath := filepath.Join(dir, "backup.sql.gz")
+	if err := os.WriteFile(backupPath, []byte(strings.Repeat("x", 256)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rec := models.ExportRecord{
+		ID:            "r1",
+		ProfileID:     "p1",
+		ExportType:    models.ExportTypeDatabase,
+		ExportDate:    time.Now(),
+		FilePath:      backupPath,
+		FileSizeBytes: 256,
+	}
+	a.mu.Lock()
+	a.history = append(a.history, rec)
+	a.mu.Unlock()
+
+	_, err = a.MaybeAutoUploadAfterBackup(t.Context(), "op-1", profile, []models.ExportRecord{rec})
+	if err == nil {
+		t.Fatal("expected upload error without reachable S3")
 	}
 }

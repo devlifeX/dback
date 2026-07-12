@@ -40,10 +40,12 @@ func backupDBHandler(application *app.App) Handler {
 				Error:       err.Error(),
 			}, err
 		}
+		details := autoUploadDetails(ctx, application, spec.ID, profile, []models.ExportRecord{record})
 		return &operation.Result{
 			OperationID: spec.ID,
 			Kind:        operation.KindBackupDB,
 			Status:      operation.StatusSucceeded,
+			Details:     details,
 			Artifacts: []operation.Artifact{{
 				Type: operation.ArtifactExportRecord,
 				ID:   record.ID,
@@ -83,10 +85,12 @@ func backupFilesHandler(application *app.App) Handler {
 				Artifacts:   artifactsFromRecords(result.Records),
 			}, err
 		}
+		details := autoUploadDetails(ctx, application, spec.ID, profile, result.Records)
 		return &operation.Result{
 			OperationID: spec.ID,
 			Kind:        operation.KindBackupFiles,
 			Status:      operation.StatusSucceeded,
+			Details:     details,
 			Artifacts:   artifactsFromRecords(result.Records),
 		}, nil
 	}
@@ -140,6 +144,20 @@ func profileByID(application *app.App, profileID string) (models.Profile, error)
 		}
 	}
 	return models.Profile{}, fmt.Errorf("profile %q not found", profileID)
+}
+
+func autoUploadDetails(ctx context.Context, application *app.App, operationID string, profile models.Profile, records []models.ExportRecord) string {
+	if len(records) == 0 {
+		return ""
+	}
+	result, err := application.MaybeAutoUploadAfterBackup(ctx, operationID, profile, records)
+	if err != nil {
+		return "Auto-upload failed: " + err.Error()
+	}
+	if result.UploadedRecords == 0 && result.FailedRecords == 0 && result.SkippedRecords == 0 {
+		return ""
+	}
+	return app.FormatRemoteUploadResultMessage(result)
 }
 
 func artifactsFromRecords(records []models.ExportRecord) []operation.Artifact {

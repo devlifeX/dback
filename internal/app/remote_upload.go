@@ -761,7 +761,7 @@ func upsertRemoteUploadState(states []models.RemoteUploadState, update models.Re
 	return append(states, update)
 }
 
-func (a *App) MaybeAutoUploadAfterBackup(ctx context.Context, profile models.Profile, records []models.ExportRecord) (RemoteUploadResult, error) {
+func (a *App) MaybeAutoUploadAfterBackup(ctx context.Context, operationID string, profile models.Profile, records []models.ExportRecord) (RemoteUploadResult, error) {
 	if len(profile.RemoteUploadDestinationIDs) == 0 {
 		return RemoteUploadResult{}, nil
 	}
@@ -786,7 +786,7 @@ func (a *App) MaybeAutoUploadAfterBackup(ctx context.Context, profile models.Pro
 	if len(ids) == 0 {
 		return RemoteUploadResult{}, nil
 	}
-	return a.UploadProfileBackups(ctx, profile.ID, ids, nil)
+	return a.UploadProfileBackupsWithOperationID(ctx, operationID, profile.ID, ids, nil)
 }
 
 func FormatRemoteUploadResultMessage(result RemoteUploadResult) string {
