@@ -170,6 +170,13 @@ func (a *App) QuickVerify(ctx context.Context, recordID string) (models.LastVeri
 
 // DeepVerify restores the backup to a temporary database and compares row counts.
 func (a *App) DeepVerify(ctx context.Context, recordID string, destination models.Profile, progress ProgressFunc) (models.LastVerified, error) {
+	return a.DeepVerifyWithOperationID(ctx, "", recordID, destination, progress)
+}
+
+func (a *App) DeepVerifyWithOperationID(ctx context.Context, operationID, recordID string, destination models.Profile, progress ProgressFunc) (models.LastVerified, error) {
+	if operationID == "" {
+		operationID = newID()
+	}
 	if err := ctx.Err(); err != nil {
 		return models.LastVerified{}, err
 	}
@@ -212,7 +219,6 @@ func (a *App) DeepVerify(ctx context.Context, recordID string, destination model
 		}
 	}
 
-	operationID := newID()
 	logger := a.newOpLogger(operationID, &destination)
 	restoreReq := transfer.RestoreRequest{
 		Profile:          destination,

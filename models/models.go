@@ -329,6 +329,14 @@ type AppBundle struct {
 	Sync                       *SyncSettings       `json:"sync,omitempty"`
 	RemoteDestinations         []RemoteDestination `json:"remote_destinations,omitempty"`
 	AppSettingsDestinationID   string              `json:"app_settings_destination_id,omitempty"`
+	Tasks                      []Task              `json:"tasks,omitempty"`
+	TaskRuns                   []TaskRunRecord     `json:"task_runs,omitempty"`
+	NotifyChannels             []NotifyChannel     `json:"notify_channels,omitempty"`
+	Users                      []User              `json:"users,omitempty"`
+	AuthSettings               *AuthSettings       `json:"auth_settings,omitempty"`
+	SquidProxies               []SquidProxy        `json:"squid_proxies,omitempty"`
+	SquidSettings              *SquidSettings      `json:"squid_settings,omitempty"`
+	ImportDestByProfile        map[string]string   `json:"import_dest_by_profile,omitempty"`
 	EncryptedPayload           string              `json:"encrypted_payload,omitempty"`
 }
 

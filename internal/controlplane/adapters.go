@@ -102,7 +102,7 @@ func uploadHandler(application *app.App) Handler {
 		if params.UploadAll {
 			recordIDs = nil
 		}
-		uploadResult, err := application.UploadProfileBackups(ctx, spec.ProfileID, recordIDs, func(prog app.RemoteUploadProgress) {
+		uploadResult, err := application.UploadProfileBackupsWithOperationID(ctx, spec.ID, spec.ProfileID, recordIDs, func(prog app.RemoteUploadProgress) {
 			if publishProgress == nil {
 				return
 			}
@@ -173,7 +173,7 @@ func restoreHandler(application *app.App) Handler {
 				publishProgress(message, current, total)
 			}
 		}
-		if err := application.Restore(ctx, record, destination, progress); err != nil {
+		if err := application.RestoreWithOperationID(ctx, spec.ID, record, destination, progress); err != nil {
 			return &operation.Result{
 				OperationID: spec.ID,
 				Kind:        operation.KindRestore,
@@ -209,7 +209,7 @@ func deepVerifyHandler(application *app.App) Handler {
 				publishProgress(message, current, total)
 			}
 		}
-		last, err := application.DeepVerify(ctx, params.RecordID, destination, progress)
+		last, err := application.DeepVerifyWithOperationID(ctx, spec.ID, params.RecordID, destination, progress)
 		if err != nil {
 			return &operation.Result{
 				OperationID: spec.ID,
@@ -255,7 +255,7 @@ func urlCheckerHandler(application *app.App) Handler {
 		if publishProgress != nil {
 			publishProgress("Checking URLs", 0, 1)
 		}
-		err := application.CheckURLs(ctx, spec.ProfileID, params)
+		err := application.CheckURLs(ctx, spec.ProfileID, spec.ID, params)
 		if err != nil {
 			return &operation.Result{
 				OperationID: spec.ID,

@@ -127,10 +127,13 @@ func (a *App) buildCheckEndpoints(profile models.Profile) ([]checkEndpoint, erro
 	return endpoints, nil
 }
 
-func (a *App) CheckURLs(ctx context.Context, profileID string, params operation.UrlCheckerParams) error {
+func (a *App) CheckURLs(ctx context.Context, profileID string, operationID string, params operation.UrlCheckerParams) error {
 	profile, err := a.profileByID(profileID)
 	if err != nil {
 		return err
+	}
+	if operationID == "" {
+		operationID = newID()
 	}
 	targets, err := urlsForCheck(profile, params.URLIndex)
 	if err != nil {
@@ -165,6 +168,17 @@ func (a *App) CheckURLs(ctx context.Context, profileID string, params operation.
 				Error:       outcome.Error,
 			}
 			_ = a.store.AppendURLCheckSample(sample)
+			details := fmt.Sprintf("%s %s: HTTP %d, TTFB %dms", outcome.SourceLabel, target, outcome.StatusCode, outcome.TTFBMs)
+			status := "Succeeded"
+			errText := ""
+			if !outcome.OK {
+				status = "Failed"
+				errText = outcome.Error
+				if errText == "" {
+					errText = fmt.Sprintf("HTTP %d", outcome.StatusCode)
+				}
+			}
+			a.logPhase(operationID, &profile, "URL check", "probe", "", 0, details, "Info", status, errText)
 			if !outcome.OK {
 				msg := outcome.Error
 				if msg == "" {

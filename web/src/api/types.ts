@@ -171,6 +171,7 @@ export type Operation = {
   id: string
   kind: string
   profile_id: string
+  profile_name?: string
   trigger_ref?: string
   status: string
   started_at?: string
@@ -322,6 +323,8 @@ export type LogEntry = {
   details: string
   level?: string
   status?: string
+  phase?: string
+  error?: string
   profile_id?: string
   profile_name?: string
   operation_id?: string

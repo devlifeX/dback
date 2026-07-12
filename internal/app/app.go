@@ -212,6 +212,7 @@ func (a *App) SaveProfile(profile models.Profile) error {
 				profile.CreatedAt = now
 			}
 			profile.UpdatedAt = now
+			mergeProfileSecrets(&a.profiles[i], &profile)
 			a.profiles[i] = profile
 			found = true
 			break
@@ -533,10 +534,16 @@ func (a *App) RunImportQuery(ctx context.Context, profile models.Profile, query 
 }
 
 func (a *App) Restore(ctx context.Context, record models.ExportRecord, destination models.Profile, progress ProgressFunc) error {
+	return a.RestoreWithOperationID(ctx, "", record, destination, progress)
+}
+
+func (a *App) RestoreWithOperationID(ctx context.Context, operationID string, record models.ExportRecord, destination models.Profile, progress ProgressFunc) error {
+	if operationID == "" {
+		operationID = newID()
+	}
 	if !destination.AllowsImport() {
 		return fmt.Errorf("host %q is protected from import", destination.Name)
 	}
-	operationID := newID()
 	started := time.Now()
 	if info, err := os.Stat(record.FilePath); err != nil {
 		return err
@@ -692,4 +699,25 @@ func percent(current, total int64) float64 {
 		return 0
 	}
 	return float64(current) / float64(total) * 100
+}
+
+func mergeProfileSecrets(existing *models.Profile, incoming *models.Profile) {
+	if strings.TrimSpace(incoming.SSHPassword) == "" {
+		incoming.SSHPassword = existing.SSHPassword
+	}
+	if strings.TrimSpace(incoming.AuthKeyPEM) == "" {
+		incoming.AuthKeyPEM = existing.AuthKeyPEM
+	}
+	if strings.TrimSpace(incoming.JumpPassword) == "" {
+		incoming.JumpPassword = existing.JumpPassword
+	}
+	if strings.TrimSpace(incoming.JumpAuthKeyPEM) == "" {
+		incoming.JumpAuthKeyPEM = existing.JumpAuthKeyPEM
+	}
+	if strings.TrimSpace(incoming.DBPassword) == "" {
+		incoming.DBPassword = existing.DBPassword
+	}
+	if strings.TrimSpace(incoming.WPKey) == "" {
+		incoming.WPKey = existing.WPKey
+	}
 }

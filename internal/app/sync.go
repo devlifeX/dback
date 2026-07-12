@@ -141,6 +141,41 @@ func (a *App) applyImportedAppData(imported store.AppImportData) error {
 			return err
 		}
 	}
+	for _, task := range imported.Tasks {
+		if err := a.store.SaveTask(task); err != nil {
+			return err
+		}
+	}
+	for _, ch := range imported.NotifyChannels {
+		if err := a.store.SaveNotifyChannel(ch); err != nil {
+			return err
+		}
+	}
+	for _, user := range imported.Users {
+		if err := a.store.SaveUser(user); err != nil {
+			return err
+		}
+	}
+	if imported.AuthSettings != nil {
+		if err := a.store.SaveAuthSettings(*imported.AuthSettings); err != nil {
+			return err
+		}
+	}
+	for _, proxy := range imported.SquidProxies {
+		if err := a.store.SaveSquidProxy(proxy); err != nil {
+			return err
+		}
+	}
+	if imported.SquidSettings != nil {
+		if err := a.store.SaveSquidSettings(*imported.SquidSettings); err != nil {
+			return err
+		}
+	}
+	for src, dst := range imported.ImportDestByProfile {
+		if err := a.store.SetImportDestForProfile(src, dst); err != nil {
+			return err
+		}
+	}
 	return a.Reload()
 }
 

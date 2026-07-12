@@ -11,23 +11,17 @@ import {
 } from 'recharts'
 import { hostsApi } from '@/api/hosts'
 import { countryLabel } from '@/lib/country-flag'
+import { useFormatDate } from '@/lib/datetime'
 import type { URLCheckHourlyBucket } from '@/api/types'
 
 const LINE_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2', '#4f46e5', '#be123c']
-
-function formatHour(iso: string) {
-  try {
-    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' })
-  } catch {
-    return iso
-  }
-}
 
 function chartKey(b: URLCheckHourlyBucket) {
   return countryLabel(b.source_label || 'Direct', b.country_code)
 }
 
 export function UrlChecksChart({ hostId, url }: { hostId: string; url?: string }) {
+  const formatDate = useFormatDate()
   const checks = useQuery({
     queryKey: ['url-checks', hostId, url],
     queryFn: () => hostsApi.urlChecks(hostId, { url }),
@@ -45,7 +39,7 @@ export function UrlChecksChart({ hostId, url }: { hostId: string; url?: string }
   const byHour = new Map<string, Record<string, number | string>>()
   for (const b of items) {
     const key = chartKey(b)
-    const row = byHour.get(b.hour) ?? { hour: formatHour(b.hour) }
+    const row = byHour.get(b.hour) ?? { hour: formatDate(b.hour, 'MMM D HH:mm') }
     row[key] = Math.round(b.avg_ttfb_ms)
     byHour.set(b.hour, row)
   }

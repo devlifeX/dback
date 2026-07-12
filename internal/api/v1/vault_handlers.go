@@ -35,7 +35,7 @@ func (h *Handler) exportAppData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := strings.TrimSpace(r.URL.Query().Get("passphrase"))
-	includeSecrets := strings.EqualFold(r.URL.Query().Get("include_secrets"), "true")
+	includeSecrets := !strings.EqualFold(r.URL.Query().Get("include_secrets"), "false")
 	raw, err := h.App.ExportAppDataBytes(includeSecrets, passphrase)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "export_failed", err.Error())

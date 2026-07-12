@@ -3,11 +3,17 @@ import { systemApi } from '@/api/system'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatBytes } from '@/lib/utils'
+import { useFormatDate } from '@/lib/datetime'
+import { useUIStore } from '@/store/ui-store'
 
 const REFRESH_MS = 30_000
 
 export function GeneralTab() {
+  const formatDate = useFormatDate()
+  const calendar = useUIStore((s) => s.calendar)
+  const setCalendar = useUIStore((s) => s.setCalendar)
   const version = useQuery({ queryKey: ['version'], queryFn: systemApi.version })
   const revision = useQuery({ queryKey: ['revision'], queryFn: systemApi.revision })
   const server = useQuery({
@@ -55,10 +61,26 @@ export function GeneralTab() {
                 ) : null}
               </p>
               <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                Updated {new Date(info.checked_at).toLocaleString()}
+                Updated {formatDate(info.checked_at)}
               </p>
             </>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Preferences</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex items-center gap-3">
+            <span className="text-[hsl(var(--muted-foreground))]">Calendar</span>
+            <Select value={calendar} onValueChange={(v) => setCalendar(v as 'jalali' | 'gregorian')}>
+              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="jalali">Shamsi (Jalali)</SelectItem>
+                <SelectItem value="gregorian">Gregorian</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
     </div>

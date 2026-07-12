@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { ChevronRight, Download, File, Folder } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { StorageEntry } from '@/api/storage'
-import { formatBytes, formatDate } from '@/lib/utils'
+import { formatBytes } from '@/lib/utils'
+import { useFormatDate } from '@/lib/datetime'
 import { cn } from '@/lib/utils'
 
 type StorageExplorerProps = {
@@ -52,10 +53,13 @@ export function StorageExplorer({
         </Button>
         {parts.map((part, index) => {
           const label = breadcrumbLabel?.(part, index, parts) ?? part
+          const target = parts.slice(0, index + 1).join('/') + '/'
           return (
             <span key={`${part}-${index}`} className="flex items-center gap-1">
               <ChevronRight className="h-3.5 w-3.5" />
-              <span>{label}</span>
+              <Button variant="ghost" size="sm" className="h-7 px-2 font-normal" onClick={() => onNavigate(target)}>
+                {label}
+              </Button>
             </span>
           )
         })}
@@ -127,6 +131,7 @@ function StorageRow({
   downloading?: boolean
   hostLabel?: string
 }) {
+  const formatDate = useFormatDate()
   const Icon = entry.is_dir ? Folder : File
   return (
     <tr className="border-t border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.35)]">

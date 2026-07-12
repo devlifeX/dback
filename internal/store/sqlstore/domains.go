@@ -109,6 +109,9 @@ func (s *Store) SaveSyncSettings(settings models.SyncSettings) error {
 	if err := s.requireUnlocked(); err != nil {
 		return err
 	}
+	if strings.TrimSpace(settings.SecretKey) == "" && s.sync != nil {
+		settings.SecretKey = s.sync.SecretKey
+	}
 	s.sync = settings.Clone()
 	if s.appSettingsDestinationID != "" {
 		for i, d := range s.remoteDestinations {

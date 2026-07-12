@@ -10,16 +10,18 @@ import type { ExportRecord, ExportType, Host } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DataTable } from '@/components/shared/data-table'
 import { EmptyState, ErrorAlert, PageHeader } from '@/components/shared/page'
 import { Skeleton } from '@/components/ui/badge'
-import { formatDate, formatBytes } from '@/lib/utils'
+import { DatePickerField } from '@/components/ui/date-picker'
+import { useFormatDate } from '@/lib/datetime'
+import { formatBytes } from '@/lib/utils'
 
 type VerifyFilter = 'all' | 'passed' | 'failed' | 'unverified'
 
 export function BackupsPage() {
+  const formatDate = useFormatDate()
   const [hostFilter, setHostFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -54,7 +56,7 @@ export function BackupsPage() {
     })
   }, [items, hostFilter, typeFilter, verifyFilter, dateFrom, dateTo])
 
-  const columns: ColumnDef<ExportRecord>[] = [
+  const columns: ColumnDef<ExportRecord>[] = useMemo(() => [
     {
       accessorKey: 'profile_name',
       header: 'Host',
@@ -82,7 +84,7 @@ export function BackupsPage() {
         return q ? <Badge status={q.passed ? 'succeeded' : 'failed'} /> : '—'
       },
     },
-  ]
+  ], [formatDate])
 
   if (isLoading) return <Skeleton className="h-40 w-full" />
   if (isError) return <ErrorAlert message="Could not load backups" onRetry={() => void refetch()} />
@@ -94,8 +96,8 @@ export function BackupsPage() {
         description={`${filtered.length} of ${items.length} backup records`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-36" aria-label="From date" />
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-36" aria-label="To date" />
+            <DatePickerField value={dateFrom} onChange={setDateFrom} className="w-36" />
+            <DatePickerField value={dateTo} onChange={setDateTo} className="w-36" />
             <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | ExportType)}>
               <SelectTrigger className="w-32"><SelectValue placeholder="Type" /></SelectTrigger>
               <SelectContent>
@@ -139,6 +141,7 @@ export function BackupsPage() {
 }
 
 export function BackupDetailPage({ id }: { id: string }) {
+  const formatDate = useFormatDate()
   const qc = useQueryClient()
   const [restoreOpen, setRestoreOpen] = useState(false)
   const [destId, setDestId] = useState('')

@@ -1,5 +1,6 @@
 import { Controller, type Control } from 'react-hook-form'
 import { Input } from '@/components/ui/input'
+import { DatePickerField } from '@/components/ui/date-picker'
 import { FormField } from '@/components/forms/FormField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Task, TriggerType } from '@/api/types'
@@ -74,11 +75,11 @@ export function TriggerEditor({ control }: { control: Control<Task> }) {
                   control={control}
                   name="trigger.one_shot.at"
                   render={({ field }) => (
-                    <Input
+                    <DatePickerField
                       id="oneshot-at"
-                      type="datetime-local"
-                      value={field.value ? field.value.slice(0, 16) : ''}
-                      onChange={(e) => field.onChange(new Date(e.target.value).toISOString())}
+                      mode="datetime"
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
                     />
                   )}
                 />

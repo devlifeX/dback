@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { getApiToken } from '@/api/client'
 
-export function useOperationsSSE(enabled: boolean) {
+export function useOperationsSSE(enabled: boolean, operationId?: string) {
   const qc = useQueryClient()
 
   useEffect(() => {
@@ -13,7 +13,13 @@ export function useOperationsSSE(enabled: boolean) {
       ? `/api/v1/operations/stream?access_token=${encodeURIComponent(token)}`
       : '/api/v1/operations/stream'
     const es = new EventSource(url)
-    const invalidate = () => void qc.invalidateQueries({ queryKey: ['operations'] })
+    const invalidate = () => {
+      void qc.invalidateQueries({ queryKey: ['operations'] })
+      if (operationId) {
+        void qc.invalidateQueries({ queryKey: ['operations', operationId] })
+        void qc.invalidateQueries({ queryKey: ['operations', operationId, 'logs'] })
+      }
+    }
 
     es.addEventListener('operation.started', invalidate)
     es.addEventListener('operation.progress', invalidate)
@@ -23,5 +29,5 @@ export function useOperationsSSE(enabled: boolean) {
     es.addEventListener('task.skipped', invalidate)
 
     return () => es.close()
-  }, [enabled, qc])
+  }, [enabled, operationId, qc])
 }

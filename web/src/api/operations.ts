@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Operation, Paginated } from './types'
+import type { LogEntry, Operation, Paginated } from './types'
 
 export const operationsApi = {
   list: () => apiRequest<Paginated<Operation>>('/api/v1/operations'),
@@ -14,5 +14,5 @@ export const operationsApi = {
   retry: (id: string) =>
     apiRequest<Operation>(`/api/v1/operations/${id}/retry`, { method: 'POST' }),
   logs: (id: string) =>
-    apiRequest<Paginated<Record<string, unknown>>>(`/api/v1/operations/${id}/logs`),
+    apiRequest<Paginated<LogEntry>>(`/api/v1/operations/${id}/logs`),
 }

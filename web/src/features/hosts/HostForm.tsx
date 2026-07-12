@@ -1,4 +1,5 @@
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
+import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -38,9 +39,15 @@ export function HostForm({
     squidSettings.data?.primary_host_country_code,
   )
 
-  const { register, handleSubmit, control, watch, setValue } = useForm<Profile>({
+  const { register, handleSubmit, control, watch, setValue, reset } = useForm<Profile>({
     defaultValues: profile ?? emptyProfile(),
   })
+
+  useEffect(() => {
+    reset(profile ?? emptyProfile())
+  }, [profile, reset])
+
+  const keepHint = profile?.id ? 'Leave blank to keep current' : undefined
 
   const connectionType = watch('connection_type')
   const fileBackupEnabled = watch('file_backup_enabled')
@@ -101,7 +108,7 @@ export function HostForm({
                 <FormField label="WordPress URL" htmlFor="wp-url">
                   <Input id="wp-url" {...register('wp_url')} placeholder="https://example.com" />
                 </FormField>
-                <SecretField label="API key" value={watch('wp_key') ?? ''} onChange={(v) => setValue('wp_key', v)} hint="Generate from host detail page" />
+                <SecretField label="API key" value={watch('wp_key') ?? ''} onChange={(v) => setValue('wp_key', v)} hint={keepHint ?? 'Generate from host detail page'} />
               </>
             ) : (
               <>
@@ -132,13 +139,13 @@ export function HostForm({
                       />
                     </FormField>
                     {authType === 'Password' ? (
-                      <SecretField label="SSH password" value={watch('ssh_password') ?? ''} onChange={(v) => setValue('ssh_password', v)} />
+                      <SecretField label="SSH password" value={watch('ssh_password') ?? ''} onChange={(v) => setValue('ssh_password', v)} hint={keepHint} />
                     ) : (
                       <>
                         <FormField label="Key path" htmlFor="auth-key-path">
                           <Input id="auth-key-path" {...register('auth_key_path')} />
                         </FormField>
-                        <SecretField label="Key PEM" value={watch('auth_key_pem') ?? ''} onChange={(v) => setValue('auth_key_pem', v)} />
+                        <SecretField label="Key PEM" value={watch('auth_key_pem') ?? ''} onChange={(v) => setValue('auth_key_pem', v)} hint={keepHint} />
                       </>
                     )}
                   </>
@@ -173,9 +180,9 @@ export function HostForm({
                   />
                 </FormField>
                 {jumpAuthType === 'Key File' ? (
-                  <SecretField label="Jump key PEM" value={watch('jump_auth_key_pem') ?? ''} onChange={(v) => setValue('jump_auth_key_pem', v)} />
+                  <SecretField label="Jump key PEM" value={watch('jump_auth_key_pem') ?? ''} onChange={(v) => setValue('jump_auth_key_pem', v)} hint={keepHint} />
                 ) : (
-                  <SecretField label="Jump password" value={watch('jump_password') ?? ''} onChange={(v) => setValue('jump_password', v)} />
+                  <SecretField label="Jump password" value={watch('jump_password') ?? ''} onChange={(v) => setValue('jump_password', v)} hint={keepHint} />
                 )}
               </>
             ) : null}
@@ -193,7 +200,7 @@ export function HostForm({
             <FormField label="DB user" htmlFor="db-user">
               <Input id="db-user" {...register('db_user')} />
             </FormField>
-            <SecretField label="DB password" value={watch('db_password') ?? ''} onChange={(v) => setValue('db_password', v)} />
+            <SecretField label="DB password" value={watch('db_password') ?? ''} onChange={(v) => setValue('db_password', v)} hint={keepHint} />
             <FormField label="DB type">
               <Controller
                 control={control}

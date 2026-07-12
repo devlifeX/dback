@@ -4,26 +4,10 @@ import (
 	"os"
 
 	"dback/internal/store"
-	"dback/models"
 )
 
 func (a *App) ExportAppDataBytes(includeSecrets bool, passphrase string) ([]byte, error) {
-	destinations, _ := a.store.LoadRemoteDestinations()
-	appDestID, _ := a.store.AppSettingsDestinationID()
-	syncSettings, _ := a.SyncSettings()
-	var syncPtr *models.SyncSettings
-	if syncSettings != nil {
-		syncPtr = syncSettings
-	}
-	return a.store.MarshalAppDataBundle(store.AppImportData{
-		Profiles:                 a.Profiles(),
-		Templates:                a.Templates(),
-		History:                  a.History(),
-		Logs:                     a.Logs(),
-		Sync:                     syncPtr,
-		RemoteDestinations:       destinations,
-		AppSettingsDestinationID: appDestID,
-	}, includeSecrets, passphrase)
+	return a.store.MarshalAppDataBundle(a.collectAppImportData(), includeSecrets, passphrase)
 }
 
 func (a *App) PreviewImportAppDataBytes(raw []byte, includeSecrets bool, passphrase string) (store.AppImportData, []store.ProfileConflict, []store.TemplateConflict, error) {

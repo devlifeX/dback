@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dback/models"
@@ -18,15 +19,22 @@ func TestExportProfilesIncludeSecretsRequiresPassphrase(t *testing.T) {
 	}
 }
 
-func TestExportAppDataIncludeSecretsRequiresPassphrase(t *testing.T) {
+func TestExportAppDataPlaintextWithSecretsNoPassphrase(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.json")
 	data := AppImportData{
 		Profiles: []models.Profile{{ID: "p1", Name: "Production", SSHPassword: "secret"}},
 	}
 	s := New(dir)
-	if err := s.ExportAppData(path, data, true, ""); err != ErrIncludeSecretsNoPassphrase {
-		t.Fatalf("expected ErrIncludeSecretsNoPassphrase, got %v", err)
+	if err := s.ExportAppData(path, data, true, ""); err != nil {
+		t.Fatalf("plaintext export with secrets: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"ssh_password": "secret"`) {
+		t.Fatalf("expected secret in plaintext export, got %s", string(raw))
 	}
 }
 

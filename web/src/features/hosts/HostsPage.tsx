@@ -3,23 +3,33 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
+import { MoreHorizontal } from 'lucide-react'
 import { hostsApi } from '@/api/hosts'
 import { operationsApi } from '@/api/operations'
 import type { Host, Profile } from '@/api/types'
 import { useMutationWithRevision } from '@/hooks/use-vault-mutation'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DataTable } from '@/components/shared/data-table'
 import { EmptyState, ErrorAlert, PageHeader } from '@/components/shared/page'
 import { Skeleton } from '@/components/ui/badge'
 import { HostForm } from './HostForm'
+import { CheckHostStatusDialog } from './CheckHostStatusDialog'
 import { CreateOperationForm } from '@/features/operations/CreateOperationForm'
 
 export function HostsPage() {
   const qc = useQueryClient()
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [dialog, setDialog] = useState<'create' | 'edit' | 'delete' | null>(null)
+  const [statusHost, setStatusHost] = useState<Host | null>(null)
   const [selected, setSelected] = useState<Host | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['hosts'], queryFn: hostsApi.list })
@@ -68,7 +78,7 @@ export function HostsPage() {
 
   const filtered = groupFilter === 'all' ? items : items.filter((h) => (h.group || 'Default') === groupFilter)
 
-  const columns: ColumnDef<Host>[] = [
+  const columns: ColumnDef<Host>[] = useMemo(() => [
     {
       accessorKey: 'name',
       header: 'Name',
@@ -82,17 +92,29 @@ export function HostsPage() {
       id: 'actions',
       header: 'Actions',
       cell: ({ row }) => (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" disabled={test.isPending} onClick={() => test.mutate(row.original.id)}>Test</Button>
+        <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" disabled={runBackup.isPending} onClick={() => runBackup.mutate(row.original.id)}>Backup</Button>
-          <Button size="sm" variant="outline" disabled={runFileBackup.isPending} onClick={() => runFileBackup.mutate(row.original.id)}>Files</Button>
-          <Button size="sm" variant="outline" onClick={() => { setSelected(row.original); setDialog('edit') }}>Edit</Button>
-          <Button size="sm" variant="outline" disabled={duplicate.isPending} onClick={() => duplicate.mutate(row.original.id)}>Duplicate</Button>
-          <Button size="sm" variant="destructive" onClick={() => { setSelected(row.original); setDialog('delete') }}>Delete</Button>
+          <Button size="sm" variant="outline" onClick={() => setStatusHost(row.original)}>Check Host Status</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">More actions</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={test.isPending} onClick={() => test.mutate(row.original.id)}>Test connection</DropdownMenuItem>
+              <DropdownMenuItem disabled={runFileBackup.isPending} onClick={() => runFileBackup.mutate(row.original.id)}>File backup</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => { setSelected(row.original); setDialog('edit') }}>Edit</DropdownMenuItem>
+              <DropdownMenuItem disabled={duplicate.isPending} onClick={() => duplicate.mutate(row.original.id)}>Duplicate</DropdownMenuItem>
+              <DropdownMenuItem className="text-[hsl(var(--destructive))]" onClick={() => { setSelected(row.original); setDialog('delete') }}>Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
-  ]
+  ], [test.isPending, runBackup.isPending, runFileBackup.isPending, duplicate.isPending])
 
   if (isLoading) return <Skeleton className="h-40 w-full" />
   if (isError) return <ErrorAlert message="Could not load hosts" onRetry={() => void refetch()} />
@@ -137,6 +159,16 @@ export function HostsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {statusHost ? (
+        <CheckHostStatusDialog
+          hostId={statusHost.id}
+          hostName={statusHost.name}
+          primaryUrl={statusHost.url_check?.primary?.url}
+          open={!!statusHost}
+          onOpenChange={(o) => !o && setStatusHost(null)}
+        />
+      ) : null}
     </div>
   )
 }
@@ -145,6 +177,7 @@ export function HostDetailPage({ id }: { id: string }) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [opDialog, setOpDialog] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
 
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['hosts', id], queryFn: () => hostsApi.get(id) })
   const hosts = useQuery({ queryKey: ['hosts'], queryFn: hostsApi.list })
@@ -191,6 +224,7 @@ export function HostDetailPage({ id }: { id: string }) {
         actions={
           <>
             <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>Test connection</Button>
+            <Button variant="outline" size="sm" onClick={() => setStatusOpen(true)}>Check Host Status</Button>
             <Button variant="outline" size="sm" onClick={() => setOpDialog(true)}>Run operation</Button>
             <Button size="sm" onClick={() => setEditing((e) => !e)}>{editing ? 'Cancel edit' : 'Edit'}</Button>
           </>
@@ -226,6 +260,14 @@ export function HostDetailPage({ id }: { id: string }) {
           />
         </DialogContent>
       </Dialog>
+
+      <CheckHostStatusDialog
+        hostId={id}
+        hostName={data.name}
+        primaryUrl={data.url_check?.primary?.url}
+        open={statusOpen}
+        onOpenChange={setStatusOpen}
+      />
     </div>
   )
 }

@@ -130,16 +130,17 @@ func paginatedResponse[T any](items []T, meta ListMeta) Paginated {
 }
 
 type OperationDTO struct {
-	ID         string                 `json:"id"`
-	Kind       string                 `json:"kind"`
-	ProfileID  string                 `json:"profile_id"`
-	TriggerRef string                 `json:"trigger_ref,omitempty"`
-	Status     string                 `json:"status"`
-	StartedAt  time.Time              `json:"started_at,omitempty"`
-	FinishedAt time.Time              `json:"finished_at,omitempty"`
-	Error      string                 `json:"error,omitempty"`
-	Progress   string                 `json:"progress,omitempty"`
-	Artifacts  []operationArtifactDTO `json:"artifacts,omitempty"`
+	ID          string                 `json:"id"`
+	Kind        string                 `json:"kind"`
+	ProfileID   string                 `json:"profile_id"`
+	ProfileName string                 `json:"profile_name,omitempty"`
+	TriggerRef  string                 `json:"trigger_ref,omitempty"`
+	Status      string                 `json:"status"`
+	StartedAt   time.Time              `json:"started_at,omitempty"`
+	FinishedAt  time.Time              `json:"finished_at,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	Progress    string                 `json:"progress,omitempty"`
+	Artifacts   []operationArtifactDTO `json:"artifacts,omitempty"`
 }
 
 type operationArtifactDTO struct {
@@ -148,7 +149,7 @@ type operationArtifactDTO struct {
 	Path string `json:"path,omitempty"`
 }
 
-func operationFromRecord(rec *controlplane.OperationRecord) OperationDTO {
+func (h *Handler) operationFromRecord(rec *controlplane.OperationRecord) OperationDTO {
 	if rec == nil {
 		return OperationDTO{}
 	}
@@ -156,6 +157,7 @@ func operationFromRecord(rec *controlplane.OperationRecord) OperationDTO {
 		ID:         rec.ID,
 		Kind:       string(rec.Kind),
 		ProfileID:  rec.ProfileID,
+		ProfileName: h.profileName(rec.ProfileID),
 		TriggerRef: rec.TriggerRef,
 		Status:     string(rec.Status),
 		StartedAt:  rec.StartedAt,
@@ -171,6 +173,18 @@ func operationFromRecord(rec *controlplane.OperationRecord) OperationDTO {
 		})
 	}
 	return dto
+}
+
+func (h *Handler) profileName(id string) string {
+	if id == "" {
+		return ""
+	}
+	for _, p := range h.App.Profiles() {
+		if p.ID == id {
+			return p.Name
+		}
+	}
+	return ""
 }
 
 type HostDTO struct {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -13,10 +13,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { DataTable } from '@/components/shared/data-table'
 import { EmptyState, ErrorAlert, PageHeader } from '@/components/shared/page'
 import { Skeleton } from '@/components/ui/badge'
-import { formatDate } from '@/lib/utils'
+import { useFormatDate } from '@/lib/datetime'
 import { TaskForm } from './TaskForm'
 
 export function TasksPage() {
+  const formatDate = useFormatDate()
   const qc = useQueryClient()
   const [dialog, setDialog] = useState<'create' | 'edit' | 'delete' | 'clone' | null>(null)
   const [selected, setSelected] = useState<Task | null>(null)
@@ -50,7 +51,7 @@ export function TasksPage() {
 
   const items = data?.items ?? []
 
-  const columns: ColumnDef<Task>[] = [
+  const columns: ColumnDef<Task>[] = useMemo(() => [
     {
       accessorKey: 'name',
       header: 'Name',
@@ -80,7 +81,7 @@ export function TasksPage() {
         </div>
       ),
     },
-  ]
+  ], [formatDate, run.isPending, toggle])
 
   if (isLoading) return <Skeleton className="h-40 w-full" />
   if (isError) return <ErrorAlert message="Could not load tasks" onRetry={() => void refetch()} />
@@ -122,6 +123,7 @@ export function TasksPage() {
 }
 
 export function TaskDetailPage({ id }: { id: string }) {
+  const formatDate = useFormatDate()
   const { data, isLoading, isError } = useQuery({ queryKey: ['tasks', id], queryFn: () => tasksApi.get(id) })
   const runs = useQuery({ queryKey: ['tasks', id, 'runs'], queryFn: () => tasksApi.runs(id) })
 

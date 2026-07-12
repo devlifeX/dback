@@ -102,7 +102,10 @@ export function RemoteStoragePage() {
         }}
         onDownload={(entry) => download.mutate(entry.path)}
         downloadingPath={downloadingPath}
-        breadcrumbLabel={(segment) => segment}
+        breadcrumbLabel={(segment, _index, _parts) => {
+          const hostName = profileNames[segment]
+          return hostName ? `${segment} (${hostName})` : segment
+        }}
         profileNames={profileNames}
       />
     </div>

@@ -18,6 +18,14 @@ type AppImportData struct {
 	Sync                     *models.SyncSettings
 	RemoteDestinations       []models.RemoteDestination
 	AppSettingsDestinationID string
+	Tasks                    []models.Task
+	TaskRuns                 []models.TaskRunRecord
+	NotifyChannels           []models.NotifyChannel
+	Users                    []models.User
+	AuthSettings             *models.AuthSettings
+	SquidProxies             []models.SquidProxy
+	SquidSettings            *models.SquidSettings
+	ImportDestByProfile      map[string]string
 }
 
 // TemplateConflict describes an imported template that replaces an existing one.

@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { systemApi } from '@/api/system'
 import { Skeleton } from '@/components/ui/badge'
-import { formatDate } from '@/lib/utils'
+import { useFormatDate } from '@/lib/datetime'
 
 export function AuditTab() {
+  const formatDate = useFormatDate()
   const audit = useQuery({ queryKey: ['audit'], queryFn: () => systemApi.audit({ limit: 50 }) })
   const auditItems = audit.data?.items ?? []
 

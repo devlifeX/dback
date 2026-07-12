@@ -467,6 +467,10 @@ func backupRemoteKey(profileID, recordID, filePath string) string {
 }
 
 func (a *App) UploadProfileBackups(ctx context.Context, profileID string, recordIDs []string, progress RemoteUploadProgressFunc) (RemoteUploadResult, error) {
+	return a.UploadProfileBackupsWithOperationID(ctx, "", profileID, recordIDs, progress)
+}
+
+func (a *App) UploadProfileBackupsWithOperationID(ctx context.Context, operationID, profileID string, recordIDs []string, progress RemoteUploadProgressFunc) (RemoteUploadResult, error) {
 	lockKey := profileID
 	if !profileUploadLocks.tryAcquire(lockKey) {
 		remoteUploadLog("Upload", "lock_busy", fmt.Sprintf("profile_id=%s", profileID), profileID, ErrRemoteUploadRunning.Error())
@@ -495,6 +499,9 @@ func (a *App) UploadProfileBackups(ctx context.Context, profileID string, record
 		return RemoteUploadResult{}, nil
 	}
 	remoteUploadLog("Upload", "start", fmt.Sprintf("filter_records=%d history_records=%d destinations=%d", len(recordIDs), len(records), len(destIDs)), profile.Name, "")
+	if operationID != "" {
+		a.logPhase(operationID, &profile, "Upload", "start", "", 0, fmt.Sprintf("Uploading %d record(s) to %d destination(s)", len(records), len(destIDs)), "Info", "Started", "")
+	}
 
 	destByID := map[string]models.RemoteDestination{}
 	allDests, err := a.store.LoadRemoteDestinations()
@@ -613,9 +620,15 @@ func (a *App) UploadProfileBackups(ctx context.Context, profileID string, record
 	}
 	if len(failures) > 0 {
 		remoteUploadLog("Upload", "done_with_errors", fmt.Sprintf("uploaded=%d failed=%d skipped=%d failures=%d", result.UploadedRecords, result.FailedRecords, result.SkippedRecords, len(failures)), profile.Name, errors.Join(failures...).Error())
+		if operationID != "" {
+			a.logPhase(operationID, &profile, "Upload", "complete", "", 0, fmt.Sprintf("Completed with %d failure(s)", len(failures)), "Error", "Failed", errors.Join(failures...).Error())
+		}
 		return result, fmt.Errorf("remote upload completed with %d failure(s): %w", len(failures), errors.Join(failures...))
 	}
 	remoteUploadLog("Upload", "done", fmt.Sprintf("uploaded=%d failed=%d skipped=%d", result.UploadedRecords, result.FailedRecords, result.SkippedRecords), profile.Name, "")
+	if operationID != "" {
+		a.logPhase(operationID, &profile, "Upload", "complete", "", 0, fmt.Sprintf("Uploaded %d record(s)", result.UploadedRecords), "Info", "Succeeded", "")
+	}
 	_ = a.ApplyRetention(profileID)
 	return result, nil
 }

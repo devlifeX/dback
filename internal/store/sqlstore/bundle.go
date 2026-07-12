@@ -75,9 +75,6 @@ func (s *Store) ExportAppData(path string, data storemodel.AppImportData, includ
 }
 
 func (s *Store) MarshalAppDataBundle(data storemodel.AppImportData, includeSecrets bool, passphrase string) ([]byte, error) {
-	if includeSecrets && passphrase == "" {
-		return nil, storemodel.ErrIncludeSecretsNoPassphrase
-	}
 	payload := storemodel.AppImportData{
 		Profiles:                 storemodel.FlattenProfiles(data.Profiles),
 		Templates:                append([]models.SQLTemplate(nil), data.Templates...),
@@ -86,6 +83,14 @@ func (s *Store) MarshalAppDataBundle(data storemodel.AppImportData, includeSecre
 		Sync:                     data.Sync.Clone(),
 		RemoteDestinations:       cloneRemoteDestinations(data.RemoteDestinations),
 		AppSettingsDestinationID: data.AppSettingsDestinationID,
+		Tasks:                    append([]models.Task(nil), data.Tasks...),
+		TaskRuns:                 append([]models.TaskRunRecord(nil), data.TaskRuns...),
+		NotifyChannels:           append([]models.NotifyChannel(nil), data.NotifyChannels...),
+		Users:                    append([]models.User(nil), data.Users...),
+		AuthSettings:             data.AuthSettings,
+		SquidProxies:             append([]models.SquidProxy(nil), data.SquidProxies...),
+		SquidSettings:            data.SquidSettings,
+		ImportDestByProfile:      data.ImportDestByProfile,
 	}
 	for i := range payload.Profiles {
 		payload.Profiles[i].ExportSettings = nil
@@ -112,6 +117,9 @@ func (s *Store) MarshalAppDataBundle(data storemodel.AppImportData, includeSecre
 		Version: storemodel.CurrentVersion, ExportedAt: time.Now(),
 		Profiles: payload.Profiles, Templates: payload.Templates, History: payload.History, Logs: payload.Logs,
 		Sync: payload.Sync, RemoteDestinations: payload.RemoteDestinations, AppSettingsDestinationID: payload.AppSettingsDestinationID,
+		Tasks: payload.Tasks, TaskRuns: payload.TaskRuns, NotifyChannels: payload.NotifyChannels,
+		Users: payload.Users, AuthSettings: payload.AuthSettings, SquidProxies: payload.SquidProxies,
+		SquidSettings: payload.SquidSettings, ImportDestByProfile: payload.ImportDestByProfile,
 	}
 	return json.MarshalIndent(bundle, "", "  ")
 }
@@ -180,12 +188,22 @@ func (s *Store) decodeAppBundle(bundle models.AppBundle, includeSecrets bool, pa
 		Logs:    append([]models.LogEntry(nil), bundle.Logs...), Sync: bundle.Sync.Clone(),
 		RemoteDestinations:       cloneRemoteDestinations(bundle.RemoteDestinations),
 		AppSettingsDestinationID: bundle.AppSettingsDestinationID,
+		Tasks:                    append([]models.Task(nil), bundle.Tasks...),
+		TaskRuns:                 append([]models.TaskRunRecord(nil), bundle.TaskRuns...),
+		NotifyChannels:           append([]models.NotifyChannel(nil), bundle.NotifyChannels...),
+		Users:                    append([]models.User(nil), bundle.Users...),
+		AuthSettings:             bundle.AuthSettings,
+		SquidProxies:             append([]models.SquidProxy(nil), bundle.SquidProxies...),
+		SquidSettings:            bundle.SquidSettings,
+		ImportDestByProfile:      bundle.ImportDestByProfile,
 	}, nil
 }
 
 func appBundleHasPayload(b models.AppBundle) bool {
 	return b.Encrypted || len(b.Profiles) > 0 || len(b.Templates) > 0 || len(b.History) > 0 || len(b.Logs) > 0 ||
-		len(b.RemoteDestinations) > 0 || b.AppSettingsDestinationID != "" || b.Sync != nil
+		len(b.RemoteDestinations) > 0 || b.AppSettingsDestinationID != "" || b.Sync != nil ||
+		len(b.Tasks) > 0 || len(b.NotifyChannels) > 0 || len(b.Users) > 0 || b.AuthSettings != nil ||
+		len(b.SquidProxies) > 0 || b.SquidSettings != nil || len(b.ImportDestByProfile) > 0
 }
 
 func stripProfileSecrets(profiles []models.Profile) []models.Profile {

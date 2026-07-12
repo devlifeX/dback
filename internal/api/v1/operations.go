@@ -37,7 +37,7 @@ func (h *Handler) listOperations(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]OperationDTO, 0, len(all))
 	for _, rec := range all {
-		items = append(items, operationFromRecord(rec))
+		items = append(items, h.operationFromRecord(rec))
 	}
 	writeJSON(w, http.StatusOK, paginatedResponse(items, ListMeta{Total: len(items), Limit: limit, Offset: offset}))
 }
@@ -77,7 +77,7 @@ func (h *Handler) createOperation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, operationFromRecord(rec))
+	writeJSON(w, http.StatusAccepted, h.operationFromRecord(rec))
 }
 
 func (h *Handler) getOperation(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +87,7 @@ func (h *Handler) getOperation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "operation not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, operationFromRecord(rec))
+	writeJSON(w, http.StatusOK, h.operationFromRecord(rec))
 }
 
 func (h *Handler) cancelOperation(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +97,7 @@ func (h *Handler) cancelOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec, _ := h.CP.Dispatcher.Get(id)
-	writeJSON(w, http.StatusOK, operationFromRecord(rec))
+	writeJSON(w, http.StatusOK, h.operationFromRecord(rec))
 }
 
 func (h *Handler) retryOperation(w http.ResponseWriter, r *http.Request) {
@@ -126,26 +126,38 @@ func (h *Handler) retryOperation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, operationFromRecord(rec))
+	writeJSON(w, http.StatusAccepted, h.operationFromRecord(rec))
 }
 
 func (h *Handler) operationLogs(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	rec, _ := h.CP.Dispatcher.Get(id)
+	fallbackName := ""
+	if rec != nil {
+		fallbackName = h.profileName(rec.ProfileID)
+	}
 	limit, offset := parseLimitOffset(r, 100, 500)
 	var filtered []map[string]any
 	for _, entry := range h.App.Logs() {
 		if entry.OperationID != id {
 			continue
 		}
+		name := entry.ProfileName
+		if name == "" {
+			name = fallbackName
+		}
 		filtered = append(filtered, map[string]any{
-			"id":        entry.ID,
-			"timestamp": entry.Timestamp,
-			"action":    entry.Action,
-			"phase":     entry.Phase,
-			"level":     entry.Level,
-			"details":   entry.Details,
-			"status":    entry.Status,
-			"error":     entry.Error,
+			"id":           entry.ID,
+			"timestamp":    entry.Timestamp,
+			"action":       entry.Action,
+			"phase":        entry.Phase,
+			"level":        entry.Level,
+			"details":      entry.Details,
+			"status":       entry.Status,
+			"error":        entry.Error,
+			"profile_id":   entry.ProfileID,
+			"profile_name": name,
+			"operation_id": entry.OperationID,
 		})
 	}
 	page, meta := paginateSlice(filtered, limit, offset)
