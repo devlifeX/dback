@@ -205,6 +205,7 @@ export type Task = {
   actions: ActionSpec[]
   overlap_policy?: string
   max_concurrent_profiles?: number
+  notify_channel_ids?: string[]
   state?: {
     next_run_at?: string
     last_run_status?: string

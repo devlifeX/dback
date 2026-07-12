@@ -84,6 +84,7 @@ type OperationRecord struct {
 	ID          string
 	Kind        operation.Kind
 	ProfileID   string
+	TaskID      string
 	TriggerRef  string
 	Params      json.RawMessage
 	Status      operation.Status
@@ -193,20 +194,14 @@ func (e *Engine) Execute(ctx context.Context, rec *OperationRecord, spec operati
 		OperationID: rec.ID,
 		Kind:        spec.Kind,
 		ProfileID:   spec.ProfileID,
+		TaskID:      spec.TaskID,
 		Timestamp:   started,
 	}
 	_ = e.bus.Publish(ctx, event.OperationStarted{Envelope: env, Spec: spec})
 
 	publishProgress := func(message string, current, total int64) {
 		_ = e.bus.Publish(ctx, event.OperationProgress{
-			Envelope: event.Envelope{
-				ID:          newEventID(),
-				Type:        event.TypeOperationProgress,
-				OperationID: rec.ID,
-				Kind:        spec.Kind,
-				ProfileID:   spec.ProfileID,
-				Timestamp:   time.Now(),
-			},
+			Envelope: operationEnvelope(event.TypeOperationProgress, rec, spec, time.Now()),
 			Phase:   "progress",
 			Current: current,
 			Total:   total,
@@ -233,14 +228,7 @@ func (e *Engine) Execute(ctx context.Context, rec *OperationRecord, spec operati
 			result.Status = operation.StatusCanceled
 			result.Error = "canceled"
 			_ = e.bus.Publish(ctx, event.OperationCanceled{
-				Envelope: event.Envelope{
-					ID:          newEventID(),
-					Type:        event.TypeOperationCanceled,
-					OperationID: rec.ID,
-					Kind:        spec.Kind,
-					ProfileID:   spec.ProfileID,
-					Timestamp:   finished,
-				},
+				Envelope: operationEnvelope(event.TypeOperationCanceled, rec, spec, finished),
 				Result: *result,
 			})
 			return result, err
@@ -255,14 +243,7 @@ func (e *Engine) Execute(ctx context.Context, rec *OperationRecord, spec operati
 			result.Error = err.Error()
 		}
 		_ = e.bus.Publish(ctx, event.OperationFailed{
-			Envelope: event.Envelope{
-				ID:          newEventID(),
-				Type:        event.TypeOperationFailed,
-				OperationID: rec.ID,
-				Kind:        spec.Kind,
-				ProfileID:   spec.ProfileID,
-				Timestamp:   finished,
-			},
+			Envelope: operationEnvelope(event.TypeOperationFailed, rec, spec, finished),
 			Result: *result,
 			Cause:  err,
 		})
@@ -271,17 +252,22 @@ func (e *Engine) Execute(ctx context.Context, rec *OperationRecord, spec operati
 
 	result.Status = operation.StatusSucceeded
 	_ = e.bus.Publish(ctx, event.OperationCompleted{
-		Envelope: event.Envelope{
-			ID:          newEventID(),
-			Type:        event.TypeOperationCompleted,
-			OperationID: rec.ID,
-			Kind:        spec.Kind,
-			ProfileID:   spec.ProfileID,
-			Timestamp:   finished,
-		},
+		Envelope: operationEnvelope(event.TypeOperationCompleted, rec, spec, finished),
 		Result: *result,
 	})
 	return result, err
+}
+
+func operationEnvelope(typ event.Type, rec *OperationRecord, spec operation.Spec, ts time.Time) event.Envelope {
+	return event.Envelope{
+		ID:          newEventID(),
+		Type:        typ,
+		OperationID: rec.ID,
+		Kind:        spec.Kind,
+		ProfileID:   spec.ProfileID,
+		TaskID:      spec.TaskID,
+		Timestamp:   ts,
+	}
 }
 
 func newEventID() string {

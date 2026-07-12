@@ -65,6 +65,7 @@ type Task struct {
 	Trigger               TriggerSpec   `json:"trigger"`
 	Actions               []ActionSpec  `json:"actions"`
 	ProfileIDs            []string      `json:"profile_ids"`
+	NotifyChannelIDs      []string      `json:"notify_channel_ids,omitempty"`
 	OverlapPolicy         OverlapPolicy `json:"overlap_policy,omitempty"`
 	MaxConcurrentProfiles int           `json:"max_concurrent_profiles,omitempty"`
 	State                 TriggerState  `json:"state,omitempty"`

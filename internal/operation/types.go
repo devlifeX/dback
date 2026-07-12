@@ -134,6 +134,7 @@ type Spec struct {
 	ID         string
 	Kind       Kind
 	ProfileID  string
+	TaskID     string
 	TriggerRef string
 	Params     Params
 }
@@ -173,6 +174,7 @@ type Result struct {
 	StartedAt   time.Time
 	FinishedAt  time.Time
 	Error       string
+	Details     string
 	Artifacts   []Artifact
 }
 

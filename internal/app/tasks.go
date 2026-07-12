@@ -101,6 +101,14 @@ func (a *App) ValidateTask(task models.Task) error {
 	if task.EffectiveOverlapPolicy() != models.OverlapPolicySkip && task.OverlapPolicy != "" {
 		return fmt.Errorf("%w: only skip overlap policy is supported in v1", ErrInvalidTask)
 	}
+	for _, channelID := range task.NotifyChannelIDs {
+		if channelID == "" {
+			continue
+		}
+		if _, err := a.store.GetNotifyChannel(channelID); err != nil {
+			return fmt.Errorf("%w: notify channel %q not found", ErrInvalidTask, channelID)
+		}
+	}
 	return nil
 }
 

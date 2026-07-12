@@ -15,13 +15,13 @@ func MessageFromEvent(ev event.Event, namer HostNamer) (Message, bool) {
 
 	switch e := ev.(type) {
 	case event.OperationStarted:
-		return operationMessage(env, host, operation.Result{Status: operation.StatusRunning}, "started", "info"), true
+		return operationMessage(env, host, n.TaskName(env.TaskID), operation.Result{Status: operation.StatusRunning}, "started", "info"), true
 	case event.OperationCompleted:
-		return operationMessage(env, host, e.Result, "succeeded", "info"), true
+		return operationMessage(env, host, n.TaskName(env.TaskID), e.Result, "succeeded", "info"), true
 	case event.OperationFailed:
-		return operationMessage(env, host, e.Result, "failed", "error"), true
+		return operationMessage(env, host, n.TaskName(env.TaskID), e.Result, "failed", "error"), true
 	case event.OperationCanceled:
-		return operationMessage(env, host, e.Result, "canceled", "warn"), true
+		return operationMessage(env, host, n.TaskName(env.TaskID), e.Result, "canceled", "warn"), true
 	case event.TaskSkipped:
 		task := n.TaskName(e.TaskID)
 		return Message{
@@ -44,7 +44,7 @@ func MessageFromEvent(ev event.Event, namer HostNamer) (Message, bool) {
 	}
 }
 
-func operationMessage(env event.Envelope, host string, res operation.Result, label, level string) Message {
+func operationMessage(env event.Envelope, host, taskName string, res operation.Result, label, level string) Message {
 	kind := env.Kind
 	action := kindLabel(kind)
 	emoji := eventEmoji(label)
@@ -52,6 +52,12 @@ func operationMessage(env event.Envelope, host string, res operation.Result, lab
 
 	title := fmt.Sprintf("%s %s %s", emoji, kindIcon, action+" "+statusWord(label))
 	body := fmt.Sprintf("Host: %s", host)
+	if taskName != "" {
+		body += fmt.Sprintf("\nTask: %s", taskName)
+	}
+	if kind == operation.KindUrlChecker && strings.TrimSpace(res.Details) != "" {
+		body += "\n\n" + res.Details
+	}
 	if errText := SanitizeError(res.Error); errText != "" {
 		body += "\nError: " + errText
 	}
@@ -67,6 +73,7 @@ func operationMessage(env event.Envelope, host string, res operation.Result, lab
 			"profile_id":   env.ProfileID,
 			"host_name":    host,
 			"status":       string(res.Status),
+			"task_id":      env.TaskID,
 		},
 	}
 }
@@ -98,6 +105,8 @@ func kindEmoji(kind operation.Kind) string {
 		return "♻️"
 	case operation.KindDeepVerify:
 		return "🔍"
+	case operation.KindUrlChecker:
+		return "🌐"
 	default:
 		return "⚙️"
 	}
@@ -115,6 +124,8 @@ func kindLabel(kind operation.Kind) string {
 		return "Restore"
 	case operation.KindDeepVerify:
 		return "Deep verify"
+	case operation.KindUrlChecker:
+		return "URL check"
 	default:
 		return strings.ReplaceAll(string(kind), "_", " ")
 	}

@@ -116,6 +116,7 @@ func (r *TaskRunner) PublishSkipped(ctx context.Context, taskID, profileID, reas
 			ID:        uuid.NewString(),
 			Type:      event.TypeTaskSkipped,
 			ProfileID: profileID,
+			TaskID:    taskID,
 			Timestamp: time.Now(),
 		},
 		TaskID: taskID,
@@ -130,6 +131,7 @@ func (r *TaskRunner) specsForTask(task models.Task, profileID, triggerRef string
 		if err != nil {
 			return nil, err
 		}
+		spec.TaskID = task.ID
 		specs = append(specs, spec)
 	}
 	return specs, nil

@@ -165,3 +165,99 @@ func TestRouterDeliversOnOperationCompleted(t *testing.T) {
 	}
 	t.Fatalf("expected delivery despite canceled publish context, hits=%d", hits)
 }
+
+type stubTaskResolver struct {
+	ids map[string][]string
+}
+
+func (s stubTaskResolver) TaskNotifyChannelIDs(taskID string) []string {
+	return s.ids[taskID]
+}
+
+func TestRouterFiltersByTaskNotifyChannels(t *testing.T) {
+	var hits int32
+	store := &memChannelStore{channels: []models.NotifyChannel{
+		{
+			ID:       "ch1",
+			Name:     "general",
+			Provider: models.NotifyProviderWebhook,
+			Enabled:  true,
+			Events:   []string{string(event.TypeOperationCompleted)},
+			Config:   json.RawMessage(`{}`),
+		},
+		{
+			ID:       "ch2",
+			Name:     "task-only",
+			Provider: models.NotifyProviderWebhook,
+			Enabled:  true,
+			Events:   []string{string(event.TypeOperationCompleted)},
+			Config:   json.RawMessage(`{}`),
+		},
+	}}
+
+	bus := event.NewMemoryBus(4)
+	reg := NewRegistry()
+	reg.Register(models.NotifyProviderWebhook, stubSender{hits: &hits})
+
+	tasks := stubTaskResolver{ids: map[string][]string{"t1": {"ch2"}}}
+	router := NewRouterWithTasks(bus, store, tasks, reg, nil)
+	router.Start()
+	defer router.Stop()
+
+	_ = bus.Publish(context.Background(), event.OperationCompleted{
+		Envelope: event.Envelope{
+			Type:        event.TypeOperationCompleted,
+			OperationID: "op1",
+			Kind:        operation.KindUrlChecker,
+			ProfileID:   "p1",
+			TaskID:      "t1",
+			Timestamp:   time.Now(),
+		},
+		Result: operation.Result{Status: operation.StatusSucceeded},
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt32(&hits) >= 1 {
+			if atomic.LoadInt32(&hits) != 1 {
+				t.Fatalf("expected exactly 1 delivery, got %d", hits)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected delivery to task channel only, hits=%d", hits)
+}
+
+func TestRouterUsesAllChannelsWhenTaskHasNoNotifyChannels(t *testing.T) {
+	var hits int32
+	store := &memChannelStore{channels: []models.NotifyChannel{
+		{ID: "ch1", Provider: models.NotifyProviderWebhook, Enabled: true, Events: []string{string(event.TypeOperationCompleted)}, Config: json.RawMessage(`{}`)},
+		{ID: "ch2", Provider: models.NotifyProviderWebhook, Enabled: true, Events: []string{string(event.TypeOperationCompleted)}, Config: json.RawMessage(`{}`)},
+	}}
+	bus := event.NewMemoryBus(4)
+	reg := NewRegistry()
+	reg.Register(models.NotifyProviderWebhook, stubSender{hits: &hits})
+	tasks := stubTaskResolver{ids: map[string][]string{"t1": nil}}
+	router := NewRouterWithTasks(bus, store, tasks, reg, nil)
+	router.Start()
+	defer router.Stop()
+
+	_ = bus.Publish(context.Background(), event.OperationCompleted{
+		Envelope: event.Envelope{
+			Type:      event.TypeOperationCompleted,
+			TaskID:    "t1",
+			Timestamp: time.Now(),
+		},
+		Result: operation.Result{Status: operation.StatusSucceeded},
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt32(&hits) >= 2 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected delivery to all channels, hits=%d", hits)
+}

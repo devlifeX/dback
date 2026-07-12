@@ -120,9 +120,9 @@ func (a *App) NotifyChannelStore() notify.ChannelStore {
 	return notifyChannelStore{app: a}
 }
 
-func (a *App) NotifyDeps() (notify.ChannelStore, notify.HostNamer) {
+func (a *App) NotifyDeps() (notify.ChannelStore, notify.HostNamer, notify.TaskChannelResolver) {
 	s := notifyChannelStore{app: a}
-	return s, s
+	return s, s, a
 }
 
 func (s notifyChannelStore) ListNotifyChannels() ([]models.NotifyChannel, error) {
@@ -159,4 +159,15 @@ func (s notifyChannelStore) TaskName(taskID string) string {
 		}
 	}
 	return taskID
+}
+
+func (a *App) TaskNotifyChannelIDs(taskID string) []string {
+	if taskID == "" {
+		return nil
+	}
+	task, err := a.GetTask(taskID)
+	if err != nil {
+		return nil
+	}
+	return task.NotifyChannelIDs
 }

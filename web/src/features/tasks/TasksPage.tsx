@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import { hostsApi } from '@/api/hosts'
+import { notificationsApi } from '@/api/notifications'
 import { tasksApi } from '@/api/tasks'
 import type { Task } from '@/api/types'
 import { useMutationWithRevision } from '@/hooks/use-vault-mutation'
@@ -24,6 +25,7 @@ export function TasksPage() {
 
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['tasks'], queryFn: tasksApi.list })
   const hosts = useQuery({ queryKey: ['hosts'], queryFn: hostsApi.list })
+  const notifications = useQuery({ queryKey: ['notifications'], queryFn: notificationsApi.list })
 
   const save = useMutationWithRevision({
     mutationFn: (task: Task, etag) => tasksApi.save(task, etag),
@@ -101,6 +103,7 @@ export function TasksPage() {
           <TaskForm
             task={selected ?? undefined}
             hosts={hosts.data?.items ?? []}
+            notifyChannels={notifications.data?.items ?? []}
             pending={save.isPending}
             onCancel={() => setDialog(null)}
             onSubmit={(v) => save.mutate(v)}

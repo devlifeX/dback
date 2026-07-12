@@ -23,6 +23,7 @@ type Envelope struct {
 	OperationID string
 	Kind        operation.Kind
 	ProfileID   string
+	TaskID      string
 	Timestamp   time.Time
 }
 

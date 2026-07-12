@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { FormField } from '@/components/forms/FormField'
 import { FormSection } from '@/components/forms/FormSection'
-import type { Host, Task } from '@/api/types'
+import type { Host, NotifyChannel, Task } from '@/api/types'
 import { TriggerEditor } from './TriggerEditor'
 import { ActionChainEditor } from './ActionChainEditor'
 
@@ -20,12 +20,14 @@ const emptyTask = (): Task => ({
 export function TaskForm({
   task,
   hosts,
+  notifyChannels = [],
   onSubmit,
   onCancel,
   pending,
 }: {
   task?: Task
   hosts: Host[]
+  notifyChannels?: NotifyChannel[]
   onSubmit: (values: Task) => void
   onCancel: () => void
   pending?: boolean
@@ -35,6 +37,7 @@ export function TaskForm({
   })
 
   const profileIds = watch('profile_ids') ?? []
+  const channelIds = watch('notify_channel_ids') ?? []
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -67,6 +70,30 @@ export function TaskForm({
           ))}
         </div>
       </div>
+
+      {notifyChannels.length > 0 ? (
+        <div>
+          <p className="mb-1 text-sm font-medium">Notification channels</p>
+          <p className="mb-2 text-xs text-[hsl(var(--muted-foreground))]">
+            Leave empty to use all enabled channels. Select one or more to limit notifications for this task.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {notifyChannels.map((ch) => (
+              <label key={ch.id} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={channelIds.includes(ch.id)}
+                  onCheckedChange={(c) => {
+                    const next = c ? [...channelIds, ch.id] : channelIds.filter((x) => x !== ch.id)
+                    setValue('notify_channel_ids', next)
+                  }}
+                />
+                {ch.name}
+                {!ch.enabled ? <span className="text-xs text-[hsl(var(--muted-foreground))]">(disabled)</span> : null}
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <TriggerEditor control={control} />
       <ActionChainEditor control={control} />

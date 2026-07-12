@@ -127,21 +127,21 @@ func (a *App) buildCheckEndpoints(profile models.Profile) ([]checkEndpoint, erro
 	return endpoints, nil
 }
 
-func (a *App) CheckURLs(ctx context.Context, profileID string, operationID string, params operation.UrlCheckerParams) error {
+func (a *App) CheckURLs(ctx context.Context, profileID string, operationID string, params operation.UrlCheckerParams) ([]URLCheckOutcome, error) {
 	profile, err := a.profileByID(profileID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if operationID == "" {
 		operationID = newID()
 	}
 	targets, err := urlsForCheck(profile, params.URLIndex)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	endpoints, err := a.buildCheckEndpoints(profile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	timeout := defaultURLCheckTimeout
@@ -150,9 +150,11 @@ func (a *App) CheckURLs(ctx context.Context, profileID string, operationID strin
 	}
 
 	var failures []error
+	var outcomes []URLCheckOutcome
 	for _, target := range targets {
 		for _, ep := range endpoints {
 			outcome := probeURL(ctx, target, ep, timeout)
+			outcomes = append(outcomes, outcome)
 			sample := models.URLCheckSample{
 				ID:          newID(),
 				ProfileID:   profileID,
@@ -189,9 +191,9 @@ func (a *App) CheckURLs(ctx context.Context, profileID string, operationID strin
 		}
 	}
 	if len(failures) > 0 {
-		return errors.Join(failures...)
+		return outcomes, errors.Join(failures...)
 	}
-	return nil
+	return outcomes, nil
 }
 
 func probeURL(ctx context.Context, rawURL string, ep checkEndpoint, timeout time.Duration) URLCheckOutcome {

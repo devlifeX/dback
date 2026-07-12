@@ -17,9 +17,16 @@ type ChannelStore interface {
 	GetNotifyChannel(id string) (models.NotifyChannel, error)
 }
 
+// TaskChannelResolver returns notify channel IDs configured for a task.
+// Empty slice means use all matching global channels.
+type TaskChannelResolver interface {
+	TaskNotifyChannelIDs(taskID string) []string
+}
+
 type Router struct {
 	bus      event.Bus
 	store    ChannelStore
+	tasks    TaskChannelResolver
 	namer    HostNamer
 	registry *Registry
 	metrics  *metrics.Collector
@@ -28,12 +35,17 @@ type Router struct {
 }
 
 func NewRouter(bus event.Bus, store ChannelStore, registry *Registry, namer HostNamer) *Router {
+	return NewRouterWithTasks(bus, store, nil, registry, namer)
+}
+
+func NewRouterWithTasks(bus event.Bus, store ChannelStore, tasks TaskChannelResolver, registry *Registry, namer HostNamer) *Router {
 	if registry == nil {
 		registry = NewRegistry()
 	}
 	return &Router{
 		bus:      bus,
 		store:    store,
+		tasks:    tasks,
 		namer:    namer,
 		registry: registry,
 		timeout:  30 * time.Second,
@@ -91,16 +103,15 @@ func (r *Router) handle(_ context.Context, ev event.Event) {
 	if !ok {
 		return
 	}
+	env := ev.Metadata()
 	channels, err := r.store.ListNotifyChannels()
 	if err != nil {
 		log.Printf("notify: list channels: %v", err)
 		return
 	}
+	channels = r.filterChannelsForEvent(channels, env, string(msg.Event))
 	var wg sync.WaitGroup
 	for _, ch := range channels {
-		if !ch.Enabled || !ch.SubscribesTo(string(msg.Event)) {
-			continue
-		}
 		channel := ch
 		wg.Add(1)
 		go func() {
@@ -109,6 +120,34 @@ func (r *Router) handle(_ context.Context, ev event.Event) {
 		}()
 	}
 	wg.Wait()
+}
+
+func (r *Router) filterChannelsForEvent(channels []models.NotifyChannel, env event.Envelope, eventType string) []models.NotifyChannel {
+	var allowed map[string]struct{}
+	if env.TaskID != "" && r.tasks != nil {
+		if ids := r.tasks.TaskNotifyChannelIDs(env.TaskID); len(ids) > 0 {
+			allowed = make(map[string]struct{}, len(ids))
+			for _, id := range ids {
+				if id != "" {
+					allowed[id] = struct{}{}
+				}
+			}
+		}
+	}
+
+	var out []models.NotifyChannel
+	for _, ch := range channels {
+		if !ch.Enabled || !ch.SubscribesTo(eventType) {
+			continue
+		}
+		if allowed != nil {
+			if _, ok := allowed[ch.ID]; !ok {
+				continue
+			}
+		}
+		out = append(out, ch)
+	}
+	return out
 }
 
 func (r *Router) deliver(parent context.Context, ch models.NotifyChannel, msg Message) {

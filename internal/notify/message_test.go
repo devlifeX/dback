@@ -116,3 +116,35 @@ func TestMessageTaskSkipped(t *testing.T) {
 		t.Fatalf("body: %q", msg.Body)
 	}
 }
+
+func TestMessageUrlCheckerIncludesDetails(t *testing.T) {
+	details := "=== This run ===\n• Direct https://example.com → HTTP 200, TTFB 50ms OK"
+	msg, ok := MessageFromEvent(event.OperationCompleted{
+		Envelope: event.Envelope{
+			Type:        event.TypeOperationCompleted,
+			Kind:        operation.KindUrlChecker,
+			ProfileID:   "p1",
+			TaskID:      "t1",
+			Timestamp:   time.Now(),
+		},
+		Result: operation.Result{
+			Status:  operation.StatusSucceeded,
+			Details: details,
+		},
+	}, stubNamer{
+		hosts: map[string]string{"p1": "MyHost"},
+		tasks: map[string]string{"t1": "url-task"},
+	})
+	if !ok {
+		t.Fatal("expected message")
+	}
+	if !strings.Contains(msg.Title, "🌐") || !strings.Contains(msg.Title, "URL check") {
+		t.Fatalf("title: %q", msg.Title)
+	}
+	if !strings.Contains(msg.Body, "Host: MyHost") || !strings.Contains(msg.Body, "Task: url-task") {
+		t.Fatalf("body missing host/task: %q", msg.Body)
+	}
+	if !strings.Contains(msg.Body, details) {
+		t.Fatalf("body missing details: %q", msg.Body)
+	}
+}

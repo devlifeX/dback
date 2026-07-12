@@ -255,14 +255,16 @@ func urlCheckerHandler(application *app.App) Handler {
 		if publishProgress != nil {
 			publishProgress("Checking URLs", 0, 1)
 		}
-		err := application.CheckURLs(ctx, spec.ProfileID, spec.ID, params)
-		if err != nil {
+		outcomes, checkErr := application.CheckURLs(ctx, spec.ProfileID, spec.ID, params)
+		details, _ := application.FormatURLCheckNotifyReport(spec.ProfileID, outcomes)
+		if checkErr != nil {
 			return &operation.Result{
 				OperationID: spec.ID,
 				Kind:        operation.KindUrlChecker,
 				Status:      operation.StatusFailed,
-				Error:       err.Error(),
-			}, err
+				Error:       checkErr.Error(),
+				Details:     details,
+			}, checkErr
 		}
 		if publishProgress != nil {
 			publishProgress("URL checks passed", 1, 1)
@@ -271,6 +273,7 @@ func urlCheckerHandler(application *app.App) Handler {
 			OperationID: spec.ID,
 			Kind:        operation.KindUrlChecker,
 			Status:      operation.StatusSucceeded,
+			Details:     details,
 		}, nil
 	}
 }
