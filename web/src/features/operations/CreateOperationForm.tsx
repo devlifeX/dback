@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { FormField } from '@/components/forms/FormField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 
 export function CreateOperationForm({
   hosts,
@@ -25,7 +24,6 @@ export function CreateOperationForm({
   const [recordId, setRecordId] = useState('')
   const [destId, setDestId] = useState('')
   const [urlIndex, setUrlIndex] = useState('0')
-  const [useProxy, setUseProxy] = useState(false)
   const [timeoutSec, setTimeoutSec] = useState('')
 
   const needsRecord = kind === 'restore' || kind === 'deep_verify'
@@ -40,7 +38,6 @@ export function CreateOperationForm({
       } else if (isUrlChecker) {
         params = {
           url_index: Number(urlIndex),
-          use_proxy: useProxy,
         }
         if (timeoutSec.trim()) {
           params.timeout_seconds = Number(timeoutSec)
@@ -107,10 +104,9 @@ export function CreateOperationForm({
               </SelectContent>
             </Select>
           </FormField>
-          <div className="flex items-center gap-2">
-            <Checkbox checked={useProxy} onCheckedChange={(c) => setUseProxy(!!c)} id="use-proxy" />
-            <label htmlFor="use-proxy" className="text-sm">Use global Squid proxy</label>
-          </div>
+          <p className="text-xs text-[hsl(var(--muted-foreground))]">
+            Checks run from the primary host country (direct) plus any Squid proxies selected on the host URLs tab.
+          </p>
           <FormField label="Timeout (seconds, optional)" htmlFor="url-timeout">
             <Input id="url-timeout" type="number" min={0} value={timeoutSec} onChange={(e) => setTimeoutSec(e.target.value)} placeholder="30" />
           </FormField>

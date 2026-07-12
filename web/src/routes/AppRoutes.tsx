@@ -17,6 +17,7 @@ import { AboutPage } from '@/features/settings/SettingsPage'
 import { SettingsLayout } from '@/features/settings/SettingsLayout'
 import { GeneralTab } from '@/features/settings/tabs/GeneralTab'
 import { DestinationsTab } from '@/features/settings/tabs/DestinationsTab'
+import { SquidTab } from '@/features/settings/tabs/SquidTab'
 import { SyncTab } from '@/features/settings/tabs/SyncTab'
 import { VaultTab } from '@/features/settings/tabs/VaultTab'
 import { AuditTab } from '@/features/settings/tabs/AuditTab'
@@ -87,6 +88,7 @@ export function AppRoutes() {
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<GeneralTab />} />
           <Route path="destinations" element={<DestinationsTab />} />
+          <Route path="squid" element={<SquidTab />} />
           <Route path="sync" element={<SyncTab />} />
           <Route path="vault" element={<VaultTab />} />
           <Route path="audit" element={<AuditTab />} />

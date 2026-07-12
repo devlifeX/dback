@@ -30,6 +30,7 @@ var (
 	ErrInvalidCredentials         = storemodel.ErrInvalidCredentials
 	ErrOTPInvalid                 = storemodel.ErrOTPInvalid
 	ErrSessionInvalid             = storemodel.ErrSessionInvalid
+	ErrSquidProxyNotFound         = storemodel.ErrSquidProxyNotFound
 )
 
 type DestinationUsage = storemodel.DestinationUsage
@@ -124,6 +125,13 @@ type Repository interface {
 
 	AppendURLCheckSample(sample models.URLCheckSample) error
 	ListURLCheckHourly(profileID, url string, from, to time.Time) ([]models.URLCheckHourlyBucket, error)
+
+	ListSquidProxies() ([]models.SquidProxy, error)
+	GetSquidProxy(id string) (models.SquidProxy, error)
+	SaveSquidProxy(p models.SquidProxy) error
+	DeleteSquidProxy(id string) error
+	GetSquidSettings() (models.SquidSettings, error)
+	SaveSquidSettings(settings models.SquidSettings) error
 
 	ImportProfilesBundle(path string, includeSecrets bool, passphrase string) ([]models.Profile, error)
 	ExportProfiles(path string, profiles []models.Profile, includeSecrets bool, passphrase string) error

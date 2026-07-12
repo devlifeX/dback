@@ -32,7 +32,6 @@ type App struct {
 	templates  []models.SQLTemplate
 	history    []models.ExportRecord
 	logs       []models.LogEntry
-	squidProxy string
 }
 
 func New(baseDir string) (*App, error) {
@@ -52,10 +51,6 @@ func NewWithOptions(opts store.Options) (*App, error) {
 		return nil, err
 	}
 	return &App{store: repo}, nil
-}
-
-func (a *App) SetSquidProxy(proxy string) {
-	a.squidProxy = strings.TrimSpace(proxy)
 }
 
 func (a *App) HasVault() bool {
@@ -193,6 +188,9 @@ func (a *App) SaveProfile(profile models.Profile) error {
 		return err
 	}
 	if err := models.ValidateURLCheck(profile.URLCheck); err != nil {
+		return err
+	}
+	if err := a.validateProfileProxyIDs(profile.URLCheck.ProxyIDs); err != nil {
 		return err
 	}
 	if err := models.ValidateBackupPolicy(profile.BackupPolicy); err != nil {

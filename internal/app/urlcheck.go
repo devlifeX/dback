@@ -18,12 +18,23 @@ import (
 const defaultURLCheckTimeout = 30 * time.Second
 
 type URLCheckOutcome struct {
-	URL        string
-	TTFBMs     int64
-	StatusCode int
-	OK         bool
-	ViaProxy   bool
-	Error      string
+	URL         string
+	TTFBMs      int64
+	StatusCode  int
+	OK          bool
+	ViaProxy    bool
+	ProxyID     string
+	SourceLabel string
+	CountryCode string
+	Error       string
+}
+
+type checkEndpoint struct {
+	proxyURL    string
+	proxyID     string
+	sourceLabel string
+	countryCode string
+	viaProxy    bool
 }
 
 func urlsForCheck(profile models.Profile, index *int) ([]string, error) {
@@ -68,6 +79,54 @@ func urlsForCheck(profile models.Profile, index *int) ([]string, error) {
 	}
 }
 
+func (a *App) buildCheckEndpoints(profile models.Profile) ([]checkEndpoint, error) {
+	settings, err := a.store.GetSquidSettings()
+	if err != nil {
+		return nil, err
+	}
+	directLabel := strings.TrimSpace(settings.PrimaryHostCountry)
+	if directLabel == "" {
+		directLabel = "Local server"
+	}
+	endpoints := []checkEndpoint{{
+		sourceLabel: directLabel,
+		countryCode: strings.ToUpper(strings.TrimSpace(settings.PrimaryHostCountryCode)),
+		viaProxy:    false,
+	}}
+
+	if len(profile.URLCheck.ProxyIDs) == 0 {
+		return endpoints, nil
+	}
+
+	all, err := a.store.ListSquidProxies()
+	if err != nil {
+		return nil, err
+	}
+	byID := map[string]models.SquidProxy{}
+	for _, p := range all {
+		if p.Enabled {
+			byID[p.ID] = p
+		}
+	}
+	for _, id := range profile.URLCheck.ProxyIDs {
+		if id == "" {
+			continue
+		}
+		p, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("squid proxy %q not found or disabled", id)
+		}
+		endpoints = append(endpoints, checkEndpoint{
+			proxyURL:    strings.TrimSpace(p.URL),
+			proxyID:     p.ID,
+			sourceLabel: strings.TrimSpace(p.Country),
+			countryCode: strings.ToUpper(strings.TrimSpace(p.CountryCode)),
+			viaProxy:    true,
+		})
+	}
+	return endpoints, nil
+}
+
 func (a *App) CheckURLs(ctx context.Context, profileID string, params operation.UrlCheckerParams) error {
 	profile, err := a.profileByID(profileID)
 	if err != nil {
@@ -77,47 +136,58 @@ func (a *App) CheckURLs(ctx context.Context, profileID string, params operation.
 	if err != nil {
 		return err
 	}
+	endpoints, err := a.buildCheckEndpoints(profile)
+	if err != nil {
+		return err
+	}
 
 	timeout := defaultURLCheckTimeout
 	if params.Timeout > 0 {
 		timeout = time.Duration(params.Timeout) * time.Second
 	}
-	useProxy := params.UseProxy && a.squidProxy != ""
 
-	var outcomes []URLCheckOutcome
 	var failures []error
 	for _, target := range targets {
-		outcome := probeURL(ctx, target, useProxy, a.squidProxy, timeout)
-		outcomes = append(outcomes, outcome)
-		sample := models.URLCheckSample{
-			ID:         newID(),
-			ProfileID:  profileID,
-			URL:        target,
-			TS:         time.Now().UTC().Format(time.RFC3339Nano),
-			TTFBMs:     outcome.TTFBMs,
-			StatusCode: outcome.StatusCode,
-			OK:         outcome.OK,
-			ViaProxy:   outcome.ViaProxy,
-			Error:      outcome.Error,
-		}
-		_ = a.store.AppendURLCheckSample(sample)
-		if !outcome.OK {
-			msg := outcome.Error
-			if msg == "" {
-				msg = fmt.Sprintf("%s returned HTTP %d", target, outcome.StatusCode)
+		for _, ep := range endpoints {
+			outcome := probeURL(ctx, target, ep, timeout)
+			sample := models.URLCheckSample{
+				ID:          newID(),
+				ProfileID:   profileID,
+				URL:         target,
+				TS:          time.Now().UTC().Format(time.RFC3339Nano),
+				TTFBMs:      outcome.TTFBMs,
+				StatusCode:  outcome.StatusCode,
+				OK:          outcome.OK,
+				ViaProxy:    outcome.ViaProxy,
+				ProxyID:     outcome.ProxyID,
+				SourceLabel: outcome.SourceLabel,
+				CountryCode: outcome.CountryCode,
+				Error:       outcome.Error,
 			}
-			failures = append(failures, fmt.Errorf("%s", msg))
+			_ = a.store.AppendURLCheckSample(sample)
+			if !outcome.OK {
+				msg := outcome.Error
+				if msg == "" {
+					msg = fmt.Sprintf("%s: %s returned HTTP %d", outcome.SourceLabel, target, outcome.StatusCode)
+				}
+				failures = append(failures, fmt.Errorf("%s", msg))
+			}
 		}
 	}
 	if len(failures) > 0 {
 		return errors.Join(failures...)
 	}
-	_ = outcomes
 	return nil
 }
 
-func probeURL(ctx context.Context, rawURL string, useProxy bool, proxyAddr string, timeout time.Duration) URLCheckOutcome {
-	out := URLCheckOutcome{URL: rawURL, ViaProxy: useProxy}
+func probeURL(ctx context.Context, rawURL string, ep checkEndpoint, timeout time.Duration) URLCheckOutcome {
+	out := URLCheckOutcome{
+		URL:         rawURL,
+		ViaProxy:    ep.viaProxy,
+		ProxyID:     ep.proxyID,
+		SourceLabel: ep.sourceLabel,
+		CountryCode: ep.countryCode,
+	}
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -138,8 +208,8 @@ func probeURL(ctx context.Context, rawURL string, useProxy bool, proxyAddr strin
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
 	client := &http.Client{Timeout: timeout}
-	if useProxy && proxyAddr != "" {
-		proxyURL, perr := url.Parse(proxyAddr)
+	if ep.viaProxy && ep.proxyURL != "" {
+		proxyURL, perr := url.Parse(ep.proxyURL)
 		if perr != nil {
 			out.Error = perr.Error()
 			return out

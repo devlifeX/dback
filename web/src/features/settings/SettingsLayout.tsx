@@ -9,7 +9,7 @@ export function SettingsLayout() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Destinations, sync, vault, and system info" />
+      <PageHeader title="Settings" description="Destinations, Squid, sync, vault, and system info" />
       <Tabs value={active} className="mt-2">
         <TabsList className="mb-2 h-auto flex-wrap justify-start gap-1">
           {SETTINGS_TABS.map(({ segment, label }) => (

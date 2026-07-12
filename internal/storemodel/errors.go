@@ -2,7 +2,7 @@ package storemodel
 
 import "errors"
 
-const CurrentVersion = 6
+const CurrentVersion = 7
 
 var (
 	ErrVaultLocked                = errors.New("vault is locked")
@@ -23,4 +23,5 @@ var (
 	ErrInvalidCredentials         = errors.New("invalid credentials")
 	ErrOTPInvalid                 = errors.New("invalid or expired otp")
 	ErrSessionInvalid             = errors.New("invalid or expired session")
+	ErrSquidProxyNotFound         = errors.New("squid proxy not found")
 )

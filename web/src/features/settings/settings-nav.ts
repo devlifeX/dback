@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Cloud,
   FileKey,
+  Globe,
   HardDrive,
   ScrollText,
   Server,
@@ -18,6 +19,7 @@ export type SettingsTab = {
 export const SETTINGS_TABS: SettingsTab[] = [
   { segment: 'general', label: 'General', description: 'Version and vault revision', icon: Settings2 },
   { segment: 'destinations', label: 'Destinations', description: 'Remote storage targets', icon: HardDrive },
+  { segment: 'squid', label: 'Squid', description: 'Regional proxies and primary host country', icon: Globe },
   { segment: 'sync', label: 'Sync', description: 'Cloud sync settings and push/pull', icon: Cloud },
   { segment: 'vault', label: 'Vault', description: 'Export and import app data', icon: FileKey },
   { segment: 'audit', label: 'Audit', description: 'API request audit trail', icon: ScrollText },

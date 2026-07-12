@@ -21,6 +21,7 @@ var migrationFiles = []struct {
 	{1, "migrations/001_initial.sql"},
 	{2, "migrations/002_users.sql"},
 	{3, "migrations/003_url_check_samples.sql"},
+	{4, "migrations/004_squid_proxies.sql"},
 }
 
 func runMigrations(db *sql.DB, driver string) error {

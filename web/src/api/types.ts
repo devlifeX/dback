@@ -86,6 +86,7 @@ export type URLTarget = { url: string }
 export type URLCheck = {
   primary?: URLTarget
   secondary?: URLTarget[]
+  proxy_ids?: string[]
 }
 
 export type BackupPolicy = {
@@ -99,6 +100,9 @@ export type BackupPolicy = {
 export type URLCheckHourlyBucket = {
   hour: string
   url: string
+  source_label: string
+  proxy_id?: string
+  country_code?: string
   avg_ttfb_ms: number
   min_ttfb_ms: number
   max_ttfb_ms: number
@@ -106,6 +110,20 @@ export type URLCheckHourlyBucket = {
   ok_count: number
   fail_count: number
   last_status_code: number
+}
+
+export type SquidProxy = {
+  id: string
+  name: string
+  url: string
+  country: string
+  country_code?: string
+  enabled: boolean
+}
+
+export type SquidSettings = {
+  primary_host_country: string
+  primary_host_country_code?: string
 }
 
 /** Host is the API alias for Profile (secrets redacted on read). */
@@ -386,7 +404,7 @@ export function emptyProfile(): Profile {
     file_backup_paths: [],
     file_backup_exclude: [],
     remote_upload_destination_ids: [],
-    url_check: { primary: { url: '' }, secondary: [] },
+    url_check: { primary: { url: '' }, secondary: [], proxy_ids: [] },
     backup_policy: { enabled: false, db_local_keep: 0, db_remote_keep: 0, files_local_keep: 0, files_remote_keep: 0 },
   }
 }

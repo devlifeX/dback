@@ -10,6 +10,10 @@ import {
   YAxis,
 } from 'recharts'
 import { hostsApi } from '@/api/hosts'
+import { countryLabel } from '@/lib/country-flag'
+import type { URLCheckHourlyBucket } from '@/api/types'
+
+const LINE_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2', '#4f46e5', '#be123c']
 
 function formatHour(iso: string) {
   try {
@@ -17,6 +21,10 @@ function formatHour(iso: string) {
   } catch {
     return iso
   }
+}
+
+function chartKey(b: URLCheckHourlyBucket) {
+  return countryLabel(b.source_label || 'Direct', b.country_code)
 }
 
 export function UrlChecksChart({ hostId, url }: { hostId: string; url?: string }) {
@@ -36,13 +44,13 @@ export function UrlChecksChart({ hostId, url }: { hostId: string; url?: string }
 
   const byHour = new Map<string, Record<string, number | string>>()
   for (const b of items) {
+    const key = chartKey(b)
     const row = byHour.get(b.hour) ?? { hour: formatHour(b.hour) }
-    row[`${b.url} TTFB`] = Math.round(b.avg_ttfb_ms)
-    row[`${b.url} status`] = b.last_status_code
+    row[key] = Math.round(b.avg_ttfb_ms)
     byHour.set(b.hour, row)
   }
-  const data = [...byHour.values()]
-  const ttfbKeys = [...new Set(items.map((b) => `${b.url} TTFB`))]
+  const data = [...byHour.values()].sort((a, b) => String(a.hour).localeCompare(String(b.hour)))
+  const sourceKeys = [...new Set(items.map(chartKey))]
 
   return (
     <div className="h-64 w-full">
@@ -51,10 +59,18 @@ export function UrlChecksChart({ hostId, url }: { hostId: string; url?: string }
           <CartesianGrid strokeDasharray="3 3" className="stroke-[hsl(var(--border))]" />
           <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} unit="ms" />
-          <Tooltip />
+          <Tooltip formatter={(value: number) => [`${value} ms`, 'TTFB']} />
           <Legend />
-          {ttfbKeys.map((key, i) => (
-            <Line key={key} type="monotone" dataKey={key} stroke={i === 0 ? '#2563eb' : '#16a34a'} dot={false} strokeWidth={2} />
+          {sourceKeys.map((key, i) => (
+            <Line
+              key={key}
+              type="monotone"
+              dataKey={key}
+              name={key}
+              stroke={LINE_COLORS[i % LINE_COLORS.length]}
+              dot={false}
+              strokeWidth={2}
+            />
           ))}
         </LineChart>
       </ResponsiveContainer>

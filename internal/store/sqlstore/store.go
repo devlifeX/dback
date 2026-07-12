@@ -50,6 +50,8 @@ type Store struct {
 	notifyChannels             []models.NotifyChannel
 	users                      []models.User
 	authSettings               models.AuthSettings
+	squidProxies               []models.SquidProxy
+	squidSettings              models.SquidSettings
 }
 
 func Open(baseDir string, dbCfg config.DBConfig) (*Store, error) {

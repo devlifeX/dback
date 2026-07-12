@@ -472,7 +472,6 @@ func openApp(cfg config.Config) (*app.App, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	application.SetSquidProxy(cfg.SquidProxy)
 	unlock := func() {
 		application.Lock()
 	}

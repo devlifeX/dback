@@ -15,8 +15,9 @@ type URLTarget struct {
 
 // URLCheck holds primary and secondary URLs monitored for a host.
 type URLCheck struct {
-	Primary   URLTarget   `json:"primary,omitempty"`
-	Secondary []URLTarget `json:"secondary,omitempty"`
+	Primary          URLTarget `json:"primary,omitempty"`
+	Secondary        []URLTarget `json:"secondary,omitempty"`
+	ProxyIDs         []string  `json:"proxy_ids,omitempty"` // selected Squid proxy IDs; direct check always runs
 }
 
 // BackupPolicy configures per-host backup retention limits (0 = unlimited).
@@ -30,28 +31,34 @@ type BackupPolicy struct {
 
 // URLCheckSample is one url_checker measurement.
 type URLCheckSample struct {
-	ID         string `json:"id"`
-	ProfileID  string `json:"profile_id"`
-	URL        string `json:"url"`
-	TS         string `json:"ts"`
-	TTFBMs     int64  `json:"ttfb_ms"`
-	StatusCode int    `json:"status_code"`
-	OK         bool   `json:"ok"`
-	ViaProxy   bool   `json:"via_proxy"`
-	Error      string `json:"error,omitempty"`
+	ID          string `json:"id"`
+	ProfileID   string `json:"profile_id"`
+	URL         string `json:"url"`
+	TS          string `json:"ts"`
+	TTFBMs      int64  `json:"ttfb_ms"`
+	StatusCode  int    `json:"status_code"`
+	OK          bool   `json:"ok"`
+	ViaProxy    bool   `json:"via_proxy"`
+	ProxyID     string `json:"proxy_id,omitempty"`
+	SourceLabel string `json:"source_label"`
+	CountryCode string `json:"country_code,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // URLCheckHourlyBucket aggregates samples per hour for charting.
 type URLCheckHourlyBucket struct {
-	Hour       string  `json:"hour"`
-	URL        string  `json:"url"`
-	AvgTTFBMs  float64 `json:"avg_ttfb_ms"`
-	MinTTFBMs  int64   `json:"min_ttfb_ms"`
-	MaxTTFBMs  int64   `json:"max_ttfb_ms"`
-	Samples    int     `json:"samples"`
-	OKCount    int     `json:"ok_count"`
-	FailCount  int     `json:"fail_count"`
-	LastStatus int     `json:"last_status_code"`
+	Hour        string  `json:"hour"`
+	URL         string  `json:"url"`
+	SourceLabel string  `json:"source_label"`
+	ProxyID     string  `json:"proxy_id,omitempty"`
+	CountryCode string  `json:"country_code,omitempty"`
+	AvgTTFBMs   float64 `json:"avg_ttfb_ms"`
+	MinTTFBMs   int64   `json:"min_ttfb_ms"`
+	MaxTTFBMs   int64   `json:"max_ttfb_ms"`
+	Samples     int     `json:"samples"`
+	OKCount     int     `json:"ok_count"`
+	FailCount   int     `json:"fail_count"`
+	LastStatus  int     `json:"last_status_code"`
 }
 
 func ValidateURLTarget(raw string) error {

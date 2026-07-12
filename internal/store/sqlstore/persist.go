@@ -35,6 +35,8 @@ func (s *Store) loadAllLocked() error {
 	s.notifyChannels, _ = s.loadNotifyChannelsLocked(enc)
 	s.users, _ = s.loadUsersLocked(enc)
 	s.authSettings, _ = s.loadAuthSettingsLocked(enc)
+	s.squidProxies, _ = s.loadSquidProxiesLocked()
+	s.squidSettings, _ = s.loadSquidSettingsLocked()
 	s.importDestByProfile, _ = s.loadImportPrefsLocked()
 	s.sync, _ = s.loadSyncSettingsLocked(enc)
 	s.syncLegacyFromAppSettingsLocked()
@@ -91,9 +93,13 @@ func (s *Store) persistAllLocked() error {
 	if err := s.replaceSyncSettingsTx(tx, enc); err != nil {
 		return err
 	}
+	if err := s.replaceSquidProxiesTx(tx); err != nil {
+		return err
+	}
 	actJSON, _ := json.Marshal(s.syncActivity)
-	_, err = tx.Exec(`UPDATE app_settings SET host_sort=?, app_settings_destination_id=?, remote_destinations_migrated=?, sync_activity_json=?, revision=? WHERE id=1`,
-		s.hostSort, s.appSettingsDestinationID, boolToInt(s.remoteDestinationsMigrated), string(actJSON), s.revision)
+	squidJSON, _ := json.Marshal(s.squidSettings)
+	_, err = tx.Exec(`UPDATE app_settings SET host_sort=?, app_settings_destination_id=?, remote_destinations_migrated=?, sync_activity_json=?, squid_settings_json=?, revision=? WHERE id=1`,
+		s.hostSort, s.appSettingsDestinationID, boolToInt(s.remoteDestinationsMigrated), string(actJSON), string(squidJSON), s.revision)
 	if err != nil {
 		return err
 	}
@@ -500,6 +506,22 @@ func (s *Store) replaceNotifyChannelsTx(tx *sql.Tx, enc *secrets.FieldEncryptor)
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO notify_channels (id, data_json) VALUES (?, ?)`, cp.ID, string(raw)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) replaceSquidProxiesTx(tx *sql.Tx) error {
+	if _, err := tx.Exec(`DELETE FROM squid_proxies`); err != nil {
+		return err
+	}
+	for _, p := range s.squidProxies {
+		raw, err := json.Marshal(p)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO squid_proxies (id, data_json) VALUES (?, ?)`, p.ID, string(raw)); err != nil {
 			return err
 		}
 	}

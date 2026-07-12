@@ -12,6 +12,8 @@ import { emptyProfile } from '@/api/types'
 import { UrlChecksChart } from './UrlChecksChart'
 import { useQuery } from '@tanstack/react-query'
 import { destinationsApi } from '@/api/settings'
+import { squidApi } from '@/api/squid'
+import { countryLabel } from '@/lib/country-flag'
 
 const MAX_SECONDARY_URLS = 5
 
@@ -27,7 +29,14 @@ export function HostForm({
   pending?: boolean
 }) {
   const destinations = useQuery({ queryKey: ['destinations'], queryFn: destinationsApi.list })
+  const squidProxies = useQuery({ queryKey: ['squid-proxies'], queryFn: squidApi.listProxies })
+  const squidSettings = useQuery({ queryKey: ['squid-settings'], queryFn: squidApi.getSettings })
   const destItems = destinations.data?.items ?? []
+  const proxyItems = (squidProxies.data?.items ?? []).filter((p) => p.enabled)
+  const directLabel = countryLabel(
+    squidSettings.data?.primary_host_country ?? 'Local server',
+    squidSettings.data?.primary_host_country_code,
+  )
 
   const { register, handleSubmit, control, watch, setValue } = useForm<Profile>({
     defaultValues: profile ?? emptyProfile(),
@@ -361,7 +370,7 @@ export function HostForm({
         </TabsContent>
 
         <TabsContent value="urls">
-          <FormSection title="URL monitoring" description="Primary URL is checked by default when running url_checker">
+          <FormSection title="URL monitoring" description="Primary URL is checked by default when running url_checker. Direct check always runs; optional Squid proxies add regional measurements.">
             <FormField label="Primary URL" htmlFor="primary-url" className="sm:col-span-2">
               <Input id="primary-url" {...register('url_check.primary.url')} placeholder="https://example.com" />
             </FormField>
@@ -383,6 +392,35 @@ export function HostForm({
                   Add secondary URL
                 </Button>
               ) : null}
+            </div>
+            <div className="sm:col-span-2 space-y-2 border-t border-[hsl(var(--border))] pt-4">
+              <p className="text-sm font-medium">Check sources</p>
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                Always included: {directLabel} (direct from dback server, no Squid). Configure in Settings → Squid.
+              </p>
+              {proxyItems.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-[hsl(var(--muted-foreground))]">Optional Squid proxies for this host:</p>
+                  {proxyItems.map((p) => {
+                    const ids = watch('url_check.proxy_ids') ?? []
+                    const checked = ids.includes(p.id)
+                    return (
+                      <label key={p.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(c) => {
+                            const next = c ? [...ids, p.id] : ids.filter((x) => x !== p.id)
+                            setValue('url_check.proxy_ids', next)
+                          }}
+                        />
+                        {countryLabel(p.country, p.country_code)} — {p.name}
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">No Squid proxies configured. Add them in Settings → Squid.</p>
+              )}
             </div>
             {profile?.id ? (
               <div className="sm:col-span-2 space-y-2 border-t border-[hsl(var(--border))] pt-4">
